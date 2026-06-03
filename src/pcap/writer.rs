@@ -5,7 +5,7 @@
 //! **Dependencies**: `pcap-file`, `parser::types`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 224 / 240
+//! **Line budget**: 259 / 280
 
 use std::{borrow::Cow, fs::File, path::Path, time::Duration};
 
@@ -13,7 +13,7 @@ use pcap_file::{
     pcapng::{
         blocks::{
             enhanced_packet::{EnhancedPacketBlock, EnhancedPacketOption},
-            interface_description::InterfaceDescriptionBlock,
+            interface_description::{InterfaceDescriptionBlock, InterfaceDescriptionOption},
         },
         PcapNgBlock, PcapNgWriter as InnerWriter,
     },
@@ -55,7 +55,7 @@ impl PcapNgWriter {
         let idb = InterfaceDescriptionBlock {
             linktype: DataLink::ETHERNET,
             snaplen: 0xFFFF,
-            options: vec![],
+            options: vec![InterfaceDescriptionOption::IfTsResol(9)],
         };
         writer
             .write_block(&idb.into_block())
@@ -102,9 +102,10 @@ fn pcap_timestamp(frame: &RawFrame) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Read;
+    use std::io::{BufReader, Read};
 
     use chrono::{DateTime, Utc};
+    use pcap_file::pcapng::{blocks::Block, PcapNgReader};
 
     use super::*;
 
@@ -160,6 +161,30 @@ mod tests {
             buf.len()
         );
         assert_eq!(&buf[0..4], &shb_type, "SHB block type mismatch");
+    }
+
+    #[test]
+    fn create_sets_nanosecond_timestamp_resolution() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.pcapng");
+
+        {
+            let _writer = PcapNgWriter::create(&path).expect("create should succeed");
+        }
+
+        let file = File::open(&path).expect("open");
+        let mut reader = PcapNgReader::new(BufReader::new(file)).expect("reader");
+        while let Some(block) = reader.next_block() {
+            if let Block::InterfaceDescription(idb) = block.expect("block") {
+                assert!(idb
+                    .options
+                    .iter()
+                    .any(|opt| matches!(opt, InterfaceDescriptionOption::IfTsResol(9))));
+                return;
+            }
+        }
+
+        unreachable!("expected interface description block");
     }
 
     #[test]
