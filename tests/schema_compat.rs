@@ -6,11 +6,13 @@
 //! **Dependencies**: `etwarden`, `insta`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 100 / 150
+//! **Line budget**: 149 / 150
 
 use chrono::{TimeZone, Utc};
-use etwarden::output::schema::{event_to_line, OutputLine, SummaryLine};
-use etwarden::parser::types::{NetEvent, Protocol};
+use etwarden::{
+    output::schema::{event_to_line, OutputLine, SummaryLine},
+    parser::types::{NetEvent, Protocol},
+};
 
 fn ts() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2025, 1, 15, 12, 0, 0)
@@ -66,6 +68,29 @@ fn recv_event() -> NetEvent {
     }
 }
 
+fn dns_query_event() -> NetEvent {
+    NetEvent::DnsQuery {
+        timestamp: ts(),
+        pid: 1234,
+        domain: "example.com".into(),
+        query_type: 1,
+        query_type_name: "A".into(),
+    }
+}
+
+fn dns_response_event() -> NetEvent {
+    NetEvent::DnsResponse {
+        timestamp: ts(),
+        pid: 1234,
+        domain: "example.com".into(),
+        query_type: 1,
+        query_type_name: "A".into(),
+        status: 0,
+        status_name: "NOERROR".into(),
+        result_ips: vec!["93.184.216.34".into()],
+    }
+}
+
 #[test]
 fn snapshot_connect_event_line() {
     let line = event_to_line(&connect_event());
@@ -88,6 +113,18 @@ fn snapshot_send_event_line() {
 fn snapshot_recv_event_line() {
     let line = event_to_line(&recv_event());
     insta::assert_json_snapshot!("recv_event_line", line);
+}
+
+#[test]
+fn snapshot_dns_query_event_line() {
+    let line = event_to_line(&dns_query_event());
+    insta::assert_json_snapshot!("dns_query_event_line", line);
+}
+
+#[test]
+fn snapshot_dns_response_event_line() {
+    let line = event_to_line(&dns_response_event());
+    insta::assert_json_snapshot!("dns_response_event_line", line);
 }
 
 #[test]

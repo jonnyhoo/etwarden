@@ -8,14 +8,20 @@
 //! **Privilege**: `none`
 //! **Line budget**: 300 / 350
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::{
+    collections::HashMap,
+    sync::Mutex,
+    time::{Duration, SystemTime},
+};
 
-use crate::classify;
-use crate::parser::dpi::{self, DpiResult};
-use crate::parser::tcp_state::TcpState;
-use crate::parser::types::{FiveTuple, NetEvent, Protocol};
+use crate::{
+    classify,
+    parser::{
+        dpi::{self, DpiResult},
+        tcp_state::TcpState,
+        types::{FiveTuple, NetEvent, Protocol},
+    },
+};
 
 /// Maximum number of active connections before new ones are dropped.
 const DEFAULT_MAX_CONNECTIONS: usize = 65_536;
@@ -323,9 +329,10 @@ fn is_local_ip(ip: &std::net::IpAddr) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, Utc};
+
     use super::*;
     use crate::parser::types::Protocol;
-    use chrono::{DateTime, Utc};
 
     fn ts() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")

@@ -9,9 +9,11 @@
 
 use chrono::{TimeZone, Utc};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
-use etwarden::filter::{pid::PidFilter, Filter};
-use etwarden::output::schema::event_to_line;
-use etwarden::parser::types::{NetEvent, Protocol};
+use etwarden::{
+    filter::{pid::PidFilter, Filter},
+    output::schema::event_to_line,
+    parser::types::{NetEvent, Protocol},
+};
 
 fn make_connect_event(pid: u32) -> NetEvent {
     NetEvent::Connect {

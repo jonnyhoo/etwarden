@@ -7,8 +7,9 @@
 //! **Privilege**: `none`
 //! **Line budget**: 165 / 200
 
-use serde::Serialize;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+use serde::Serialize;
 
 /// Routing/usage scope of an IP address.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]

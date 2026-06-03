@@ -207,8 +207,8 @@ fn parse_recv_v4(
         proto: Protocol::Tcp,
         src: format_addr_port(saddr, sport),
         dst: format_addr_port(daddr, dport),
-        bytes_out: u64::from(size),
-        bytes_in: 0,
+        bytes_out: 0,
+        bytes_in: u64::from(size),
     })
 }
 
@@ -228,8 +228,8 @@ fn parse_recv_v6(
         proto: Protocol::Tcp,
         src: format!("{saddr}:{sport}"),
         dst: format!("{daddr}:{dport}"),
-        bytes_out: u64::from(size),
-        bytes_in: 0,
+        bytes_out: 0,
+        bytes_in: u64::from(size),
     })
 }
 

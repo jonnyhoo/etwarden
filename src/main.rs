@@ -2,34 +2,40 @@
 //!
 //! **Purpose**: Parse CLI, assemble modules, run capture loop, print summary.
 //! **Public API**: (binary entry, no pub symbols)
-//! **Dependencies**: `cli`, `capture`, `parser`, `output::schema`
+//! **Dependencies**: `target`, `cli`, `capture`, `filter`, `output`, `pcap`, `process`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 60 / 80
+//! **Line budget**: 59 / 80
+
+use std::{io::Write, sync::Arc};
+
+mod target;
 
 use clap::Parser;
 use etwarden::{
     capture::{self, CaptureConfig},
     cli::Cli,
+    filter::pid::PidFilter,
     output::{json::JsonEmitter, schema::OutputLine},
     pcap::writer::PcapNgWriter,
-    process::{spawn_and_get_pid, ProcessMonitor},
+    process::ProcessNameCache,
 };
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let (target_pid, _monitor) = resolve_target(&cli)?;
+    let target = target::resolve(&cli)?;
+    let process_cache = Arc::new(ProcessNameCache::new());
 
     let mut config = CaptureConfig {
-        target_pid,
+        target_pid: target.pid,
         duration: if cli.duration > 0 {
             Some(std::time::Duration::from_secs(cli.duration))
         } else {
             None
         },
-        filters: Vec::new(),
-        emitter: Box::new(JsonEmitter::new(std::io::stdout())),
+        filters: vec![Box::new(PidFilter::single(target.pid))],
+        emitter: Box::new(JsonEmitter::new(std::io::stdout()).with_process_cache(process_cache)),
         pcap_sink: cli
             .pcap_out
             .as_deref()
@@ -39,36 +45,15 @@ fn main() -> anyhow::Result<()> {
             })
             .transpose()
             .map_err(|e| anyhow::anyhow!("{e}"))?,
+        stop_signal: Some(target.stop_signal),
     };
 
     let summary = capture::run_capture(&mut config).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let output = OutputLine::Summary(summary);
-    let json = serde_json::to_string(&output)?;
-    println!("{json}");
+    let mut stdout = std::io::stdout().lock();
+    serde_json::to_writer(&mut stdout, &output)?;
+    stdout.write_all(b"\n")?;
 
     Ok(())
-}
-
-/// Resolves the target PID from CLI arguments.
-///
-/// For `--pid`: returns the given PID directly.
-/// For `--spawn`: spawns the command, returns its PID and a `ProcessMonitor`
-/// for the caller to wait on.
-fn resolve_target(cli: &Cli) -> anyhow::Result<(u32, Option<ProcessMonitor>)> {
-    match (cli.pid, &cli.spawn) {
-        (Some(pid), None) => Ok((pid, None)),
-        (None, Some(cmd)) => {
-            let result = spawn_and_get_pid(cmd).map_err(|e| anyhow::anyhow!("{e}"))?;
-            let monitor = ProcessMonitor::new(result.child);
-            eprintln!("[etwarden] spawned PID {}", monitor.pid());
-            Ok((monitor.pid(), Some(monitor)))
-        }
-        (None, None) => {
-            anyhow::bail!("specify --pid <PID> or --spawn <command>");
-        }
-        (Some(_), Some(_)) => {
-            anyhow::bail!("cannot specify both --pid and --spawn");
-        }
-    }
 }

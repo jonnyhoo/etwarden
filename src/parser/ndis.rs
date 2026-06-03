@@ -11,11 +11,13 @@ use std::sync::Arc;
 
 use windows::core::GUID;
 
-use crate::parser::{
-    types::{FiveTuple, NetEvent, Protocol, RawEvent, RawFrame},
-    EventParser,
+use crate::{
+    parser::{
+        types::{FiveTuple, NetEvent, Protocol, RawEvent, RawFrame},
+        EventParser,
+    },
+    pcap::correlator::Correlator,
 };
-use crate::pcap::correlator::Correlator;
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -171,9 +173,10 @@ fn format_ipv6(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, TimeZone, Utc};
+
     use super::*;
     use crate::parser::types::FiveTuple;
-    use chrono::{DateTime, TimeZone, Utc};
 
     fn ts() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap()

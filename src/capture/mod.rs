@@ -5,19 +5,22 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 90 / 110
+//! **Line budget**: 99 / 120
 
 pub mod event_loop;
 pub mod provider;
 pub mod session;
 
-use std::sync::Arc;
+use std::sync::{atomic::AtomicBool, Arc};
 
 use crate::{
     capture::{
-        event_loop::run_event_loop, provider::build_correlation_provider,
-        provider::build_dns_client_provider, provider::build_ndis_provider,
-        provider::build_tcpip_provider, session::EtwSession,
+        event_loop::run_event_loop,
+        provider::{
+            build_correlation_provider, build_dns_client_provider, build_ndis_provider,
+            build_tcpip_provider,
+        },
+        session::EtwSession,
     },
     error::Result,
     filter::Filter,
@@ -38,6 +41,8 @@ pub struct CaptureConfig {
     pub emitter: Box<dyn Emitter>,
     /// Optional pcap sink for raw frame capture.
     pub pcap_sink: Option<Box<dyn PcapSink>>,
+    /// Optional external stop signal, used by `--spawn` child exit handling.
+    pub stop_signal: Option<Arc<AtomicBool>>,
 }
 
 /// Runs the capture loop with the given configuration.
@@ -78,12 +83,14 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
         config.emitter.as_mut(),
         config.pcap_sink.as_mut(),
         Some(&correlator),
+        config.duration,
+        config.stop_signal.as_deref(),
     )?;
 
     Ok(SummaryLine {
         kind: "summary".into(),
         pid: config.target_pid,
-        duration_ms: 0,
+        duration_ms: summary.duration_ms,
         connections_total: summary.connections_total,
         bytes_out_total: summary.bytes_out_total,
         bytes_in_total: summary.bytes_in_total,

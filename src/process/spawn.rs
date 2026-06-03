@@ -61,8 +61,8 @@ fn parse_command(cmd: &str) -> (String, Vec<String>) {
         },
         |after_quote| {
             after_quote.find('"').map_or((trimmed, ""), |end| {
-                let program = &trimmed[..=end + 1];
-                let rest = trimmed[end + 2..].trim();
+                let program = &after_quote[..end];
+                let rest = after_quote[end + 1..].trim();
                 (program, rest)
             })
         },
@@ -98,14 +98,14 @@ mod tests {
     #[test]
     fn parse_quoted_program() {
         let (prog, args) = parse_command(r#""C:\Program Files\app.exe" --flag value"#);
-        assert_eq!(prog, r#""C:\Program Files\app.exe""#);
+        assert_eq!(prog, r"C:\Program Files\app.exe");
         assert_eq!(args, vec!["--flag", "value"]);
     }
 
     #[test]
     fn parse_quoted_program_no_args() {
         let (prog, args) = parse_command(r#""C:\My App\test.exe""#);
-        assert_eq!(prog, r#""C:\My App\test.exe""#);
+        assert_eq!(prog, r"C:\My App\test.exe");
         assert!(args.is_empty());
     }
 

@@ -8,8 +8,10 @@
 //! **Privilege**: `none`
 //! **Line budget**: 120 / 160
 
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use windows::core::GUID;
 

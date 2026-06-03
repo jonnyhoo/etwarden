@@ -57,8 +57,8 @@ impl EtwSession {
             builder = builder.enable(provider);
         }
 
-        let (user_trace, _trace_handle) = builder
-            .start()
+        let user_trace = builder
+            .start_and_process()
             .map_err(|e| EtwardenError::EtwSession(format!("failed to start ETW trace: {e:?}")))?;
 
         Ok(RunningSession {

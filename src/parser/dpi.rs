@@ -8,8 +8,9 @@
 //! **Privilege**: `none`
 //! **Line budget**: 300 / 350
 
-use crate::parser::dns::{self, DnsInfo};
 use serde::Serialize;
+
+use crate::parser::dns::{self, DnsInfo};
 
 // Well-known ports for DPI protocol detection.
 const PORT_DNS: u16 = 53;

@@ -7,8 +7,9 @@
 //! **Privilege**: `none`
 //! **Line budget**: 70 / 120
 
-use crate::error::EtwardenError;
 use std::process::Child;
+
+use crate::error::EtwardenError;
 
 /// Monitors a child process for liveness and exit status.
 ///

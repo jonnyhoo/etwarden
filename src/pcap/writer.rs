@@ -7,19 +7,20 @@
 //! **Privilege**: `none`
 //! **Line budget**: 120 / 160
 
-use std::borrow::Cow;
-use std::fs::File;
-use std::path::Path;
-use std::time::Duration;
+use std::{borrow::Cow, fs::File, path::Path, time::Duration};
 
-use pcap_file::pcapng::blocks::enhanced_packet::{EnhancedPacketBlock, EnhancedPacketOption};
-use pcap_file::pcapng::blocks::interface_description::InterfaceDescriptionBlock;
-use pcap_file::pcapng::{PcapNgBlock, PcapNgWriter as InnerWriter};
-use pcap_file::DataLink;
+use pcap_file::{
+    pcapng::{
+        blocks::{
+            enhanced_packet::{EnhancedPacketBlock, EnhancedPacketOption},
+            interface_description::InterfaceDescriptionBlock,
+        },
+        PcapNgBlock, PcapNgWriter as InnerWriter,
+    },
+    DataLink,
+};
 
-use crate::error::EtwardenError;
-use crate::parser::types::RawFrame;
-use crate::pcap::PcapSink;
+use crate::{error::EtwardenError, parser::types::RawFrame, pcap::PcapSink};
 
 // ---------------------------------------------------------------------------
 // PcapNgWriter
@@ -96,9 +97,11 @@ impl PcapSink for PcapNgWriter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use chrono::Utc;
     use std::io::Read;
+
+    use chrono::Utc;
+
+    use super::*;
 
     fn test_frame(data: &[u8]) -> RawFrame {
         RawFrame {

@@ -6,14 +6,17 @@
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 220 / 280
+//! **Line budget**: 556 / 600
+
+use std::net::IpAddr;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::net::IpAddr;
 
-use crate::classify;
-use crate::parser::types::{NetEvent, Protocol};
+use crate::{
+    classify,
+    parser::types::{NetEvent, Protocol},
+};
 
 /// A single NDJSON event line in the agent contract.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -54,7 +57,8 @@ pub struct DnsEventLine {
     /// Event type: `dns_query` or `dns_response`.
     pub event: String,
     /// Queried domain name.
-    pub domain: String,
+    #[serde(alias = "domain")]
+    pub hostname: String,
     /// Numeric DNS record type (e.g. 1 = A, 28 = AAAA).
     pub query_type: u16,
     /// Human-readable DNS record type name (e.g. "A", "AAAA").
@@ -237,7 +241,7 @@ pub fn event_to_line_enriched(
             timestamp,
             pid,
             event: "dns_query".into(),
-            domain: domain.clone(),
+            hostname: domain.clone(),
             query_type,
             query_type_name: query_type_name.clone(),
             status: None,
@@ -258,7 +262,7 @@ pub fn event_to_line_enriched(
             timestamp,
             pid,
             event: "dns_response".into(),
-            domain: domain.clone(),
+            hostname: domain.clone(),
             query_type,
             query_type_name: query_type_name.clone(),
             status: Some(status),
@@ -509,5 +513,44 @@ mod tests {
             ip,
             Some(IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 1)))
         );
+    }
+
+    #[test]
+    fn dns_query_line_uses_hostname_field() {
+        let event = NetEvent::DnsQuery {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            domain: "example.com".into(),
+            query_type: 1,
+            query_type_name: "A".into(),
+        };
+        let line = event_to_line(&event);
+        let OutputLine::DnsEvent(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.hostname, "example.com");
+        assert_eq!(line.event, "dns_query");
+        assert_eq!(line.status, None);
+    }
+
+    #[test]
+    fn dns_response_line_keeps_status_and_ips() {
+        let event = NetEvent::DnsResponse {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            domain: "example.com".into(),
+            query_type: 1,
+            query_type_name: "A".into(),
+            status: 0,
+            status_name: "NOERROR".into(),
+            result_ips: vec!["93.184.216.34".into()],
+        };
+        let line = event_to_line(&event);
+        let OutputLine::DnsEvent(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.hostname, "example.com");
+        assert_eq!(line.status, Some(0));
+        assert_eq!(line.result_ips, vec!["93.184.216.34"]);
     }
 }

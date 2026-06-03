@@ -7,8 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 120 / 200
 
-use std::io::Write;
-use std::sync::Arc;
+use std::{io::Write, sync::Arc};
 
 use crate::{
     error::EtwardenError,

@@ -5,7 +5,12 @@
 //! **Dependencies**: `capture::session`, `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 100 / 120
+//! **Line budget**: 199 / 200
+
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
 
 use crate::{
     capture::session::RunningSession,
@@ -44,23 +49,75 @@ pub fn run_event_loop(
     emitter: &mut dyn Emitter,
     mut pcap_sink: Option<&mut Box<dyn PcapSink>>,
     correlator: Option<&Correlator>,
+    duration: Option<Duration>,
+    stop_signal: Option<&AtomicBool>,
 ) -> Result<SummaryLine> {
     let mut connections_total: u64 = 0;
     let mut bytes_out_total: u64 = 0;
     let mut bytes_in_total: u64 = 0;
     let mut pcap_written = false;
+    let started = Instant::now();
 
-    // TODO: Replace with proper timed/signal-based loop in T19.
-    // For now, drain once and stop — real implementation will poll
-    // the registry on a timer until the session is signaled to stop.
+    loop {
+        let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
+        connections_total += stats.connections_total;
+        bytes_out_total += stats.bytes_out_total;
+        bytes_in_total += stats.bytes_in_total;
+        pcap_written |= stats.pcap_written;
+
+        if should_stop(started, duration, stop_signal) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+
+    session.stop()?;
+
+    let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
+    connections_total += stats.connections_total;
+    bytes_out_total += stats.bytes_out_total;
+    bytes_in_total += stats.bytes_in_total;
+    pcap_written |= stats.pcap_written;
+    emitter.flush()?;
+
+    Ok(SummaryLine {
+        kind: "summary".into(),
+        pid: 0, // Filled by caller.
+        duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
+        connections_total,
+        bytes_out_total,
+        bytes_in_total,
+        pcap_written,
+    })
+}
+
+struct LoopStats {
+    connections_total: u64,
+    bytes_out_total: u64,
+    bytes_in_total: u64,
+    pcap_written: bool,
+}
+
+fn drain_events(
+    registry: &ParserRegistry,
+    filters: &[Box<dyn Filter>],
+    emitter: &mut dyn Emitter,
+    pcap_sink: &mut Option<&mut Box<dyn PcapSink>>,
+    correlator: Option<&Correlator>,
+) -> Result<LoopStats> {
+    let mut stats = LoopStats {
+        connections_total: 0,
+        bytes_out_total: 0,
+        bytes_in_total: 0,
+        pcap_written: false,
+    };
     let events = registry.drain();
-
     for event in &events {
         // Route RawCapture to pcap sink, not emitter.
         if let NetEvent::RawCapture { frame, pid } = event {
             if let Some(sink) = pcap_sink.as_mut() {
                 sink.write_frame(frame, *pid)?;
-                pcap_written = true;
+                stats.pcap_written = true;
             }
             continue;
         }
@@ -89,25 +146,20 @@ pub fn run_event_loop(
         }
 
         emitter.emit(event)?;
-        connections_total += 1;
-        bytes_out_total += event.bytes_out();
-        bytes_in_total += event.bytes_in();
+        stats.connections_total += 1;
+        stats.bytes_out_total += event.bytes_out();
+        stats.bytes_in_total += event.bytes_in();
     }
+    Ok(stats)
+}
 
-    // Emit summary
-    let summary = SummaryLine {
-        kind: "summary".into(),
-        pid: 0, // Will be filled by caller
-        duration_ms: 0,
-        connections_total,
-        bytes_out_total,
-        bytes_in_total,
-        pcap_written,
-    };
-
-    session.stop()?;
-
-    Ok(summary)
+fn should_stop(
+    started: Instant,
+    duration: Option<Duration>,
+    stop_signal: Option<&AtomicBool>,
+) -> bool {
+    duration.is_some_and(|limit| started.elapsed() >= limit)
+        || stop_signal.is_some_and(|signal| signal.load(Ordering::SeqCst))
 }
 
 /// Parse a `FiveTuple` from a Connect event's address strings.

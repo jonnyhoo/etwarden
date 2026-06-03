@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 260 / 300
+//! **Line budget**: 475 / 500
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -246,6 +246,7 @@ fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
     let dport = read_u16(d, 16)?;
     let sport = read_u16(d, 18)?;
 
+    let (bytes_out, bytes_in) = bytes_for_direction(kind, size);
     Some(make_send_recv(
         kind,
         raw.timestamp,
@@ -253,8 +254,8 @@ fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
         Protocol::Tcp,
         fmt_addr_port(&fmt_ipv4(saddr), sport),
         fmt_addr_port(&fmt_ipv4(daddr), dport),
-        u64::from(size),
-        0,
+        bytes_out,
+        bytes_in,
     ))
 }
 
@@ -269,6 +270,7 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
     let dport = read_u16(d, 40)?;
     let sport = read_u16(d, 42)?;
 
+    let (bytes_out, bytes_in) = bytes_for_direction(kind, size);
     Some(make_send_recv(
         kind,
         raw.timestamp,
@@ -276,9 +278,16 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
         Protocol::Tcp,
         fmt_addr_port(&fmt_ipv6(saddr), sport),
         fmt_addr_port(&fmt_ipv6(daddr), dport),
-        u64::from(size),
-        0,
+        bytes_out,
+        bytes_in,
     ))
+}
+
+const fn bytes_for_direction(kind: SendRecv, size: u32) -> (u64, u64) {
+    match kind {
+        SendRecv::Send => (size as u64, 0),
+        SendRecv::Recv => (0, size as u64),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -415,11 +424,11 @@ mod tests {
     fn parse_recv_v4() {
         let raw = raw_v4(EVENT_ID_TCP_RECV_IPV4, 888, &[]);
         let event = TcpIpParser.parse(&raw).expect("should parse recv v4");
-        let NetEvent::Recv { pid, bytes_out, .. } = event else {
+        let NetEvent::Recv { pid, bytes_in, .. } = event else {
             unreachable!("expected Recv variant");
         };
         assert_eq!(pid, 888);
-        assert_eq!(bytes_out, 42);
+        assert_eq!(bytes_in, 42);
     }
 
     #[test]

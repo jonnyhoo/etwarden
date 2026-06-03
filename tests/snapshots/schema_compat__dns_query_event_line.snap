@@ -1,0 +1,12 @@
+---
+source: tests/schema_compat.rs
+expression: line
+---
+{
+  "t": "2025-01-15T12:00:00Z",
+  "pid": 1234,
+  "event": "dns_query",
+  "hostname": "example.com",
+  "query_type": 1,
+  "query_type_name": "A"
+}

@@ -7,8 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 60 / 80
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::{collections::HashMap, sync::Mutex};
 
 use crate::parser::types::FiveTuple;
 
