@@ -7,6 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 38 / 80
 
+pub mod correlation;
 pub mod ndis;
 pub mod tcpip;
 pub mod types;
