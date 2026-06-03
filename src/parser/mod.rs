@@ -75,6 +75,11 @@ impl ParserRegistry {
             .lock()
             .map_or_else(|_| Vec::new(), |mut events| events.drain(..).collect())
     }
+
+    /// Returns a handle to the internal event buffer for direct pushing.
+    pub const fn events_buffer(&self) -> &Mutex<Vec<NetEvent>> {
+        &self.events
+    }
 }
 
 impl Default for ParserRegistry {

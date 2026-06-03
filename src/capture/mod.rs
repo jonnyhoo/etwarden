@@ -5,7 +5,11 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 52 / 60
+//! **Line budget**: 60 / 70
+
+pub mod event_loop;
+pub mod provider;
+pub mod session;
 
 use std::time::Duration;
 

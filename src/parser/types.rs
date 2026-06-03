@@ -75,6 +75,30 @@ pub enum NetEvent {
     },
 }
 
+impl NetEvent {
+    /// Returns the `bytes_out` field from any variant.
+    #[must_use]
+    pub const fn bytes_out(&self) -> u64 {
+        match self {
+            Self::Connect { bytes_out, .. }
+            | Self::Disconnect { bytes_out, .. }
+            | Self::Send { bytes_out, .. }
+            | Self::Recv { bytes_out, .. } => *bytes_out,
+        }
+    }
+
+    /// Returns the `bytes_in` field from any variant.
+    #[must_use]
+    pub const fn bytes_in(&self) -> u64 {
+        match self {
+            Self::Connect { bytes_in, .. }
+            | Self::Disconnect { bytes_in, .. }
+            | Self::Send { bytes_in, .. }
+            | Self::Recv { bytes_in, .. } => *bytes_in,
+        }
+    }
+}
+
 /// Unparsed bytes and metadata received in an ETW callback.
 #[derive(Debug, Clone)]
 pub struct RawEvent {
