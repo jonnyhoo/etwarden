@@ -172,6 +172,9 @@ fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
     }
 
     let colon = addr.rfind(':')?;
+    if addr[..colon].contains(':') {
+        return None;
+    }
     let ip = addr[..colon].to_string();
     let port = addr[colon + 1..].parse().ok()?;
     Some((ip, port))
@@ -270,6 +273,7 @@ mod tests {
     fn parse_addr_port_rejects_malformed_ipv6_brackets() {
         assert!(parse_addr_port("[::1]").is_none());
         assert!(parse_addr_port("x]::1:443").is_none());
+        assert!(parse_addr_port("::1:443").is_none());
     }
 
     #[test]
