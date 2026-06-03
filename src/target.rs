@@ -54,6 +54,10 @@ enum TargetSpec {
 
 fn target_spec(cli: &Cli) -> anyhow::Result<TargetSpec> {
     match (&cli.target, cli.pid, &cli.spawn) {
+        (None, Some(0), None) => anyhow::bail!("PID must be greater than zero"),
+        (Some(TargetMode::Pid { pid }), None, None) if *pid == 0 => {
+            anyhow::bail!("PID must be greater than zero");
+        }
         (None, Some(pid), None) => Ok(TargetSpec::Pid(pid)),
         (Some(TargetMode::Pid { pid }), None, None) => Ok(TargetSpec::Pid(*pid)),
         (None, None, Some(cmd)) | (Some(TargetMode::Spawn { cmd }), None, None) => {
@@ -123,6 +127,18 @@ mod tests {
     fn target_spec_rejects_mixed_targets() {
         let cli = Cli::try_parse_from(["etwarden", "--pid", "42", "spawn", "cmd /C exit 0"])
             .expect("parse");
+        assert!(target_spec(&cli).is_err());
+    }
+
+    #[test]
+    fn target_spec_rejects_zero_pid_flag() {
+        let cli = Cli::try_parse_from(["etwarden", "--pid", "0"]).expect("parse");
+        assert!(target_spec(&cli).is_err());
+    }
+
+    #[test]
+    fn target_spec_rejects_zero_pid_subcommand() {
+        let cli = Cli::try_parse_from(["etwarden", "pid", "0"]).expect("parse");
         assert!(target_spec(&cli).is_err());
     }
 }
