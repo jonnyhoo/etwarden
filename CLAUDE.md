@@ -65,7 +65,7 @@ Read in this order:
 ## CI Gate (run before every commit)
 
 ```
-cargo fmt --check
+cargo +nightly fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo deny check
 cargo audit
@@ -99,7 +99,7 @@ Rules:
 
 Pre-commit hook must run at minimum:
 ```
-cargo fmt --check
+cargo +nightly fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```

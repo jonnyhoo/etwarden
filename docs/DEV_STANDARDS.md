@@ -10,6 +10,7 @@
 | Tool | Install | Purpose |
 |------|---------|---------|
 | rustc stable ≥1.75 | rustup | Compiler |
+| rustc nightly | `rustup toolchain install nightly --component rustfmt` | Formatting only (unstable rustfmt features) |
 | rustfmt | rustup component | Format |
 | clippy | rustup component | Lint |
 | cargo-deny | `cargo install cargo-deny` | License + supply chain |
@@ -23,7 +24,7 @@
 ## CI Gate (windows-latest, must all pass, in order)
 
 ```
-cargo fmt --check
+cargo +nightly fmt --check
 cargo clippy --all-targets -- -D warnings
 cargo deny check
 cargo audit

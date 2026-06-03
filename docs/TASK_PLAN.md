@@ -173,7 +173,7 @@
 - **Notes**: —
 - **Verify**:
   ```
-  cargo fmt --check
+  cargo +nightly fmt --check
   cargo clippy --all-targets -- -D warnings
   cargo deny check
   cargo audit
