@@ -6,21 +6,26 @@
 //! **Dependencies**: `ferrisetw`, `parser::*`, `parser::dns_codes`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 380 / 450
+//! **Line budget**: 398 / 450
+
+use std::sync::Arc;
 
 use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 
-use crate::parser::{
-    correlation::{ActivityMap, PROVIDER_CORRELATION},
-    dns_codes::{dns_status_name, dns_type_name, parse_query_results},
-    ndis::PROVIDER_NDIS,
-    tcpip::{
-        EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
-        EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
-        EVENT_ID_TCP_SEND_IPV4, EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
+use crate::{
+    parser::{
+        correlation::{ActivityMap, PROVIDER_CORRELATION},
+        dns_codes::{dns_status_name, dns_type_name, parse_query_results},
+        ndis::{NdisParser, PROVIDER_NDIS},
+        tcpip::{
+            EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
+            EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
+            EVENT_ID_TCP_SEND_IPV4, EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
+        },
+        types::{NetEvent, Protocol, RawEvent},
+        EventParser, ParserRegistry,
     },
-    types::{NetEvent, Protocol, RawFrame},
-    ParserRegistry,
+    pcap::correlator::Correlator,
 };
 
 // ---------------------------------------------------------------------------
@@ -30,12 +35,16 @@ use crate::parser::{
 /// Builds the Microsoft-Windows-TCPIP ETW provider with a callback that
 /// parses events using ferrisetw's `Parser` and dispatches `NetEvent`s
 /// to the given `ParserRegistry` (used as a shared event buffer).
-pub fn build_tcpip_provider(registry: std::sync::Arc<ParserRegistry>) -> Provider {
+pub fn build_tcpip_provider(
+    registry: Arc<ParserRegistry>,
+    correlator: Option<Arc<Correlator>>,
+) -> Provider {
     Provider::by_guid(PROVIDER_TCPIP)
         .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
             if let Some(event) = parse_tcpip_event(record, locator) {
-                // We reuse dispatch to push into the buffer.
-                // The EventParser dispatch expects RawEvent, so we push directly.
+                if let Some(corr) = correlator.as_deref() {
+                    corr.register_event(&event);
+                }
                 if let Ok(mut events) = registry.events_buffer().lock() {
                     events.push(event);
                 }
@@ -249,10 +258,10 @@ fn format_addr_port(raw_ip: u32, port: u16) -> String {
 /// Builds the Microsoft-Windows-NDIS-PacketCapture ETW provider with a
 /// callback that wraps raw frame data into `NetEvent::RawCapture` and
 /// pushes it to the given `ParserRegistry`.
-pub fn build_ndis_provider(registry: std::sync::Arc<ParserRegistry>) -> Provider {
+pub fn build_ndis_provider(registry: Arc<ParserRegistry>, correlator: Arc<Correlator>) -> Provider {
+    let parser = NdisParser::new(correlator);
     Provider::by_guid(PROVIDER_NDIS)
         .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
-            let pid = record.process_id();
             let timestamp = chrono::Utc::now();
 
             // Extract raw frame bytes via ferrisetw's Parser.
@@ -267,9 +276,16 @@ pub fn build_ndis_provider(registry: std::sync::Arc<ParserRegistry>) -> Provider
                 })
                 .unwrap_or_default();
 
-            let frame = RawFrame { timestamp, data };
-            if let Ok(mut events) = registry.events_buffer().lock() {
-                events.push(NetEvent::RawCapture { frame, pid });
+            let raw = RawEvent {
+                event_id: record.event_id(),
+                pid: record.process_id(),
+                timestamp,
+                data,
+            };
+            if let Some(event) = parser.parse(&raw) {
+                if let Ok(mut events) = registry.events_buffer().lock() {
+                    events.push(event);
+                }
             }
         })
         .build()

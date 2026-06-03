@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 99 / 120
+//! **Line budget**: 100 / 120
 
 pub mod event_loop;
 pub mod provider;
@@ -57,7 +57,9 @@ pub struct CaptureConfig {
 /// Returns [`EtwardenError`] if the ETW session fails.
 pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
-    let provider = build_tcpip_provider(Arc::clone(&registry));
+    let has_pcap = config.pcap_sink.is_some();
+    let correlator = Arc::new(Correlator::new());
+    let provider = build_tcpip_provider(Arc::clone(&registry), Some(Arc::clone(&correlator)));
     let dns_provider = build_dns_client_provider(Arc::clone(&registry));
 
     let mut session_builder = EtwSession::new();
@@ -65,24 +67,22 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     session_builder.add_provider(dns_provider);
 
     // When pcap sink is present, enable NDIS + Correlation providers.
-    let has_pcap = config.pcap_sink.is_some();
     if has_pcap {
         let activity_map = Arc::new(ActivityMap::new());
-        let ndis_provider = build_ndis_provider(Arc::clone(&registry));
+        let ndis_provider = build_ndis_provider(Arc::clone(&registry), Arc::clone(&correlator));
         let correlation_provider = build_correlation_provider(Arc::clone(&activity_map));
         session_builder.add_provider(ndis_provider);
         session_builder.add_provider(correlation_provider);
     }
 
     let running = session_builder.start()?;
-    let correlator = Correlator::new();
     let summary = run_event_loop(
         running,
         &registry,
         &config.filters,
         config.emitter.as_mut(),
         config.pcap_sink.as_mut(),
-        Some(&correlator),
+        Some(correlator.as_ref()),
         config.duration,
         config.stop_signal.as_deref(),
     )?;

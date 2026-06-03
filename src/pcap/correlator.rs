@@ -5,11 +5,11 @@
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 60 / 80
+//! **Line budget**: 110 / 140
 
 use std::{collections::HashMap, sync::Mutex};
 
-use crate::parser::types::FiveTuple;
+use crate::parser::types::{FiveTuple, NetEvent, Protocol};
 
 // ---------------------------------------------------------------------------
 // Correlator
@@ -35,7 +35,25 @@ impl Correlator {
     /// Registers a connection from a TCPIP event.
     pub fn register_connection(&self, pid: u32, tuple: FiveTuple) {
         if let Ok(mut map) = self.map.lock() {
+            let reverse = reverse_tuple(&tuple);
             map.insert(tuple, pid);
+            map.insert(reverse, pid);
+        }
+    }
+
+    /// Registers a TCP connect event, ignoring other event kinds.
+    pub fn register_event(&self, event: &NetEvent) {
+        if let NetEvent::Connect {
+            pid,
+            proto,
+            src,
+            dst,
+            ..
+        } = event
+        {
+            if let Some(tuple) = parse_tuple_from_event(src, dst, *proto) {
+                self.register_connection(*pid, tuple);
+            }
         }
     }
 
@@ -44,7 +62,7 @@ impl Correlator {
         self.map.lock().ok()?.get(tuple).copied()
     }
 
-    /// Returns the number of registered connections.
+    /// Returns the number of registered tuple mappings.
     pub fn len(&self) -> usize {
         self.map.lock().map_or(0, |m| m.len())
     }
@@ -53,6 +71,41 @@ impl Correlator {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+}
+
+fn reverse_tuple(tuple: &FiveTuple) -> FiveTuple {
+    FiveTuple {
+        src_ip: tuple.dst_ip.clone(),
+        src_port: tuple.dst_port,
+        dst_ip: tuple.src_ip.clone(),
+        dst_port: tuple.src_port,
+        protocol: tuple.protocol,
+    }
+}
+
+fn parse_tuple_from_event(src: &str, dst: &str, proto: Protocol) -> Option<FiveTuple> {
+    let (src_ip, src_port) = parse_addr_port(src)?;
+    let (dst_ip, dst_port) = parse_addr_port(dst)?;
+    Some(FiveTuple {
+        src_ip,
+        src_port,
+        dst_ip,
+        dst_port,
+        protocol: proto,
+    })
+}
+
+fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
+    if let Some(close) = addr.find(']') {
+        let ip = addr[1..close].to_string();
+        let port = addr.get(close + 2..)?.parse().ok()?;
+        return Some((ip, port));
+    }
+
+    let colon = addr.rfind(':')?;
+    let ip = addr[..colon].to_string();
+    let port = addr[colon + 1..].parse().ok()?;
+    Some((ip, port))
 }
 
 impl Default for Correlator {
@@ -89,6 +142,32 @@ mod tests {
     }
 
     #[test]
+    fn register_resolves_reverse_direction() {
+        let corr = Correlator::new();
+        let t = tuple("10.0.0.1", 1234, "10.0.0.2", 80);
+        let r = tuple("10.0.0.2", 80, "10.0.0.1", 1234);
+        corr.register_connection(42, t);
+        assert_eq!(corr.resolve_pid(&r), Some(42));
+    }
+
+    #[test]
+    fn register_event_from_connect() {
+        let corr = Correlator::new();
+        let event = NetEvent::Connect {
+            timestamp: chrono::Utc::now(),
+            pid: 42,
+            proto: Protocol::Tcp,
+            src: "10.0.0.1:1234".into(),
+            dst: "10.0.0.2:80".into(),
+            bytes_out: 0,
+            bytes_in: 0,
+        };
+        let t = tuple("10.0.0.1", 1234, "10.0.0.2", 80);
+        corr.register_event(&event);
+        assert_eq!(corr.resolve_pid(&t), Some(42));
+    }
+
+    #[test]
     fn unknown_tuple_returns_none() {
         let corr = Correlator::new();
         let t = tuple("10.0.0.1", 1234, "10.0.0.2", 80);
@@ -109,7 +188,7 @@ mod tests {
         let corr = Correlator::new();
         assert!(corr.is_empty());
         corr.register_connection(1, tuple("a", 1, "b", 2));
-        assert_eq!(corr.len(), 1);
+        assert_eq!(corr.len(), 2);
         assert!(!corr.is_empty());
     }
 }

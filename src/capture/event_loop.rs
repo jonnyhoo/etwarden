@@ -5,7 +5,7 @@
 //! **Dependencies**: `capture::session`, `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 199 / 200
+//! **Line budget**: 160 / 180
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -128,21 +128,8 @@ fn drain_events(
             continue;
         }
 
-        // Register Connect events in the correlator for NDIS PID resolution.
-        if let (
-            Some(corr),
-            NetEvent::Connect {
-                pid,
-                proto,
-                src,
-                dst,
-                ..
-            },
-        ) = (correlator, event)
-        {
-            if let Some(tuple) = parse_tuple_from_event(*pid, src, dst, *proto) {
-                corr.register_connection(*pid, tuple);
-            }
+        if let Some(corr) = correlator {
+            corr.register_event(event);
         }
 
         emitter.emit(event)?;
@@ -160,40 +147,4 @@ fn should_stop(
 ) -> bool {
     duration.is_some_and(|limit| started.elapsed() >= limit)
         || stop_signal.is_some_and(|signal| signal.load(Ordering::SeqCst))
-}
-
-/// Parse a `FiveTuple` from a Connect event's address strings.
-fn parse_tuple_from_event(
-    _pid: u32,
-    src: &str,
-    dst: &str,
-    proto: crate::parser::types::Protocol,
-) -> Option<crate::parser::types::FiveTuple> {
-    use crate::parser::types::FiveTuple;
-
-    let (src_ip, src_port) = parse_addr_port(src)?;
-    let (dst_ip, dst_port) = parse_addr_port(dst)?;
-    Some(FiveTuple {
-        src_ip,
-        src_port,
-        dst_ip,
-        dst_port,
-        protocol: proto,
-    })
-}
-
-/// Split "ip:port" into (`ip_string`, `port_u16`).
-fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
-    // Handle IPv6 bracket notation: [::1]:443
-    if let Some(close) = addr.find(']') {
-        let ip = addr[1..close].to_string();
-        let port_str = addr.get(close + 2..)?;
-        let port = port_str.parse().ok()?;
-        return Some((ip, port));
-    }
-    // IPv4: 192.168.1.1:443
-    let colon = addr.rfind(':')?;
-    let ip = addr[..colon].to_string();
-    let port = addr[colon + 1..].parse().ok()?;
-    Some((ip, port))
 }
