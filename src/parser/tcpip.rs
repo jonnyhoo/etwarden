@@ -112,7 +112,11 @@ fn fmt_ipv6(buf: &[u8]) -> Option<String> {
 }
 
 fn fmt_addr_port(ip: &str, port: u16) -> String {
-    format!("{ip}:{port}")
+    if ip.contains(':') {
+        format!("[{ip}]:{port}")
+    } else {
+        format!("{ip}:{port}")
+    }
 }
 
 fn event_pid(d: &[u8]) -> Option<u32> {
@@ -412,8 +416,8 @@ mod tests {
         };
         assert_eq!(pid, 5678);
         assert_eq!(proto, Protocol::Tcp);
-        assert!(src.contains("fe80::1"), "src={src}");
-        assert!(dst.contains("::1"), "dst={dst}");
+        assert_eq!(src, "[fe80::1]:4802");
+        assert_eq!(dst, "[::1]:443");
     }
 
     #[test]
