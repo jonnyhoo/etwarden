@@ -7,7 +7,7 @@
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 590 / 640
+//! **Line budget**: 610 / 680
 
 use std::net::IpAddr;
 
@@ -148,7 +148,7 @@ pub fn event_to_line(event: &NetEvent) -> OutputLine {
 /// * `event` — The parsed network event to convert.
 /// * `process_name` — Optional resolved process name.
 /// * `scope_override` — Optional pre-computed scope label; if `None`,
-///   scope is auto-detected from the destination address.
+///   scope is auto-detected from the remote address.
 ///
 /// # Returns
 /// An `OutputLine` with enrichment fields populated when available.
@@ -168,7 +168,7 @@ pub fn event_to_line_enriched(
             bytes_out,
             bytes_in,
         } => {
-            let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
+            let scope = scope_override.or_else(|| scope_from_addr(dst));
             OutputLine::Event(EventLine {
                 timestamp,
                 pid,
@@ -191,7 +191,7 @@ pub fn event_to_line_enriched(
             bytes_out,
             bytes_in,
         } => {
-            let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
+            let scope = scope_override.or_else(|| scope_from_addr(dst));
             OutputLine::Event(EventLine {
                 timestamp,
                 pid,
@@ -214,7 +214,7 @@ pub fn event_to_line_enriched(
             bytes_out,
             bytes_in,
         } => {
-            let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
+            let scope = scope_override.or_else(|| scope_from_addr(dst));
             OutputLine::Event(EventLine {
                 timestamp,
                 pid,
@@ -237,7 +237,7 @@ pub fn event_to_line_enriched(
             bytes_out,
             bytes_in,
         } => {
-            let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
+            let scope = scope_override.or_else(|| scope_from_addr(src));
             OutputLine::Event(EventLine {
                 timestamp,
                 pid,
@@ -296,17 +296,9 @@ pub fn event_to_line_enriched(
     }
 }
 
-/// Classifies the remote address scope from src/dst strings.
-///
-/// Attempts to parse the "remote" side of a connection. For connect/send
-/// events the remote is `dst`; for recv events the remote is `src`.
-/// Falls back to `dst` if parsing fails.
-fn scope_from_addrs(src: &str, dst: &str) -> Option<String> {
-    let dst_ip = parse_ip_from_addr(dst);
-    let src_ip = parse_ip_from_addr(src);
-
-    // Prefer dst as remote (covers connect/send/recv from server perspective)
-    let remote_ip = dst_ip.or(src_ip)?;
+/// Classifies the remote address scope from an addr:port string.
+fn scope_from_addr(addr: &str) -> Option<String> {
+    let remote_ip = parse_ip_from_addr(addr)?;
     Some(classify::classify(remote_ip).label().to_string())
 }
 
@@ -543,6 +535,24 @@ mod tests {
             unreachable!()
         };
         assert_eq!(line.scope, Some("LOOPBACK".into()));
+    }
+
+    #[test]
+    fn recv_scope_uses_remote_source() {
+        let event = NetEvent::Recv {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            proto: Protocol::Udp,
+            src: "8.8.8.8:53".into(),
+            dst: "10.0.0.2:54321".into(),
+            bytes_out: 0,
+            bytes_in: 128,
+        };
+        let line = event_to_line(&event);
+        let OutputLine::Event(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.scope, Some("PUBLIC".into()));
     }
 
     #[test]

@@ -11,5 +11,5 @@ expression: line
   "event": "recv",
   "bytes_out": 0,
   "bytes_in": 128,
-  "scope": "PRIVATE"
+  "scope": "PUBLIC"
 }
