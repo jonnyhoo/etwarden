@@ -6,7 +6,7 @@
 //! **Dependencies**: `ferrisetw`, `parser::*`, `parser::dns_codes`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 398 / 450
+//! **Line budget**: 430 / 500
 
 use std::sync::Arc;
 
@@ -20,7 +20,8 @@ use crate::{
         tcpip::{
             EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
             EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
-            EVENT_ID_TCP_SEND_IPV4, EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
+            EVENT_ID_TCP_RETRANSMIT_IPV4, EVENT_ID_TCP_RETRANSMIT_IPV6, EVENT_ID_TCP_SEND_IPV4,
+            EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
         },
         types::{NetEvent, Protocol, RawEvent},
         EventParser, ParserRegistry,
@@ -32,9 +33,10 @@ use crate::{
 // build_tcpip_provider
 // ---------------------------------------------------------------------------
 
-/// Builds the Microsoft-Windows-TCPIP ETW provider with a callback that
-/// parses events using ferrisetw's `Parser` and dispatches `NetEvent`s
-/// to the given `ParserRegistry` (used as a shared event buffer).
+/// Builds the Microsoft-Windows-Kernel-Network ETW provider.
+///
+/// Parses events using ferrisetw's `Parser` and dispatches `NetEvent`s
+/// to the given `ParserRegistry`.
 pub fn build_tcpip_provider(
     registry: Arc<ParserRegistry>,
     correlator: Option<Arc<Correlator>>,
@@ -57,12 +59,15 @@ pub fn build_tcpip_provider(
 // Parsing helpers (using ferrisetw Parser)
 // ---------------------------------------------------------------------------
 
-/// Parses a TCPIP ETW event record into a `NetEvent` using ferrisetw's schema parser.
+/// Parses a Kernel-Network TCP ETW event record.
+///
+/// Uses ferrisetw's schema parser so the event PID comes from the manifest
+/// `PID` field rather than the ETW header process ID.
 fn parse_tcpip_event(record: &EventRecord, locator: &SchemaLocator) -> Option<NetEvent> {
     let schema = locator.event_schema(record).ok()?;
     let parser = Parser::create(record, &schema);
     let event_id = record.event_id();
-    let pid = record.process_id();
+    let pid = parse_kernel_network_pid(&parser)?;
     let timestamp = chrono::Utc::now();
 
     match event_id {
@@ -70,12 +75,20 @@ fn parse_tcpip_event(record: &EventRecord, locator: &SchemaLocator) -> Option<Ne
         EVENT_ID_TCP_CONNECT_IPV6 => parse_connect_v6(&parser, pid, timestamp),
         EVENT_ID_TCP_DISCONNECT_IPV4 => parse_disconnect_v4(&parser, pid, timestamp),
         EVENT_ID_TCP_DISCONNECT_IPV6 => parse_disconnect_v6(&parser, pid, timestamp),
-        EVENT_ID_TCP_SEND_IPV4 => parse_send_v4(&parser, pid, timestamp),
-        EVENT_ID_TCP_SEND_IPV6 => parse_send_v6(&parser, pid, timestamp),
+        EVENT_ID_TCP_SEND_IPV4 | EVENT_ID_TCP_RETRANSMIT_IPV4 => {
+            parse_send_v4(&parser, pid, timestamp)
+        }
+        EVENT_ID_TCP_SEND_IPV6 | EVENT_ID_TCP_RETRANSMIT_IPV6 => {
+            parse_send_v6(&parser, pid, timestamp)
+        }
         EVENT_ID_TCP_RECV_IPV4 => parse_recv_v4(&parser, pid, timestamp),
         EVENT_ID_TCP_RECV_IPV6 => parse_recv_v6(&parser, pid, timestamp),
         _ => None,
     }
+}
+
+fn parse_kernel_network_pid(parser: &Parser<'_, '_>) -> Option<u32> {
+    parser.try_parse("PID").ok()
 }
 
 fn parse_connect_v4(

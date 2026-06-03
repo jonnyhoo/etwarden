@@ -1,11 +1,11 @@
 //! # `parser::tcpip`
 //!
-//! **Purpose**: Parses Microsoft-Windows-TCPIP ETW events into `NetEvent`.
+//! **Purpose**: Parses Microsoft-Windows-Kernel-Network TCP ETW events into `NetEvent`.
 //! **Public API**: `struct TcpIpParser` (implements `EventParser`)
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 475 / 500
+//! **Line budget**: 480 / 540
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -21,24 +21,28 @@ use crate::parser::{
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Microsoft-Windows-TCPIP provider GUID.
-pub const PROVIDER_TCPIP: &str = "2F07E2EE-15DB-40F1-90EF-9D7BA282188A";
+/// Microsoft-Windows-Kernel-Network provider GUID.
+pub const PROVIDER_TCPIP: &str = "7DD42A49-5329-4832-8DFD-43D979153A88";
 
-// Event IDs from the TCPIP provider manifest.
-pub const EVENT_ID_TCP_CONNECT_IPV4: u16 = 10;
-pub const EVENT_ID_TCP_CONNECT_IPV6: u16 = 26;
-pub const EVENT_ID_TCP_DISCONNECT_IPV4: u16 = 11;
-pub const EVENT_ID_TCP_DISCONNECT_IPV6: u16 = 27;
-pub const EVENT_ID_TCP_SEND_IPV4: u16 = 14;
-pub const EVENT_ID_TCP_SEND_IPV6: u16 = 30;
-pub const EVENT_ID_TCP_RECV_IPV4: u16 = 15;
-pub const EVENT_ID_TCP_RECV_IPV6: u16 = 31;
+// Event IDs from the Microsoft-Windows-Kernel-Network manifest.
+pub const EVENT_ID_TCP_SEND_IPV4: u16 = 10;
+pub const EVENT_ID_TCP_RECV_IPV4: u16 = 11;
+pub const EVENT_ID_TCP_CONNECT_IPV4: u16 = 12;
+pub const EVENT_ID_TCP_DISCONNECT_IPV4: u16 = 13;
+pub const EVENT_ID_TCP_RETRANSMIT_IPV4: u16 = 14;
+pub const EVENT_ID_TCP_ESTABLISHED_IPV4: u16 = 15;
+pub const EVENT_ID_TCP_SEND_IPV6: u16 = 26;
+pub const EVENT_ID_TCP_RECV_IPV6: u16 = 27;
+pub const EVENT_ID_TCP_CONNECT_IPV6: u16 = 28;
+pub const EVENT_ID_TCP_DISCONNECT_IPV6: u16 = 29;
+pub const EVENT_ID_TCP_RETRANSMIT_IPV6: u16 = 30;
+pub const EVENT_ID_TCP_ESTABLISHED_IPV6: u16 = 31;
 
 // ---------------------------------------------------------------------------
 // TcpIpParser
 // ---------------------------------------------------------------------------
 
-/// Parses ETW events from the Microsoft-Windows-TCPIP provider.
+/// Parses ETW events from the Microsoft-Windows-Kernel-Network provider.
 ///
 /// Handles TCP connect (IPv4/IPv6), disconnect, send, and recv events.
 /// The raw event `data` buffer is parsed at fixed offsets matching the
@@ -56,8 +60,12 @@ impl EventParser for TcpIpParser {
             EVENT_ID_TCP_CONNECT_IPV6 => parse_connect_v6(raw),
             EVENT_ID_TCP_DISCONNECT_IPV4 => parse_disconnect_v4(raw),
             EVENT_ID_TCP_DISCONNECT_IPV6 => parse_disconnect_v6(raw),
-            EVENT_ID_TCP_SEND_IPV4 => parse_send_recv_v4(raw, SendRecv::Send),
-            EVENT_ID_TCP_SEND_IPV6 => parse_send_recv_v6(raw, SendRecv::Send),
+            EVENT_ID_TCP_SEND_IPV4 | EVENT_ID_TCP_RETRANSMIT_IPV4 => {
+                parse_send_recv_v4(raw, SendRecv::Send)
+            }
+            EVENT_ID_TCP_SEND_IPV6 | EVENT_ID_TCP_RETRANSMIT_IPV6 => {
+                parse_send_recv_v6(raw, SendRecv::Send)
+            }
             EVENT_ID_TCP_RECV_IPV4 => parse_send_recv_v4(raw, SendRecv::Recv),
             EVENT_ID_TCP_RECV_IPV6 => parse_send_recv_v6(raw, SendRecv::Recv),
             _ => None,
@@ -69,17 +77,13 @@ impl EventParser for TcpIpParser {
 // IPv4 helpers
 // ---------------------------------------------------------------------------
 
-/// Layout of TCP Connect/Disconnect IPv4 (event IDs 10, 11, 14, 15):
+/// Common Kernel-Network TCP IPv4 layout prefix:
 ///   offset 0:  PID       (u32)
-///   offset 4:  size      (u32) — only on connect
+///   offset 4:  size      (u32)
 ///   offset 8:  daddr     (u32)
 ///   offset 12: saddr     (u32)
 ///   offset 16: dport     (u16)
 ///   offset 18: sport     (u16)
-///   offset 20: `conn_id`   (u64) — only on connect
-///
-/// For connect: PID(4) + size(4) + daddr(4) + saddr(4) + dport(2) + sport(2) + `conn_id(8)` = 28
-/// For disconnect/send/recv: PID(4) + size(4) + daddr(4) + saddr(4) + dport(2) + sport(2) = 20
 fn read_u32(buf: &[u8], offset: usize) -> Option<u32> {
     buf.get(offset..offset + 4)
         .map(|b| u32::from_ne_bytes([b[0], b[1], b[2], b[3]]))
@@ -109,7 +113,7 @@ fn fmt_addr_port(ip: &str, port: u16) -> String {
 
 fn parse_connect_v4(raw: &RawEvent) -> Option<NetEvent> {
     let d = &raw.data;
-    if d.len() < 28 {
+    if d.len() < 20 {
         return None;
     }
     let _size = read_u32(d, 4)?;
@@ -117,7 +121,6 @@ fn parse_connect_v4(raw: &RawEvent) -> Option<NetEvent> {
     let saddr = read_u32(d, 12)?;
     let dport = read_u16(d, 16)?;
     let sport = read_u16(d, 18)?;
-    // conn_id at offset 20 (u64) — not used yet
 
     Some(NetEvent::Connect {
         timestamp: raw.timestamp,
@@ -132,8 +135,8 @@ fn parse_connect_v4(raw: &RawEvent) -> Option<NetEvent> {
 
 fn parse_connect_v6(raw: &RawEvent) -> Option<NetEvent> {
     let d = &raw.data;
-    // PID(4) + size(4) + daddr(16) + saddr(16) + dport(2) + sport(2) + conn_id(8) = 52
-    if d.len() < 52 {
+    // PID(4) + size(4) + daddr(16) + saddr(16) + dport(2) + sport(2) = 44.
+    if d.len() < 44 {
         return None;
     }
     let daddr = d.get(8..24)?;
