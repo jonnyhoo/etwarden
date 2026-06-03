@@ -316,6 +316,9 @@ fn parse_ip_from_addr(addr: &str) -> Option<IpAddr> {
     }
     // IPv4: addr:port — split on last ':'
     let colon = addr.rfind(':')?;
+    if addr[..colon].contains(':') {
+        return None;
+    }
     addr.get(colon + 1..)?.parse::<u16>().ok()?;
     let ip_str = &addr[..colon];
     ip_str.parse().ok()
@@ -598,6 +601,7 @@ mod tests {
         assert_eq!(parse_ip_from_addr("192.168.1.1:http"), None);
         assert_eq!(parse_ip_from_addr("[::1]"), None);
         assert_eq!(parse_ip_from_addr("[::1]:http"), None);
+        assert_eq!(parse_ip_from_addr("::1:443"), None);
     }
 
     #[test]
