@@ -5,7 +5,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 62 / 100
+//! **Line budget**: 58 / 100
 
 use clap::Parser;
 
@@ -32,10 +32,6 @@ pub struct Cli {
     /// Write raw packets to a pcapng file.
     #[arg(long)]
     pub pcap_out: Option<String>,
-
-    /// Pretty-print JSON output (for debugging).
-    #[arg(long)]
-    pub json_pretty: bool,
 }
 
 /// How to target the process to monitor.
@@ -93,8 +89,11 @@ mod tests {
     }
 
     #[test]
-    fn cli_rejects_invalid_pid() {
+    fn cli_rejects_invalid_args() {
         let result = Cli::try_parse_from(["etwarden", "--pid", "abc"]);
+        assert!(result.is_err());
+
+        let result = Cli::try_parse_from(["etwarden", "--pid", "1", "--json-pretty"]);
         assert!(result.is_err());
     }
 }
