@@ -2,11 +2,12 @@
 //!
 //! **Purpose**: Stable agent-contract serde types for NDJSON output.
 //! **Public API**: `struct EventLine`, `struct DnsEventLine`, `struct SummaryLine`,
-//!                `enum OutputLine`, `fn event_to_line`, `fn event_to_line_enriched`
+//!                `struct ErrorLine`, `enum OutputLine`, `fn event_to_line`,
+//!                `fn event_to_line_enriched`
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 556 / 600
+//! **Line budget**: 590 / 640
 
 use std::net::IpAddr;
 
@@ -46,7 +47,7 @@ pub struct EventLine {
     pub process_name: Option<String>,
 }
 
-/// A DNS event line in the agent contract (from Microsoft-Windows-DNS-Client ETW).
+/// A DNS event line in the agent contract.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DnsEventLine {
     /// ISO 8601 timestamp.
@@ -97,13 +98,35 @@ pub struct SummaryLine {
     pub pcap_written: bool,
 }
 
-/// Top-level output line — either an event, a DNS event, or the final summary.
+/// A terminal error line written to stdout before returning an error.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ErrorLine {
+    /// Discriminator: always `"error"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Human-readable error message.
+    pub message: String,
+}
+
+impl ErrorLine {
+    /// Creates an error line with the stable `type` discriminator.
+    #[must_use]
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            kind: "error".into(),
+            message: message.into(),
+        }
+    }
+}
+
+/// Top-level output line — event, DNS event, final summary, or terminal error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum OutputLine {
     Event(EventLine),
     DnsEvent(DnsEventLine),
     Summary(SummaryLine),
+    Error(ErrorLine),
 }
 
 /// Converts a `NetEvent` into an `EventLine` for output.
@@ -388,6 +411,25 @@ mod tests {
         let json = serde_json::to_string(&summary).expect("serialize");
         let back: SummaryLine = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(summary, back);
+    }
+
+    #[test]
+    fn error_line_serializes() {
+        let line = ErrorLine::new("capture failed");
+        let json = serde_json::to_string(&line).expect("serialize");
+        assert!(json.contains("\"type\":\"error\""), "actual: {json}");
+        assert!(
+            json.contains("\"message\":\"capture failed\""),
+            "actual: {json}"
+        );
+    }
+
+    #[test]
+    fn output_line_error_roundtrip() {
+        let output = OutputLine::Error(ErrorLine::new("capture failed"));
+        let json = serde_json::to_string(&output).expect("serialize");
+        let back: OutputLine = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(output, back);
     }
 
     #[test]

@@ -6,11 +6,11 @@
 //! **Dependencies**: `etwarden`, `insta`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 149 / 150
+//! **Line budget**: 157 / 180
 
 use chrono::{TimeZone, Utc};
 use etwarden::{
-    output::schema::{event_to_line, OutputLine, SummaryLine},
+    output::schema::{event_to_line, ErrorLine, OutputLine, SummaryLine},
     parser::types::{NetEvent, Protocol},
 };
 
@@ -146,4 +146,10 @@ fn snapshot_summary_line() {
     };
     let output = OutputLine::Summary(summary);
     insta::assert_json_snapshot!("output_line_summary", output);
+}
+
+#[test]
+fn snapshot_error_line() {
+    let output = OutputLine::Error(ErrorLine::new("capture failed"));
+    insta::assert_json_snapshot!("output_line_error", output);
 }

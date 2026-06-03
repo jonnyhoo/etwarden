@@ -1,0 +1,8 @@
+---
+source: tests/schema_compat.rs
+expression: output
+---
+{
+  "type": "error",
+  "message": "capture failed"
+}
