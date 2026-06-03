@@ -185,16 +185,19 @@ fn parse_question(
 }
 
 /// Walk answer records, extracting A/AAAA response IPs.
-fn walk_a_aaaa_records(payload: &[u8], start: usize, count: usize, ips: &mut Vec<IpAddr>) -> usize {
+fn walk_a_aaaa_records(
+    payload: &[u8],
+    start: usize,
+    count: usize,
+    ips: &mut Vec<IpAddr>,
+) -> Option<usize> {
     let mut offset = start;
     let count = count.min(MAX_ANSWERS_TO_PARSE);
     for _ in 0..count {
-        let Some(after_name) = skip_dns_name(payload, offset) else {
-            return offset;
-        };
+        let after_name = skip_dns_name(payload, offset)?;
         // TYPE(2) + CLASS(2) + TTL(4) + RDLENGTH(2) = 10
         if after_name.checked_add(10).is_none_or(|e| e > payload.len()) {
-            return offset;
+            return None;
         }
         let atype = u16::from_be_bytes([payload[after_name], payload[after_name + 1]]);
         let rdlength =
@@ -202,7 +205,7 @@ fn walk_a_aaaa_records(payload: &[u8], start: usize, count: usize, ips: &mut Vec
         let rdata_start = after_name + 10;
         let rdata_end = match rdata_start.checked_add(rdlength) {
             Some(e) if e <= payload.len() => e,
-            _ => return offset,
+            _ => return None,
         };
 
         if ips.len() < MAX_RESPONSE_IPS_PER_PACKET {
@@ -224,7 +227,7 @@ fn walk_a_aaaa_records(payload: &[u8], start: usize, count: usize, ips: &mut Vec
         }
         offset = rdata_end;
     }
-    offset
+    Some(offset)
 }
 
 // ---------------------------------------------------------------------------
@@ -255,7 +258,7 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
 
     let mut response_ips = Vec::new();
     if ancount > 0 && is_response {
-        walk_a_aaaa_records(payload, offset, ancount, &mut response_ips);
+        walk_a_aaaa_records(payload, offset, ancount, &mut response_ips)?;
     }
 
     Some(DnsInfo {
@@ -356,6 +359,14 @@ mod tests {
         let pkt = build_response_a("example.com", 1, &[&[1, 1, 1, 1], &[1, 0, 0, 1]]);
         let info = analyze_dns(&pkt).expect("parse");
         assert_eq!(info.response_ips.len(), 2);
+    }
+
+    #[test]
+    fn truncated_answer_returns_none() {
+        let mut pkt = build_response_a("example.com", 1, &[&[93, 184, 216, 34]]);
+        pkt.truncate(pkt.len() - 2);
+
+        assert!(analyze_dns(&pkt).is_none());
     }
 
     #[test]
