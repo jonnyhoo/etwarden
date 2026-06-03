@@ -188,8 +188,8 @@ impl ConnectionTracker {
             });
 
         // Update byte counters.
-        conn.bytes_out += bytes_out;
-        conn.bytes_in += bytes_in;
+        conn.bytes_out = conn.bytes_out.saturating_add(bytes_out);
+        conn.bytes_in = conn.bytes_in.saturating_add(bytes_in);
         conn.last_seen = now;
 
         // Update TCP state for disconnect events.
@@ -404,6 +404,18 @@ mod tests {
         let conns = tracker.snapshot();
         assert_eq!(conns.len(), 1);
         assert_eq!(conns[0].bytes_out, 300);
+    }
+
+    #[test]
+    fn ingest_saturates_byte_counters() {
+        let tracker = ConnectionTracker::new();
+        let src = "192.168.1.1:50234";
+        let dst = "93.184.216.34:443";
+        tracker.ingest(&connect_event(42, src, dst));
+        tracker.ingest(&send_event(42, src, dst, u64::MAX));
+        tracker.ingest(&send_event(42, src, dst, 1));
+
+        assert_eq!(tracker.snapshot()[0].bytes_out, u64::MAX);
     }
 
     #[test]
