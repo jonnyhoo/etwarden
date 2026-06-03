@@ -11,6 +11,8 @@ use std::{collections::HashMap, sync::Mutex};
 
 use crate::parser::types::{FiveTuple, NetEvent, Protocol};
 
+const DEFAULT_MAX_MAPPINGS: usize = 20_000;
+
 // ---------------------------------------------------------------------------
 // Correlator
 // ---------------------------------------------------------------------------
@@ -21,21 +23,41 @@ use crate::parser::types::{FiveTuple, NetEvent, Protocol};
 /// NDIS events call `resolve_pid` to look up the owning process.
 pub struct Correlator {
     map: Mutex<HashMap<FiveTuple, u32>>,
+    max_mappings: usize,
 }
 
 impl Correlator {
     /// Creates an empty correlator.
     #[must_use]
     pub fn new() -> Self {
+        Self::with_max_mappings(DEFAULT_MAX_MAPPINGS)
+    }
+
+    /// Creates an empty correlator with a maximum mapping count.
+    #[must_use]
+    pub fn with_max_mappings(max_mappings: usize) -> Self {
         Self {
             map: Mutex::new(HashMap::new()),
+            max_mappings,
         }
     }
 
     /// Registers a connection from a TCPIP event.
     pub fn register_connection(&self, pid: u32, tuple: FiveTuple) {
+        if self.max_mappings < 2 {
+            return;
+        }
         if let Ok(mut map) = self.map.lock() {
             let reverse = reverse_tuple(&tuple);
+            let is_new = !map.contains_key(&tuple) && !map.contains_key(&reverse);
+            if is_new {
+                evict_until(
+                    &mut map,
+                    self.max_mappings.saturating_sub(2),
+                    &tuple,
+                    &reverse,
+                );
+            }
             map.insert(tuple, pid);
             map.insert(reverse, pid);
         }
@@ -94,6 +116,22 @@ fn event_tuple_parts(event: &NetEvent) -> Option<(u32, Protocol, &str, &str)> {
         | NetEvent::RawCapture { .. }
         | NetEvent::DnsQuery { .. }
         | NetEvent::DnsResponse { .. } => None,
+    }
+}
+
+fn evict_until(
+    map: &mut HashMap<FiveTuple, u32>,
+    target_len: usize,
+    keep_a: &FiveTuple,
+    keep_b: &FiveTuple,
+) {
+    while map.len() > target_len {
+        let Some(key) = map.keys().find(|k| *k != keep_a && *k != keep_b).cloned() else {
+            break;
+        };
+        let reverse = reverse_tuple(&key);
+        map.remove(&key);
+        map.remove(&reverse);
     }
 }
 
@@ -237,5 +275,36 @@ mod tests {
         corr.register_connection(1, tuple("a", 1, "b", 2));
         assert_eq!(corr.len(), 2);
         assert!(!corr.is_empty());
+    }
+
+    #[test]
+    fn max_mappings_caps_new_pairs() {
+        let corr = Correlator::with_max_mappings(4);
+        let first = tuple("10.0.0.1", 1000, "10.0.0.2", 80);
+        let second = tuple("10.0.0.3", 1001, "10.0.0.4", 80);
+        let third = tuple("10.0.0.5", 1002, "10.0.0.6", 80);
+
+        corr.register_connection(1, first.clone());
+        corr.register_connection(2, second.clone());
+        corr.register_connection(3, third.clone());
+
+        assert!(corr.len() <= 4);
+        assert_eq!(corr.resolve_pid(&third), Some(3));
+        let first_pid = corr.resolve_pid(&first);
+        let second_pid = corr.resolve_pid(&second);
+        assert!(first_pid.is_none() || second_pid.is_none());
+        assert!(first_pid.is_some() || second_pid.is_some());
+    }
+
+    #[test]
+    fn max_mappings_still_updates_existing_pair() {
+        let corr = Correlator::with_max_mappings(2);
+        let t = tuple("10.0.0.1", 1000, "10.0.0.2", 80);
+
+        corr.register_connection(1, t.clone());
+        corr.register_connection(2, t.clone());
+
+        assert_eq!(corr.len(), 2);
+        assert_eq!(corr.resolve_pid(&t), Some(2));
     }
 }
