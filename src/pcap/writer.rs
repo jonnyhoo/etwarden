@@ -22,6 +22,8 @@ use pcap_file::{
 
 use crate::{error::EtwardenError, parser::types::RawFrame, pcap::PcapSink};
 
+const PCAP_SNAPLEN: u32 = 0xFFFF;
+
 // ---------------------------------------------------------------------------
 // PcapNgWriter
 // ---------------------------------------------------------------------------
@@ -54,7 +56,7 @@ impl PcapNgWriter {
         // Write one IDB for Ethernet frames.
         let idb = InterfaceDescriptionBlock {
             linktype: DataLink::ETHERNET,
-            snaplen: 0xFFFF,
+            snaplen: PCAP_SNAPLEN,
             options: vec![InterfaceDescriptionOption::IfTsResol(9)],
         };
         writer
@@ -68,11 +70,12 @@ impl PcapNgWriter {
 impl PcapSink for PcapNgWriter {
     fn write_frame(&mut self, frame: &RawFrame, pid: u32) -> Result<(), EtwardenError> {
         let timestamp = pcap_timestamp(frame);
+        let frame_len = frame_len_u32(frame.data.len())?;
 
         let epb = EnhancedPacketBlock {
             interface_id: 0,
             timestamp,
-            original_len: u32::try_from(frame.data.len()).unwrap_or(u32::MAX),
+            original_len: frame_len,
             data: Cow::Borrowed(&frame.data),
             options: vec![EnhancedPacketOption::Comment(Cow::Owned(format!(
                 "pid:{pid}"
@@ -85,6 +88,17 @@ impl PcapSink for PcapNgWriter {
 
         Ok(())
     }
+}
+
+fn frame_len_u32(len: usize) -> Result<u32, EtwardenError> {
+    let len = u32::try_from(len)
+        .map_err(|_| EtwardenError::PcapWrite("frame length exceeds u32".into()))?;
+    if len > PCAP_SNAPLEN {
+        return Err(EtwardenError::PcapWrite(format!(
+            "frame length {len} exceeds pcap snaplen {PCAP_SNAPLEN}"
+        )));
+    }
+    Ok(len)
 }
 
 fn pcap_timestamp(frame: &RawFrame) -> Duration {
@@ -176,6 +190,7 @@ mod tests {
         let mut reader = PcapNgReader::new(BufReader::new(file)).expect("reader");
         while let Some(block) = reader.next_block() {
             if let Block::InterfaceDescription(idb) = block.expect("block") {
+                assert_eq!(idb.snaplen, PCAP_SNAPLEN);
                 assert!(idb
                     .options
                     .iter()
@@ -244,5 +259,19 @@ mod tests {
 
         // Should have SHB + IDB + 5 EPBs
         assert!(buf.len() > 100, "expected multiple EPBs");
+    }
+
+    #[test]
+    fn write_frame_rejects_frame_larger_than_snaplen() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("test.pcapng");
+        let mut writer = PcapNgWriter::create(&path).expect("create should succeed");
+        let data = vec![0; PCAP_SNAPLEN as usize + 1];
+
+        let err = writer
+            .write_frame(&test_frame(&data), 1234)
+            .expect_err("oversized frame should fail");
+
+        assert!(err.to_string().contains("exceeds pcap snaplen"));
     }
 }
