@@ -13,9 +13,11 @@ use crate::error::EtwardenError;
 pub struct SpawnResult {
     /// The process ID of the spawned child.
     pub pid: u32,
+    /// The raw child handle — pass to `ProcessMonitor::new()`.
+    pub child: std::process::Child,
 }
 
-/// Spawns a child process and returns its PID without waiting.
+/// Spawns a child process and returns its PID and handle without waiting.
 ///
 /// The command string is split into program + args. Quoted paths are handled
 /// (e.g. `"C:\Program Files\app.exe" --flag`).
@@ -24,7 +26,7 @@ pub struct SpawnResult {
 /// * `cmd` — The command string to execute.
 ///
 /// # Returns
-/// A [`SpawnResult`] containing the child PID.
+/// A [`SpawnResult`] containing the child PID and process handle.
 ///
 /// # Errors
 /// Returns [`EtwardenError::ProcessSpawn`] if the spawn fails.
@@ -35,7 +37,8 @@ pub fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult, EtwardenError> {
         .spawn()
         .map_err(|e| EtwardenError::ProcessSpawn(format!("failed to spawn '{cmd}': {e}")))?;
 
-    Ok(SpawnResult { pid: child.id() })
+    let pid = child.id();
+    Ok(SpawnResult { pid, child })
 }
 
 /// Splits a command string into (program, args).
@@ -134,6 +137,8 @@ mod tests {
         assert!(result.is_ok(), "spawn should succeed");
         let sr = result.expect("spawn cmd should succeed");
         assert!(sr.pid > 0, "PID should be positive");
+        // child should still be accessible
+        assert_eq!(sr.child.id(), sr.pid);
     }
 
     #[test]
