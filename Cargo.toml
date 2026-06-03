@@ -79,6 +79,7 @@ fn_params_excessive_bools = "allow"
 struct_excessive_bools    = "allow"
 significant_drop_tightening = "allow"
 too_many_arguments = "allow"
+too_many_lines     = "allow"
 
 [profile.release]
 opt-level = 3

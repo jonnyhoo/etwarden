@@ -1,12 +1,12 @@
 //! # `output::schema`
 //!
 //! **Purpose**: Stable agent-contract serde types for NDJSON output.
-//! **Public API**: `struct EventLine`, `struct SummaryLine`, `enum OutputLine`,
-//!                `fn event_to_line`, `fn event_to_line_enriched`
+//! **Public API**: `struct EventLine`, `struct DnsEventLine`, `struct SummaryLine`,
+//!                `enum OutputLine`, `fn event_to_line`, `fn event_to_line_enriched`
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 180 / 250
+//! **Line budget**: 220 / 280
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -43,6 +43,36 @@ pub struct EventLine {
     pub process_name: Option<String>,
 }
 
+/// A DNS event line in the agent contract (from Microsoft-Windows-DNS-Client ETW).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DnsEventLine {
+    /// ISO 8601 timestamp.
+    #[serde(rename = "t")]
+    pub timestamp: DateTime<Utc>,
+    /// Process ID that issued the DNS query.
+    pub pid: u32,
+    /// Event type: `dns_query` or `dns_response`.
+    pub event: String,
+    /// Queried domain name.
+    pub domain: String,
+    /// Numeric DNS record type (e.g. 1 = A, 28 = AAAA).
+    pub query_type: u16,
+    /// Human-readable DNS record type name (e.g. "A", "AAAA").
+    pub query_type_name: String,
+    /// DNS status code (response only, 0 for queries).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<u32>,
+    /// Human-readable DNS status name (response only).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_name: Option<String>,
+    /// Resolved IP addresses from the response (response only).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub result_ips: Vec<String>,
+    /// Resolved process name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_name: Option<String>,
+}
+
 /// The final summary line written on capture exit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SummaryLine {
@@ -63,11 +93,12 @@ pub struct SummaryLine {
     pub pcap_written: bool,
 }
 
-/// Top-level output line — either an event or the final summary.
+/// Top-level output line — either an event, a DNS event, or the final summary.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum OutputLine {
     Event(EventLine),
+    DnsEvent(DnsEventLine),
     Summary(SummaryLine),
 }
 
@@ -77,14 +108,14 @@ pub enum OutputLine {
 /// * `event` — The parsed network event to convert.
 ///
 /// # Returns
-/// An `EventLine` ready for NDJSON serialization.
+/// An `OutputLine` ready for NDJSON serialization.
 /// Enrichment fields (`scope`, `process_name`) are `None`.
 #[must_use]
-pub fn event_to_line(event: &NetEvent) -> EventLine {
+pub fn event_to_line(event: &NetEvent) -> OutputLine {
     event_to_line_enriched(event, None, None)
 }
 
-/// Converts a `NetEvent` into an enriched `EventLine`.
+/// Converts a `NetEvent` into an enriched `OutputLine`.
 ///
 /// # Arguments
 /// * `event` — The parsed network event to convert.
@@ -93,13 +124,13 @@ pub fn event_to_line(event: &NetEvent) -> EventLine {
 ///   scope is auto-detected from the destination address.
 ///
 /// # Returns
-/// An `EventLine` with enrichment fields populated when available.
+/// An `OutputLine` with enrichment fields populated when available.
 #[must_use]
 pub fn event_to_line_enriched(
     event: &NetEvent,
     process_name: Option<String>,
     scope_override: Option<String>,
-) -> EventLine {
+) -> OutputLine {
     match *event {
         NetEvent::Connect {
             timestamp,
@@ -111,7 +142,7 @@ pub fn event_to_line_enriched(
             bytes_in,
         } => {
             let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
-            EventLine {
+            OutputLine::Event(EventLine {
                 timestamp,
                 pid,
                 proto,
@@ -122,7 +153,7 @@ pub fn event_to_line_enriched(
                 bytes_in,
                 scope,
                 process_name,
-            }
+            })
         }
         NetEvent::Disconnect {
             timestamp,
@@ -134,7 +165,7 @@ pub fn event_to_line_enriched(
             bytes_in,
         } => {
             let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
-            EventLine {
+            OutputLine::Event(EventLine {
                 timestamp,
                 pid,
                 proto,
@@ -145,7 +176,7 @@ pub fn event_to_line_enriched(
                 bytes_in,
                 scope,
                 process_name,
-            }
+            })
         }
         NetEvent::Send {
             timestamp,
@@ -157,7 +188,7 @@ pub fn event_to_line_enriched(
             bytes_in,
         } => {
             let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
-            EventLine {
+            OutputLine::Event(EventLine {
                 timestamp,
                 pid,
                 proto,
@@ -168,7 +199,7 @@ pub fn event_to_line_enriched(
                 bytes_in,
                 scope,
                 process_name,
-            }
+            })
         }
         NetEvent::Recv {
             timestamp,
@@ -180,7 +211,7 @@ pub fn event_to_line_enriched(
             bytes_in,
         } => {
             let scope = scope_override.or_else(|| scope_from_addrs(src, dst));
-            EventLine {
+            OutputLine::Event(EventLine {
                 timestamp,
                 pid,
                 proto,
@@ -191,11 +222,50 @@ pub fn event_to_line_enriched(
                 bytes_in,
                 scope,
                 process_name,
-            }
+            })
         }
         NetEvent::RawCapture { .. } => {
             unreachable!("RawCapture events are routed to pcap sink, not NDJSON")
         }
+        NetEvent::DnsQuery {
+            timestamp,
+            pid,
+            ref domain,
+            query_type,
+            ref query_type_name,
+        } => OutputLine::DnsEvent(DnsEventLine {
+            timestamp,
+            pid,
+            event: "dns_query".into(),
+            domain: domain.clone(),
+            query_type,
+            query_type_name: query_type_name.clone(),
+            status: None,
+            status_name: None,
+            result_ips: Vec::new(),
+            process_name,
+        }),
+        NetEvent::DnsResponse {
+            timestamp,
+            pid,
+            ref domain,
+            query_type,
+            ref query_type_name,
+            status,
+            ref status_name,
+            ref result_ips,
+        } => OutputLine::DnsEvent(DnsEventLine {
+            timestamp,
+            pid,
+            event: "dns_response".into(),
+            domain: domain.clone(),
+            query_type,
+            query_type_name: query_type_name.clone(),
+            status: Some(status),
+            status_name: Some(status_name.clone()),
+            result_ips: result_ips.clone(),
+            process_name,
+        }),
     }
 }
 
@@ -328,6 +398,9 @@ mod tests {
             bytes_in: 0,
         };
         let line = event_to_line(&event);
+        let OutputLine::Event(line) = line else {
+            unreachable!()
+        };
         assert_eq!(line.event, "connect");
         assert_eq!(line.pid, 1234);
     }
@@ -344,6 +417,9 @@ mod tests {
             bytes_in: 2048,
         };
         let line = event_to_line(&event);
+        let OutputLine::Event(line) = line else {
+            unreachable!()
+        };
         assert_eq!(line.event, "disconnect");
         assert_eq!(line.bytes_out, 512);
     }
@@ -380,6 +456,9 @@ mod tests {
             bytes_in: 0,
         };
         let line = event_to_line_enriched(&event, Some("chrome.exe".into()), None);
+        let OutputLine::Event(line) = line else {
+            unreachable!()
+        };
         assert_eq!(line.scope, Some("PUBLIC".into()));
         assert_eq!(line.process_name, Some("chrome.exe".into()));
     }
@@ -396,6 +475,9 @@ mod tests {
             bytes_in: 0,
         };
         let line = event_to_line(&event);
+        let OutputLine::Event(line) = line else {
+            unreachable!()
+        };
         assert_eq!(line.scope, Some("PRIVATE".into()));
     }
 
@@ -411,6 +493,9 @@ mod tests {
             bytes_in: 0,
         };
         let line = event_to_line(&event);
+        let OutputLine::Event(line) = line else {
+            unreachable!()
+        };
         assert_eq!(line.scope, Some("LOOPBACK".into()));
     }
 

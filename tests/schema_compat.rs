@@ -93,8 +93,7 @@ fn snapshot_recv_event_line() {
 #[test]
 fn snapshot_output_line_event() {
     let line = event_to_line(&connect_event());
-    let output = OutputLine::Event(line);
-    insta::assert_json_snapshot!("output_line_event", output);
+    insta::assert_json_snapshot!("output_line_event", line);
 }
 
 #[test]

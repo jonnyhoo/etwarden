@@ -148,7 +148,9 @@ impl ConnectionTracker {
                 let tuple = parse_tuple_from_addrs(src, dst, *proto)?;
                 (tuple, *pid, *proto, *bytes_out, *bytes_in)
             }
-            NetEvent::RawCapture { .. } => return None,
+            NetEvent::RawCapture { .. }
+            | NetEvent::DnsQuery { .. }
+            | NetEvent::DnsResponse { .. } => return None,
         };
 
         let now = SystemTime::now();

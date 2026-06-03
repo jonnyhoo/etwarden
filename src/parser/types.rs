@@ -75,6 +75,27 @@ pub enum NetEvent {
     },
     /// Raw frame from NDIS provider — routed to pcap sink, not NDJSON.
     RawCapture { frame: RawFrame, pid: u32 },
+    /// DNS query observed via Microsoft-Windows-DNS-Client ETW (`EventID` 3006).
+    DnsQuery {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        domain: String,
+        query_type: u16,
+        query_type_name: String,
+    },
+    /// DNS response observed via Microsoft-Windows-DNS-Client ETW (`EventID` 3008).
+    DnsResponse {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        domain: String,
+        query_type: u16,
+        query_type_name: String,
+        status: u32,
+        status_name: String,
+        result_ips: Vec<String>,
+    },
 }
 
 impl NetEvent {
@@ -86,7 +107,7 @@ impl NetEvent {
             | Self::Disconnect { bytes_out, .. }
             | Self::Send { bytes_out, .. }
             | Self::Recv { bytes_out, .. } => *bytes_out,
-            Self::RawCapture { .. } => 0,
+            Self::RawCapture { .. } | Self::DnsQuery { .. } | Self::DnsResponse { .. } => 0,
         }
     }
 
@@ -98,7 +119,9 @@ impl NetEvent {
             | Self::Disconnect { pid, .. }
             | Self::Send { pid, .. }
             | Self::Recv { pid, .. }
-            | Self::RawCapture { pid, .. } => *pid,
+            | Self::RawCapture { pid, .. }
+            | Self::DnsQuery { pid, .. }
+            | Self::DnsResponse { pid, .. } => *pid,
         }
     }
 
@@ -110,7 +133,7 @@ impl NetEvent {
             | Self::Disconnect { bytes_in, .. }
             | Self::Send { bytes_in, .. }
             | Self::Recv { bytes_in, .. } => *bytes_in,
-            Self::RawCapture { .. } => 0,
+            Self::RawCapture { .. } | Self::DnsQuery { .. } | Self::DnsResponse { .. } => 0,
         }
     }
 }

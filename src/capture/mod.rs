@@ -16,7 +16,8 @@ use std::sync::Arc;
 use crate::{
     capture::{
         event_loop::run_event_loop, provider::build_correlation_provider,
-        provider::build_ndis_provider, provider::build_tcpip_provider, session::EtwSession,
+        provider::build_dns_client_provider, provider::build_ndis_provider,
+        provider::build_tcpip_provider, session::EtwSession,
     },
     error::Result,
     filter::Filter,
@@ -52,9 +53,11 @@ pub struct CaptureConfig {
 pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
     let provider = build_tcpip_provider(Arc::clone(&registry));
+    let dns_provider = build_dns_client_provider(Arc::clone(&registry));
 
     let mut session_builder = EtwSession::new();
     session_builder.add_provider(provider);
+    session_builder.add_provider(dns_provider);
 
     // When pcap sink is present, enable NDIS + Correlation providers.
     let has_pcap = config.pcap_sink.is_some();
