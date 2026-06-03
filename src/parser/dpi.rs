@@ -1,0 +1,386 @@
+//! # `parser::dpi`
+//!
+//! **Purpose**: Deep Packet Inspection dispatch — detects application-layer protocols
+//!   from raw TCP/UDP payloads extracted from NDIS frames.
+//! **Public API**: `DpiResult`, `analyze_tcp_payload`, `analyze_udp_payload`
+//! **Dependencies**: `parser::dns`
+//! **Platform**: `windows-only`
+//! **Privilege**: `none`
+//! **Line budget**: 300 / 350
+
+use crate::parser::dns::{self, DnsInfo};
+use serde::Serialize;
+
+// Well-known ports for DPI protocol detection.
+const PORT_DNS: u16 = 53;
+const PORT_HTTPS: u16 = 443;
+
+/// Result of DPI analysis on a single packet payload.
+#[derive(Debug, Clone, Serialize)]
+pub enum DpiResult {
+    /// DNS query or response detected.
+    Dns(DnsInfo),
+    /// Plaintext HTTP request or response.
+    Http(HttpInfo),
+    /// TLS `ClientHello` with extracted SNI.
+    Tls(TlsInfo),
+}
+
+/// Minimal HTTP information extracted from a plaintext HTTP request/response.
+#[derive(Debug, Clone, Serialize)]
+pub struct HttpInfo {
+    /// Request method (GET, POST, etc.) or `None` for responses.
+    pub method: Option<String>,
+    /// Request URI path or response status line.
+    pub uri_or_status: String,
+    /// Host header value if present.
+    pub host: Option<String>,
+}
+
+/// TLS `ClientHello` information.
+#[derive(Debug, Clone, Serialize)]
+pub struct TlsInfo {
+    /// Server Name Indication hostname extracted from `ClientHello`.
+    pub sni: Option<String>,
+    /// TLS version string (e.g. "TLS 1.3").
+    pub version: Option<String>,
+}
+
+/// Analyze a TCP payload for application-layer protocol detection.
+///
+/// Dispatches to protocol-specific parsers ordered by likelihood and speed.
+/// Returns `None` if no known protocol is detected.
+#[must_use]
+pub fn analyze_tcp_payload(payload: &[u8], src_port: u16, dst_port: u16) -> Option<DpiResult> {
+    if payload.is_empty() {
+        return None;
+    }
+
+    // 1. HTTP detection (fast string prefix matching)
+    if let Some(http_info) = analyze_http(payload) {
+        return Some(DpiResult::Http(http_info));
+    }
+
+    // 2. TLS ClientHello detection (port 443 or handshake signature)
+    if src_port == PORT_HTTPS || dst_port == PORT_HTTPS || is_tls_handshake(payload) {
+        if let Some(tls_info) = analyze_tls_hello(payload) {
+            return Some(DpiResult::Tls(tls_info));
+        }
+    }
+
+    None
+}
+
+/// Analyze a UDP payload for application-layer protocol detection.
+#[must_use]
+pub fn analyze_udp_payload(payload: &[u8], src_port: u16, dst_port: u16) -> Option<DpiResult> {
+    if payload.is_empty() {
+        return None;
+    }
+
+    // 1. DNS (port 53)
+    if src_port == PORT_DNS || dst_port == PORT_DNS {
+        if let Some(dns_info) = dns::analyze_dns(payload) {
+            return Some(DpiResult::Dns(dns_info));
+        }
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------------
+// HTTP detection
+// ---------------------------------------------------------------------------
+
+/// HTTP methods to check for in plaintext traffic.
+const HTTP_METHODS: &[&[u8]] = &[
+    b"GET ",
+    b"POST ",
+    b"PUT ",
+    b"DELETE ",
+    b"HEAD ",
+    b"OPTIONS ",
+    b"PATCH ",
+    b"HTTP/",
+];
+
+/// Detect plaintext HTTP in a TCP payload.
+fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
+    // Quick prefix check before expensive parsing.
+    let starts_with_method = HTTP_METHODS.iter().any(|m| payload.starts_with(m));
+    if !starts_with_method {
+        return None;
+    }
+
+    // Find end of first line.
+    let first_line_end = find_byte(payload, b'\n')?;
+    let first_line = &payload[..first_line_end];
+    let first_line = first_line.strip_suffix(b"\r").unwrap_or(first_line);
+
+    if first_line.starts_with(b"HTTP/") {
+        // Response: "HTTP/1.1 200 OK"
+        let status_line = String::from_utf8_lossy(first_line).to_string();
+        return Some(HttpInfo {
+            method: None,
+            uri_or_status: status_line,
+            host: extract_host_header(payload),
+        });
+    }
+
+    // Request: "GET /path HTTP/1.1"
+    let line_str = String::from_utf8_lossy(first_line);
+    let mut parts = line_str.splitn(3, ' ');
+    let method = parts.next().map(String::from);
+    let uri = parts.next().unwrap_or("/").to_string();
+
+    Some(HttpInfo {
+        method,
+        uri_or_status: uri,
+        host: extract_host_header(payload),
+    })
+}
+
+/// Find first occurrence of a byte in a slice (replaces memchr dependency).
+fn find_byte(haystack: &[u8], needle: u8) -> Option<usize> {
+    haystack.iter().position(|&b| b == needle)
+}
+
+/// Extract the Host header value from an HTTP payload.
+fn extract_host_header(payload: &[u8]) -> Option<String> {
+    let needle = b"Host:";
+    let search_end = payload.len().min(4096);
+    let window = &payload[..search_end];
+
+    let pos = window
+        .windows(needle.len())
+        .position(|w| w.eq_ignore_ascii_case(needle))?;
+
+    let header_start = pos + needle.len();
+    let header_end = find_byte(&window[header_start..], b'\n')?;
+    let value = &window[header_start..header_start + header_end];
+    let value = value
+        .strip_suffix(b"\r")
+        .unwrap_or(value)
+        .trim_ascii_start();
+
+    if value.is_empty() {
+        return None;
+    }
+
+    Some(String::from_utf8_lossy(value).to_string())
+}
+
+// ---------------------------------------------------------------------------
+// TLS ClientHello detection
+// ---------------------------------------------------------------------------
+
+/// Check if the payload starts with a TLS record header (content type 22 = Handshake).
+fn is_tls_handshake(payload: &[u8]) -> bool {
+    // TLS record: ContentType(1) + Version(2) + Length(2) + ...
+    if payload.len() < 5 {
+        return false;
+    }
+    // Content type 22 = Handshake
+    payload[0] == 0x16
+        // Version: 0x0301 (TLS 1.0) or 0x0302 (TLS 1.1) or 0x0303 (TLS 1.2/1.3)
+        && payload[1] == 0x03
+        && (payload[2] >= 0x01 && payload[2] <= 0x03)
+}
+
+/// Parse TLS `ClientHello` to extract SNI and version.
+fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
+    if payload.len() < 43 {
+        return None;
+    }
+
+    // TLS record header: type(1) + version(2) + length(2)
+    let record_version = u16::from_be_bytes([payload[1], payload[2]]);
+
+    // Handshake header starts at offset 5
+    // HandshakeType(1) should be 0x01 (ClientHello)
+    if payload[5] != 0x01 {
+        return None;
+    }
+
+    // Random: 32 bytes starting at offset 11
+    let random_end = 11 + 32;
+    if payload.len() <= random_end {
+        return None;
+    }
+
+    // Session ID length at offset 43
+    let session_id_len = payload[random_end] as usize;
+    let cipher_suites_start = random_end + 1 + session_id_len;
+    if payload.len() <= cipher_suites_start + 1 {
+        return None;
+    }
+
+    // Cipher suites length (2 bytes)
+    let cipher_suites_len = u16::from_be_bytes([
+        payload[cipher_suites_start],
+        payload[cipher_suites_start + 1],
+    ]) as usize;
+    let compression_start = cipher_suites_start + 2 + cipher_suites_len;
+    if payload.len() <= compression_start + 1 {
+        return None;
+    }
+
+    // Compression methods length (1 byte)
+    let compression_len = payload[compression_start] as usize;
+    let extensions_start = compression_start + 1 + compression_len;
+    if payload.len() <= extensions_start + 2 {
+        return None;
+    }
+
+    // Extensions total length (2 bytes)
+    let _extensions_len =
+        u16::from_be_bytes([payload[extensions_start], payload[extensions_start + 1]]) as usize;
+    let mut offset = extensions_start + 2;
+
+    // Walk extensions looking for SNI (type 0x0000)
+    while offset + 4 <= payload.len() {
+        let ext_type = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
+        let ext_len = u16::from_be_bytes([payload[offset + 2], payload[offset + 3]]) as usize;
+        let ext_data_start = offset + 4;
+
+        if ext_type == 0x0000 {
+            // SNI extension
+            return Some(TlsInfo {
+                sni: extract_sni_from_extension(payload, ext_data_start, ext_len),
+                version: Some(tls_version_string(record_version)),
+            });
+        }
+
+        offset = ext_data_start + ext_len;
+    }
+
+    // No SNI found but still a valid TLS handshake
+    Some(TlsInfo {
+        sni: None,
+        version: Some(tls_version_string(record_version)),
+    })
+}
+
+/// Extract the hostname from the SNI extension data.
+fn extract_sni_from_extension(
+    payload: &[u8],
+    ext_data_start: usize,
+    ext_len: usize,
+) -> Option<String> {
+    let ext_end = ext_data_start + ext_len;
+    if ext_end > payload.len() {
+        return None;
+    }
+
+    // SNI list length (2 bytes)
+    if ext_data_start + 2 > payload.len() {
+        return None;
+    }
+    let _list_len = u16::from_be_bytes([payload[ext_data_start], payload[ext_data_start + 1]]);
+    let pos = ext_data_start + 2;
+
+    // First entry: type(1) + length(2) + hostname
+    if pos + 3 > ext_end {
+        return None;
+    }
+    let _ = payload[pos];
+    let entry_len = u16::from_be_bytes([payload[pos + 1], payload[pos + 2]]) as usize;
+    let hostname_start = pos + 3;
+    let hostname_end = hostname_start + entry_len;
+
+    if hostname_end > ext_end || hostname_end > payload.len() {
+        return None;
+    }
+
+    let hostname = &payload[hostname_start..hostname_end];
+    Some(String::from_utf8_lossy(hostname).to_string())
+}
+
+/// Convert TLS record version bytes to a human-readable string.
+fn tls_version_string(version: u16) -> String {
+    match version {
+        0x0301 => "TLS 1.0".to_string(),
+        0x0302 => "TLS 1.1".to_string(),
+        0x0303 => "TLS 1.2/1.3".to_string(),
+        _ => format!("TLS 0x{version:04x}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn http_get_detected() {
+        let payload = b"GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n";
+        let result = analyze_http(payload).expect("should detect HTTP");
+        assert_eq!(result.method.as_deref(), Some("GET"));
+        assert_eq!(result.uri_or_status, "/index.html");
+        assert_eq!(result.host.as_deref(), Some("example.com"));
+    }
+
+    #[test]
+    fn http_response_detected() {
+        let payload = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+        let result = analyze_http(payload).expect("should detect HTTP response");
+        assert!(result.method.is_none());
+        assert!(result.uri_or_status.starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn non_http_returns_none() {
+        let payload = b"random binary data that is not HTTP";
+        assert!(analyze_http(payload).is_none());
+    }
+
+    #[test]
+    fn tls_handshake_detected() {
+        assert!(is_tls_handshake(&[0x16, 0x03, 0x01, 0x00, 0x05]));
+        assert!(!is_tls_handshake(&[0x17, 0x03, 0x01, 0x00, 0x05]));
+    }
+
+    #[test]
+    fn dns_udp_dispatch() {
+        let pkt = build_test_query("example.com", 1);
+        let result = analyze_udp_payload(&pkt, 50234, 53);
+        assert!(result.is_some(), "should detect DNS on port 53");
+    }
+
+    #[test]
+    fn empty_payload_returns_none() {
+        assert!(analyze_tcp_payload(&[], 80, 8080).is_none());
+        assert!(analyze_udp_payload(&[], 53, 53).is_none());
+    }
+
+    #[test]
+    fn extract_host_header_case_insensitive() {
+        let payload = b"GET / HTTP/1.1\r\nhOsT: Example.COM\r\n\r\n";
+        let host = extract_host_header(payload).expect("should find host");
+        assert_eq!(host, "Example.COM");
+    }
+
+    /// Build a minimal DNS query packet for testing.
+    fn build_test_query(name: &str, qtype: u16) -> Vec<u8> {
+        let mut pkt = vec![
+            0x12, 0x34, // ID
+            0x01, 0x00, // flags: standard query
+            0x00, 0x01, // QDCOUNT
+            0x00, 0x00, // ANCOUNT
+            0x00, 0x00, // NSCOUNT
+            0x00, 0x00, // ARCOUNT
+        ];
+        for label in name.split('.') {
+            let bytes = label.as_bytes();
+            pkt.push(u8::try_from(bytes.len()).unwrap_or(255));
+            pkt.extend_from_slice(bytes);
+        }
+        pkt.push(0);
+        pkt.extend_from_slice(&qtype.to_be_bytes());
+        pkt.extend_from_slice(&[0x00, 0x01]);
+        pkt
+    }
+}

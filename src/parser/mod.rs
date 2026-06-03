@@ -9,6 +9,7 @@
 
 pub mod correlation;
 pub mod dns;
+pub mod dpi;
 pub mod ndis;
 pub mod tcp_state;
 pub mod tcpip;
