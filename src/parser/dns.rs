@@ -257,11 +257,15 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
     let ancount = u16::from_be_bytes([payload[6], payload[7]]) as usize;
 
     // Parse first question only (most common case).
-    let (query_name, query_type, offset) = if qdcount > 0 {
+    let (query_name, query_type, mut offset) = if qdcount > 0 {
         parse_question(payload, 12)?
     } else {
         (None, None, 12)
     };
+    for _ in 1..qdcount {
+        let (_, _, next_offset) = parse_question(payload, offset)?;
+        offset = next_offset;
+    }
 
     let mut response_ips = Vec::new();
     if ancount > 0 && is_response {
@@ -366,6 +370,27 @@ mod tests {
         let pkt = build_response_a("example.com", 1, &[&[1, 1, 1, 1], &[1, 0, 0, 1]]);
         let info = analyze_dns(&pkt).expect("parse");
         assert_eq!(info.response_ips.len(), 2);
+    }
+
+    #[test]
+    fn response_with_multiple_questions_skips_to_answers() {
+        let mut pkt = build_query("example.com", 1);
+        pkt[4] = 0x00;
+        pkt[5] = 0x02;
+        pkt[6] = 0x00;
+        pkt[7] = 0x01;
+        pkt.extend_from_slice(&[0x03, b'o', b'r', b'g', 0x00, 0x00, 0x01, 0x00, 0x01]);
+        pkt[2] |= 0x80;
+        pkt.extend_from_slice(&[0xC0, 0x0C]);
+        pkt.extend_from_slice(&[0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2C, 0x00, 0x04]);
+        pkt.extend_from_slice(&[93, 184, 216, 34]);
+
+        let info = analyze_dns(&pkt).expect("parse");
+        assert_eq!(info.query_name.as_deref(), Some("example.com"));
+        assert_eq!(
+            info.response_ips,
+            vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))]
+        );
     }
 
     #[test]
