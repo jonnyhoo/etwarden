@@ -283,33 +283,35 @@ fn extract_sni_from_extension(
     ext_data_start: usize,
     ext_len: usize,
 ) -> Option<String> {
-    let ext_end = ext_data_start + ext_len;
-    if ext_end > payload.len() {
-        return None;
-    }
+    let ext_end = checked_end(ext_data_start, ext_len, payload.len())?;
 
     // SNI list length (2 bytes)
-    if ext_data_start + 2 > payload.len() {
+    let list_len_end = checked_end(ext_data_start, 2, ext_end)?;
+    let list_len = usize::from(u16::from_be_bytes([
+        payload[ext_data_start],
+        payload[ext_data_start + 1],
+    ]));
+    let list_end = checked_end(list_len_end, list_len, ext_end)?;
+    if list_end != ext_end {
         return None;
     }
-    let _list_len = u16::from_be_bytes([payload[ext_data_start], payload[ext_data_start + 1]]);
-    let pos = ext_data_start + 2;
+    let pos = list_len_end;
 
     // First entry: type(1) + length(2) + hostname
-    if pos + 3 > ext_end {
+    checked_end(pos, 3, list_end)?;
+    if payload[pos] != 0 {
         return None;
     }
-    let _ = payload[pos];
-    let entry_len = u16::from_be_bytes([payload[pos + 1], payload[pos + 2]]) as usize;
+    let entry_len = usize::from(u16::from_be_bytes([payload[pos + 1], payload[pos + 2]]));
     let hostname_start = pos + 3;
-    let hostname_end = hostname_start + entry_len;
-
-    if hostname_end > ext_end || hostname_end > payload.len() {
-        return None;
-    }
+    let hostname_end = checked_end(hostname_start, entry_len, list_end)?;
 
     let hostname = &payload[hostname_start..hostname_end];
-    Some(String::from_utf8_lossy(hostname).to_string())
+    if hostname.is_empty() {
+        return None;
+    }
+
+    std::str::from_utf8(hostname).ok().map(str::to_string)
 }
 
 /// Convert TLS record version bytes to a human-readable string.
@@ -387,6 +389,33 @@ mod tests {
             .copy_from_slice(&declared.saturating_add(1).to_be_bytes());
 
         assert!(analyze_tls_hello(&payload).is_none());
+    }
+
+    #[test]
+    fn tls_does_not_extract_sni_when_list_length_mismatches() {
+        let mut payload = build_tls_client_hello("example.com");
+        payload[56..58].copy_from_slice(&1u16.to_be_bytes());
+
+        let result = analyze_tls_hello(&payload).expect("still valid tls");
+        assert!(result.sni.is_none());
+    }
+
+    #[test]
+    fn tls_does_not_extract_non_hostname_sni_entry() {
+        let mut payload = build_tls_client_hello("example.com");
+        payload[58] = 1;
+
+        let result = analyze_tls_hello(&payload).expect("still valid tls");
+        assert!(result.sni.is_none());
+    }
+
+    #[test]
+    fn tls_does_not_extract_invalid_utf8_sni() {
+        let mut payload = build_tls_client_hello("example.com");
+        payload[61] = 0xFF;
+
+        let result = analyze_tls_hello(&payload).expect("still valid tls");
+        assert!(result.sni.is_none());
     }
 
     #[test]
