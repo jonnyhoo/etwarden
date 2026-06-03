@@ -211,15 +211,11 @@ fn walk_a_aaaa_records(
         if ips.len() < MAX_RESPONSE_IPS_PER_PACKET {
             match atype {
                 1 if rdlength == 4 => {
-                    let octets: [u8; 4] = payload[rdata_start..rdata_start + 4]
-                        .try_into()
-                        .expect("rdlength == 4 guarantees 4 bytes");
+                    let octets: [u8; 4] = payload[rdata_start..rdata_end].try_into().ok()?;
                     ips.push(IpAddr::V4(Ipv4Addr::from(octets)));
                 }
                 28 if rdlength == 16 => {
-                    let octets: [u8; 16] = payload[rdata_start..rdata_start + 16]
-                        .try_into()
-                        .expect("rdlength == 16 guarantees 16 bytes");
+                    let octets: [u8; 16] = payload[rdata_start..rdata_end].try_into().ok()?;
                     ips.push(IpAddr::V6(Ipv6Addr::from(octets)));
                 }
                 _ => {}

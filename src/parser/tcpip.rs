@@ -106,9 +106,9 @@ fn fmt_ipv4(raw: u32) -> String {
     Ipv4Addr::from(raw.to_be()).to_string()
 }
 
-fn fmt_ipv6(buf: &[u8]) -> String {
-    let octets: [u8; 16] = buf.try_into().expect("IPv6 buffer must be 16 bytes");
-    Ipv6Addr::from(octets).to_string()
+fn fmt_ipv6(buf: &[u8]) -> Option<String> {
+    let octets: [u8; 16] = buf.try_into().ok()?;
+    Some(Ipv6Addr::from(octets).to_string())
 }
 
 fn fmt_addr_port(ip: &str, port: u16) -> String {
@@ -155,6 +155,8 @@ fn parse_connect_v6(raw: &RawEvent) -> Option<NetEvent> {
     let pid = event_pid(d)?;
     let daddr = d.get(8..24)?;
     let saddr = d.get(24..40)?;
+    let dst_ip = fmt_ipv6(daddr)?;
+    let src_ip = fmt_ipv6(saddr)?;
     let dport = read_u16(d, 40)?;
     let sport = read_u16(d, 42)?;
 
@@ -162,8 +164,8 @@ fn parse_connect_v6(raw: &RawEvent) -> Option<NetEvent> {
         timestamp: raw.timestamp,
         pid,
         proto: Protocol::Tcp,
-        src: fmt_addr_port(&fmt_ipv6(saddr), sport),
-        dst: fmt_addr_port(&fmt_ipv6(daddr), dport),
+        src: fmt_addr_port(&src_ip, sport),
+        dst: fmt_addr_port(&dst_ip, dport),
         bytes_out: 0,
         bytes_in: 0,
     })
@@ -200,6 +202,8 @@ fn parse_disconnect_v6(raw: &RawEvent) -> Option<NetEvent> {
     let pid = event_pid(d)?;
     let daddr = d.get(8..24)?;
     let saddr = d.get(24..40)?;
+    let dst_ip = fmt_ipv6(daddr)?;
+    let src_ip = fmt_ipv6(saddr)?;
     let dport = read_u16(d, 40)?;
     let sport = read_u16(d, 42)?;
 
@@ -207,8 +211,8 @@ fn parse_disconnect_v6(raw: &RawEvent) -> Option<NetEvent> {
         timestamp: raw.timestamp,
         pid,
         proto: Protocol::Tcp,
-        src: fmt_addr_port(&fmt_ipv6(saddr), sport),
-        dst: fmt_addr_port(&fmt_ipv6(daddr), dport),
+        src: fmt_addr_port(&src_ip, sport),
+        dst: fmt_addr_port(&dst_ip, dport),
         bytes_out: 0,
         bytes_in: 0,
     })
@@ -288,6 +292,8 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option
     let size = read_u32(d, 4)?;
     let daddr = d.get(8..24)?;
     let saddr = d.get(24..40)?;
+    let dst_ip = fmt_ipv6(daddr)?;
+    let src_ip = fmt_ipv6(saddr)?;
     let dport = read_u16(d, 40)?;
     let sport = read_u16(d, 42)?;
 
@@ -297,8 +303,8 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option
         raw.timestamp,
         pid,
         proto,
-        fmt_addr_port(&fmt_ipv6(saddr), sport),
-        fmt_addr_port(&fmt_ipv6(daddr), dport),
+        fmt_addr_port(&src_ip, sport),
+        fmt_addr_port(&dst_ip, dport),
         bytes_out,
         bytes_in,
     ))
@@ -505,5 +511,10 @@ mod tests {
         };
 
         assert_eq!(pid, 4321);
+    }
+
+    #[test]
+    fn fmt_ipv6_rejects_wrong_length() {
+        assert!(fmt_ipv6(&[0; 15]).is_none());
     }
 }
