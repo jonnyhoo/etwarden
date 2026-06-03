@@ -5,13 +5,14 @@
 //! **Dependencies**: `cli`, `capture`, `parser`, `output::schema`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 38 / 80
+//! **Line budget**: 44 / 80
 
 use clap::Parser;
 use etwarden::{
     capture::{self, CaptureConfig},
     cli::Cli,
     output::{json::JsonEmitter, schema::OutputLine},
+    pcap::writer::PcapNgWriter,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -28,7 +29,15 @@ fn main() -> anyhow::Result<()> {
         },
         filters: Vec::new(),
         emitter: Box::new(JsonEmitter::new(std::io::stdout())),
-        pcap_sink: None,
+        pcap_sink: cli
+            .pcap_out
+            .as_deref()
+            .map(|p| {
+                PcapNgWriter::create(std::path::Path::new(p))
+                    .map(|w| Box::new(w) as Box<dyn etwarden::pcap::PcapSink>)
+            })
+            .transpose()
+            .map_err(|e| anyhow::anyhow!("{e}"))?,
     };
 
     let summary = capture::run_capture(&mut config).map_err(|e| anyhow::anyhow!("{e}"))?;
