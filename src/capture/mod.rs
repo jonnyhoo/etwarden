@@ -2,14 +2,15 @@
 //!
 //! **Purpose**: ETW session lifecycle — start, enable providers, consume events, stop.
 //! **Public API**: `struct CaptureConfig`, `fn run_capture`
-//! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`
+//! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 99 / 120
+//! **Line budget**: 100 / 120
 
 pub mod event_loop;
 pub mod provider;
 pub mod session;
+mod timestamp;
 
 use std::sync::{atomic::AtomicBool, Arc};
 

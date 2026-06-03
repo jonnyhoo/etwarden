@@ -3,16 +3,17 @@
 //! **Purpose**: Builds pre-configured ferrisetw Provider instances.
 //! **Public API**: `fn build_tcpip_provider()`, `fn build_ndis_provider()`,
 //!                `fn build_correlation_provider()`, `fn build_dns_client_provider()`
-//! **Dependencies**: `ferrisetw`, `parser::*`, `pcap::correlator`
+//! **Dependencies**: `ferrisetw`, `capture::timestamp`, `parser::*`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 462 / 500
+//! **Line budget**: 469 / 500
 
 use std::sync::Arc;
 
 use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 
 use crate::{
+    capture::timestamp,
     parser::{
         correlation::{ActivityMap, PROVIDER_CORRELATION},
         dns_codes::{dns_status_name, dns_type_name, parse_query_results},
@@ -69,7 +70,7 @@ fn parse_tcpip_event(record: &EventRecord, locator: &SchemaLocator) -> Option<Ne
     let parser = Parser::create(record, &schema);
     let event_id = record.event_id();
     let pid = parse_kernel_network_pid(&parser)?;
-    let timestamp = chrono::Utc::now();
+    let timestamp = record_timestamp(record)?;
 
     match event_id {
         EVENT_ID_TCP_CONNECT_IPV4 => parse_connect_v4(&parser, pid, timestamp),
@@ -106,6 +107,10 @@ fn parse_tcpip_event(record: &EventRecord, locator: &SchemaLocator) -> Option<Ne
 
 fn parse_kernel_network_pid(parser: &Parser<'_, '_>) -> Option<u32> {
     parser.try_parse("PID").ok()
+}
+
+fn record_timestamp(record: &EventRecord) -> Option<chrono::DateTime<chrono::Utc>> {
+    timestamp::from_filetime_100ns(record.raw_timestamp())
 }
 
 fn parse_connect_v4(
@@ -312,7 +317,9 @@ pub fn build_ndis_provider(
     let parser = NdisParser::new(correlator);
     Provider::by_guid(PROVIDER_NDIS)
         .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
-            let timestamp = chrono::Utc::now();
+            let Some(timestamp) = record_timestamp(record) else {
+                return;
+            };
 
             // Extract raw frame bytes via ferrisetw's Parser.
             // NDIS PacketCapture events typically have a "FrameBuffer" property.
@@ -400,7 +407,7 @@ fn parse_dns_client_event(record: &EventRecord, locator: &SchemaLocator) -> Opti
     let parser = Parser::create(record, &schema);
     let event_id = record.event_id();
     let pid = record.process_id();
-    let timestamp = chrono::Utc::now();
+    let timestamp = record_timestamp(record)?;
 
     match event_id {
         EVENT_ID_DNS_QUERY => parse_dns_query(&parser, pid, timestamp),
