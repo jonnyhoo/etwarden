@@ -307,11 +307,16 @@ fn parse_ip_from_addr(addr: &str) -> Option<IpAddr> {
     // Handle IPv6 bracket format: [::1]:port
     if addr.starts_with('[') {
         let close = addr.find(']')?;
+        if addr.get(close + 1..close + 2)? != ":" {
+            return None;
+        }
+        addr.get(close + 2..)?.parse::<u16>().ok()?;
         let ip_str = &addr[1..close];
         return ip_str.parse().ok();
     }
     // IPv4: addr:port — split on last ':'
     let colon = addr.rfind(':')?;
+    addr.get(colon + 1..)?.parse::<u16>().ok()?;
     let ip_str = &addr[..colon];
     ip_str.parse().ok()
 }
@@ -585,6 +590,14 @@ mod tests {
             ip,
             Some(IpAddr::V4(std::net::Ipv4Addr::new(192, 168, 1, 1)))
         );
+    }
+
+    #[test]
+    fn parse_ip_from_addr_rejects_missing_or_invalid_port() {
+        assert_eq!(parse_ip_from_addr("192.168.1.1:"), None);
+        assert_eq!(parse_ip_from_addr("192.168.1.1:http"), None);
+        assert_eq!(parse_ip_from_addr("[::1]"), None);
+        assert_eq!(parse_ip_from_addr("[::1]:http"), None);
     }
 
     #[test]
