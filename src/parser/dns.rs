@@ -148,9 +148,8 @@ fn parse_question(
         if !name.is_empty() {
             name.push('.');
         }
-        if let Ok(label) = std::str::from_utf8(&payload[offset + 1..offset + 1 + label_len]) {
-            name.push_str(label);
-        }
+        let label = std::str::from_utf8(&payload[offset + 1..offset + 1 + label_len]).ok()?;
+        name.push_str(label);
         if name.len() > MAX_DNS_NAME_LEN {
             return None;
         }
@@ -402,6 +401,24 @@ mod tests {
         let pkt = vec![
             0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x0C,
             0x00, 0x01, 0x00, 0x01,
+        ];
+
+        assert!(analyze_dns(&pkt).is_none());
+    }
+
+    #[test]
+    fn invalid_utf8_question_label_returns_none() {
+        let pkt = vec![
+            0x00, 0x01, // ID
+            0x01, 0x00, // flags: standard query
+            0x00, 0x01, // QDCOUNT
+            0x00, 0x00, // ANCOUNT
+            0x00, 0x00, // NSCOUNT
+            0x00, 0x00, // ARCOUNT
+            0x01, 0xFF, // invalid UTF-8 label
+            0x00, // root label
+            0x00, 0x01, // QTYPE A
+            0x00, 0x01, // QCLASS IN
         ];
 
         assert!(analyze_dns(&pkt).is_none());
