@@ -113,7 +113,7 @@ fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
 
     if first_line.starts_with(b"HTTP/") {
         // Response: "HTTP/1.1 200 OK"
-        let status_line = String::from_utf8_lossy(first_line).to_string();
+        let status_line = parse_http_response_line(first_line)?;
         return Some(HttpInfo {
             method: None,
             uri_or_status: status_line,
@@ -130,7 +130,7 @@ fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
         || method.is_empty()
         || uri.is_empty()
         || !HTTP_METHODS[..HTTP_METHODS.len() - 1].contains(&method)
-        || !version.starts_with(b"HTTP/")
+        || !is_http_version_token(version)
     {
         return None;
     }
@@ -140,6 +140,36 @@ fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
         uri_or_status: String::from_utf8_lossy(uri).to_string(),
         host: extract_host_header(payload),
     })
+}
+
+fn parse_http_response_line(first_line: &[u8]) -> Option<String> {
+    let mut parts = first_line.splitn(3, |&b| b == b' ');
+    let version = parts.next()?;
+    let status = parts.next()?;
+    if !is_http_version_token(version) || !is_http_status_code(status) {
+        return None;
+    }
+    Some(String::from_utf8_lossy(first_line).to_string())
+}
+
+fn is_http_version_token(version: &[u8]) -> bool {
+    let Some(rest) = version.strip_prefix(b"HTTP/") else {
+        return false;
+    };
+    let mut dot_seen = false;
+    let mut digit_seen = false;
+    for &ch in rest {
+        match ch {
+            b'0'..=b'9' => digit_seen = true,
+            b'.' if digit_seen && !dot_seen => dot_seen = true,
+            _ => return false,
+        }
+    }
+    digit_seen && dot_seen
+}
+
+fn is_http_status_code(status: &[u8]) -> bool {
+    status.len() == 3 && status.iter().all(u8::is_ascii_digit)
 }
 
 /// Find first occurrence of a byte in a slice (replaces memchr dependency).
@@ -353,6 +383,13 @@ mod tests {
         let result = analyze_http(payload).expect("should detect HTTP response");
         assert!(result.method.is_none());
         assert!(result.uri_or_status.starts_with("HTTP/1.1 200"));
+    }
+
+    #[test]
+    fn http_response_requires_valid_version_and_status() {
+        assert!(analyze_http(b"HTTP/1 200 OK\r\n\r\n").is_none());
+        assert!(analyze_http(b"HTTP/1.1 OK\r\n\r\n").is_none());
+        assert!(analyze_http(b"HTTP/1.1\r\n\r\n").is_none());
     }
 
     #[test]
