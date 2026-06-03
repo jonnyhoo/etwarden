@@ -28,6 +28,7 @@ fn main() -> anyhow::Result<()> {
         },
         filters: Vec::new(),
         emitter: Box::new(JsonEmitter::new(std::io::stdout())),
+        pcap_sink: None,
     };
 
     let summary = capture::run_capture(&mut config).map_err(|e| anyhow::anyhow!("{e}"))?;

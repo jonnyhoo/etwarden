@@ -5,14 +5,15 @@
 //! **Dependencies**: `capture::session`, `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 80 / 100
+//! **Line budget**: 100 / 120
 
 use crate::{
     capture::session::RunningSession,
     error::Result,
     filter::Filter,
     output::{schema::SummaryLine, Emitter},
-    parser::ParserRegistry,
+    parser::{types::NetEvent, ParserRegistry},
+    pcap::PcapSink,
 };
 
 // ---------------------------------------------------------------------------
@@ -41,10 +42,12 @@ pub fn run_event_loop(
     registry: &ParserRegistry,
     filters: &[Box<dyn Filter>],
     emitter: &mut dyn Emitter,
+    mut pcap_sink: Option<&mut Box<dyn PcapSink>>,
 ) -> Result<SummaryLine> {
     let mut connections_total: u64 = 0;
     let mut bytes_out_total: u64 = 0;
     let mut bytes_in_total: u64 = 0;
+    let mut pcap_written = false;
 
     // TODO: Replace with proper timed/signal-based loop in T19.
     // For now, drain once and stop — real implementation will poll
@@ -52,6 +55,15 @@ pub fn run_event_loop(
     let events = registry.drain();
 
     for event in &events {
+        // Route RawCapture to pcap sink, not emitter.
+        if let NetEvent::RawCapture { frame, pid } = event {
+            if let Some(sink) = pcap_sink.as_mut() {
+                sink.write_frame(frame, *pid)?;
+                pcap_written = true;
+            }
+            continue;
+        }
+
         // Apply all filters — event must pass every one.
         let passes = filters.iter().all(|f| f.allow(event));
         if !passes {
@@ -72,10 +84,8 @@ pub fn run_event_loop(
         connections_total,
         bytes_out_total,
         bytes_in_total,
-        pcap_written: false,
+        pcap_written,
     };
-    // Summary emission will be handled in T19 integration wiring.
-    // For now, just return the summary struct.
 
     session.stop()?;
 
