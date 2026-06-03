@@ -1,18 +1,21 @@
 //! # `parser::ndis`
 //!
-//! **Purpose**: Parses Microsoft-Windows-NDIS-PacketCapture ETW events into `NetEvent::RawCapture`.
+//! **Purpose**: Parses Microsoft-Windows-NDIS-PacketCapture ETW events into `NetEvent`s.
 //! **Public API**: `struct NdisParser` (implements `EventParser`)
-//! **Dependencies**: `parser::types`, `pcap::correlator`
+//! **Dependencies**: `parser::dns_codes`, `parser::dpi`, `parser::types`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 180 / 220
+//! **Line budget**: 626 / 680
 
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use windows::core::GUID;
 
 use crate::{
     parser::{
+        dns_codes::{dns_status_name, dns_type_name},
+        dpi::{self, DpiResult},
         types::{FiveTuple, NetEvent, Protocol, RawEvent, RawFrame},
         EventParser,
     },
@@ -44,6 +47,67 @@ impl NdisParser {
     #[must_use]
     pub const fn new(correlator: Arc<Correlator>) -> Self {
         Self { correlator }
+    }
+
+    /// Parses an attributed DNS event from the raw frame payload.
+    #[must_use]
+    pub fn parse_dns_event(&self, raw: &RawEvent) -> Option<NetEvent> {
+        parse_dns_event(&raw.data, raw.timestamp, &self.correlator)
+    }
+}
+
+/// Parsed packet metadata extracted from an Ethernet frame.
+pub(crate) struct ParsedPacket<'a> {
+    pub tuple: FiveTuple,
+    pub payload: &'a [u8],
+}
+
+/// Builds a per-process DNS event from a captured frame.
+pub(crate) fn parse_dns_event(
+    frame: &[u8],
+    timestamp: DateTime<Utc>,
+    correlator: &Correlator,
+) -> Option<NetEvent> {
+    let packet = extract_packet(frame)?;
+    if packet.tuple.protocol != Protocol::Udp {
+        return None;
+    }
+
+    let pid = correlator.resolve_pid(&packet.tuple)?;
+    let DpiResult::Dns(info) =
+        dpi::analyze_udp_payload(packet.payload, packet.tuple.src_port, packet.tuple.dst_port)?
+    else {
+        return None;
+    };
+
+    let domain = info.query_name?;
+    let query_type = info.query_type?.code();
+    let query_type_name = dns_type_name(query_type).to_string();
+
+    if info.is_response {
+        let status = info.response_code.unwrap_or(0);
+        Some(NetEvent::DnsResponse {
+            timestamp,
+            pid,
+            domain,
+            query_type,
+            query_type_name,
+            status,
+            status_name: dns_status_name(status).to_string(),
+            result_ips: info
+                .response_ips
+                .into_iter()
+                .map(|ip| ip.to_string())
+                .collect(),
+        })
+    } else {
+        Some(NetEvent::DnsQuery {
+            timestamp,
+            pid,
+            domain,
+            query_type,
+            query_type_name,
+        })
     }
 }
 
@@ -86,37 +150,56 @@ const IPPROTO_UDP: u8 = 17;
 /// Parses Ethernet → IP → TCP/UDP headers to find src/dst IP and port.
 /// Returns `None` if the frame is too short or uses an unsupported protocol.
 fn extract_five_tuple(frame: &[u8]) -> Option<FiveTuple> {
+    extract_packet(frame).map(|packet| packet.tuple)
+}
+
+/// Extracts a `FiveTuple` and payload slice from raw Ethernet frame bytes.
+pub(crate) fn extract_packet(frame: &[u8]) -> Option<ParsedPacket<'_>> {
     if frame.len() < ETH_HDR_LEN + 20 {
         return None;
     }
 
     let eth_type = &frame[12..14];
     if eth_type == ETHERTYPE_IPV4 {
-        parse_ipv4_tuple(&frame[ETH_HDR_LEN..])
+        parse_ipv4_packet(&frame[ETH_HDR_LEN..])
     } else if eth_type == ETHERTYPE_IPV6 {
-        parse_ipv6_tuple(&frame[ETH_HDR_LEN..])
+        parse_ipv6_packet(&frame[ETH_HDR_LEN..])
     } else {
         None
     }
 }
 
-/// Parses IPv4 + TCP/UDP headers to extract a five-tuple.
-fn parse_ipv4_tuple(ip: &[u8]) -> Option<FiveTuple> {
+/// Parses IPv4 + TCP/UDP headers to extract packet metadata.
+fn parse_ipv4_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
     if ip.len() < 20 {
         return None;
     }
 
+    if ip[0] >> 4 != 4 {
+        return None;
+    }
     let ihl = usize::from(ip[0] & 0x0F) * 4;
+    if ihl < 20 || ip.len() < ihl {
+        return None;
+    }
+    let fragment_offset = u16::from_be_bytes([ip[6], ip[7]]) & 0x1FFF;
+    if fragment_offset != 0 {
+        return None;
+    }
+    let total_len = usize::from(u16::from_be_bytes([ip[2], ip[3]])).min(ip.len());
+    if total_len < ihl {
+        return None;
+    }
     let protocol = ip[9];
     let src_ip = format!("{}.{}.{}.{}", ip[12], ip[13], ip[14], ip[15]);
     let dst_ip = format!("{}.{}.{}.{}", ip[16], ip[17], ip[18], ip[19]);
 
-    let transport = ip.get(ihl..)?;
-    parse_transport(transport, protocol, src_ip, dst_ip)
+    let transport = ip.get(ihl..total_len)?;
+    parse_transport_packet(transport, protocol, src_ip, dst_ip)
 }
 
-/// Parses IPv6 + TCP/UDP headers to extract a five-tuple.
-fn parse_ipv6_tuple(ip: &[u8]) -> Option<FiveTuple> {
+/// Parses IPv6 + TCP/UDP headers to extract packet metadata.
+fn parse_ipv6_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
     if ip.len() < 40 {
         return None;
     }
@@ -125,16 +208,16 @@ fn parse_ipv6_tuple(ip: &[u8]) -> Option<FiveTuple> {
     let src_ip = format_ipv6(&ip[8..24]);
     let dst_ip = format_ipv6(&ip[24..40]);
 
-    parse_transport(&ip[40..], protocol, src_ip, dst_ip)
+    parse_transport_packet(&ip[40..], protocol, src_ip, dst_ip)
 }
 
-/// Parses TCP/UDP transport header for port numbers.
-fn parse_transport(
+/// Parses TCP/UDP transport header for port numbers and payload bytes.
+fn parse_transport_packet(
     transport: &[u8],
     protocol: u8,
     src_ip: String,
     dst_ip: String,
-) -> Option<FiveTuple> {
+) -> Option<ParsedPacket<'_>> {
     if transport.len() < 4 {
         return None;
     }
@@ -142,18 +225,41 @@ fn parse_transport(
     let src_port = u16::from_be_bytes([transport[0], transport[1]]);
     let dst_port = u16::from_be_bytes([transport[2], transport[3]]);
 
-    let proto = match protocol {
-        IPPROTO_TCP => Protocol::Tcp,
-        IPPROTO_UDP => Protocol::Udp,
+    let (proto, payload) = match protocol {
+        IPPROTO_TCP => {
+            if transport.len() < 20 {
+                return None;
+            }
+            let data_offset = usize::from(transport[12] >> 4) * 4;
+            if data_offset < 20 || transport.len() < data_offset {
+                return None;
+            }
+            (Protocol::Tcp, &transport[data_offset..])
+        }
+        IPPROTO_UDP => {
+            if transport.len() < 8 {
+                return None;
+            }
+            let udp_len = usize::from(u16::from_be_bytes([transport[4], transport[5]]));
+            let payload_end = if udp_len >= 8 && udp_len <= transport.len() {
+                udp_len
+            } else {
+                transport.len()
+            };
+            (Protocol::Udp, &transport[8..payload_end])
+        }
         _ => return None,
     };
 
-    Some(FiveTuple {
-        src_ip,
-        src_port,
-        dst_ip,
-        dst_port,
-        protocol: proto,
+    Some(ParsedPacket {
+        tuple: FiveTuple {
+            src_ip,
+            src_port,
+            dst_ip,
+            dst_port,
+            protocol: proto,
+        },
+        payload,
     })
 }
 
@@ -214,10 +320,73 @@ mod tests {
         // TCP header (20 bytes)
         frame.extend_from_slice(&1234u16.to_be_bytes()); // src port
         frame.extend_from_slice(&80u16.to_be_bytes()); // dst port
-        frame.extend_from_slice(&[0u8; 16]); // seq + ack + flags + window + checksum + urgent
-                                             // payload
+        frame.extend_from_slice(&[0u8; 8]); // seq + ack
+        frame.push(0x50); // data offset = 5 words, no options
+        frame.extend_from_slice(&[0u8; 7]); // flags + window + checksum + urgent
+                                            // payload
         frame.extend_from_slice(&vec![0xDD; payload_len]);
         frame
+    }
+
+    fn build_ethernet_ipv4_udp(payload: &[u8], src_port: u16, dst_port: u16) -> Vec<u8> {
+        build_ethernet_ipv4_udp_with_ips(payload, [10, 0, 0, 1], [8, 8, 8, 8], src_port, dst_port)
+    }
+
+    fn build_ethernet_ipv4_udp_with_ips(
+        payload: &[u8],
+        src_ip: [u8; 4],
+        dst_ip: [u8; 4],
+        src_port: u16,
+        dst_port: u16,
+    ) -> Vec<u8> {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&[0xFF; 6]);
+        frame.extend_from_slice(&[0xAA; 6]);
+        frame.extend_from_slice(&ETHERTYPE_IPV4);
+        frame.push(0x45);
+        frame.push(0x00);
+        let total_len = u16::try_from(20 + 8 + payload.len()).expect("fits in u16");
+        frame.extend_from_slice(&total_len.to_be_bytes());
+        frame.extend_from_slice(&[0x00, 0x00]);
+        frame.extend_from_slice(&[0x40, 0x00]);
+        frame.push(0x40);
+        frame.push(IPPROTO_UDP);
+        frame.extend_from_slice(&[0x00, 0x00]);
+        frame.extend_from_slice(&src_ip);
+        frame.extend_from_slice(&dst_ip);
+        frame.extend_from_slice(&src_port.to_be_bytes());
+        frame.extend_from_slice(&dst_port.to_be_bytes());
+        let udp_len = u16::try_from(8 + payload.len()).expect("fits in u16");
+        frame.extend_from_slice(&udp_len.to_be_bytes());
+        frame.extend_from_slice(&[0x00, 0x00]);
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    fn build_dns_query(name: &str, qtype: u16) -> Vec<u8> {
+        let mut pkt = vec![
+            0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ];
+        for label in name.split('.') {
+            let bytes = label.as_bytes();
+            pkt.push(u8::try_from(bytes.len()).expect("label fits"));
+            pkt.extend_from_slice(bytes);
+        }
+        pkt.push(0);
+        pkt.extend_from_slice(&qtype.to_be_bytes());
+        pkt.extend_from_slice(&[0x00, 0x01]);
+        pkt
+    }
+
+    fn build_dns_response_a(name: &str, ip: [u8; 4]) -> Vec<u8> {
+        let mut pkt = build_dns_query(name, 1);
+        pkt[2] |= 0x80;
+        pkt[6] = 0x00;
+        pkt[7] = 0x01;
+        pkt.extend_from_slice(&[0xC0, 0x0C]);
+        pkt.extend_from_slice(&[0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2C, 0x00, 0x04]);
+        pkt.extend_from_slice(&ip);
+        pkt
     }
 
     fn build_ethernet_ipv6_udp(payload_len: usize) -> Vec<u8> {
@@ -306,6 +475,87 @@ mod tests {
             }
             _ => unreachable!("expected RawCapture"),
         }
+    }
+
+    #[test]
+    fn parse_dns_query_from_udp_frame() {
+        let corr = Arc::new(Correlator::new());
+        corr.register_connection(
+            42,
+            FiveTuple {
+                src_ip: "10.0.0.1".into(),
+                src_port: 53000,
+                dst_ip: "8.8.8.8".into(),
+                dst_port: 53,
+                protocol: Protocol::Udp,
+            },
+        );
+        let parser = NdisParser::new(corr);
+        let frame = build_ethernet_ipv4_udp(&build_dns_query("example.com", 1), 53000, 53);
+        let raw = raw_ndis(frame);
+
+        let event = parser.parse_dns_event(&raw).expect("dns event");
+        let NetEvent::DnsQuery {
+            pid,
+            domain,
+            query_type,
+            ..
+        } = event
+        else {
+            unreachable!("expected DNS query")
+        };
+        assert_eq!(pid, 42);
+        assert_eq!(domain, "example.com");
+        assert_eq!(query_type, 1);
+    }
+
+    #[test]
+    fn parse_dns_response_from_udp_frame() {
+        let corr = Arc::new(Correlator::new());
+        corr.register_connection(
+            42,
+            FiveTuple {
+                src_ip: "10.0.0.1".into(),
+                src_port: 53000,
+                dst_ip: "8.8.8.8".into(),
+                dst_port: 53,
+                protocol: Protocol::Udp,
+            },
+        );
+        let parser = NdisParser::new(corr);
+        let frame = build_ethernet_ipv4_udp_with_ips(
+            &build_dns_response_a("example.com", [93, 184, 216, 34]),
+            [8, 8, 8, 8],
+            [10, 0, 0, 1],
+            53,
+            53000,
+        );
+        let raw = raw_ndis(frame);
+
+        let event = parser.parse_dns_event(&raw).expect("dns event");
+        let NetEvent::DnsResponse {
+            pid,
+            domain,
+            status,
+            result_ips,
+            ..
+        } = event
+        else {
+            unreachable!("expected DNS response")
+        };
+        assert_eq!(pid, 42);
+        assert_eq!(domain, "example.com");
+        assert_eq!(status, 0);
+        assert_eq!(result_ips, vec!["93.184.216.34"]);
+    }
+
+    #[test]
+    fn parse_dns_requires_pid_correlation() {
+        let corr = Arc::new(Correlator::new());
+        let parser = NdisParser::new(corr);
+        let frame = build_ethernet_ipv4_udp(&build_dns_query("example.com", 1), 53000, 53);
+        let raw = raw_ndis(frame);
+        assert!(parser.parse_dns_event(&raw).is_none());
     }
 
     #[test]

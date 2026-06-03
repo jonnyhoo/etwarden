@@ -3,10 +3,10 @@
 //! **Purpose**: DNS deep-packet-inspection parser — extract query names, types, and response IPs
 //!   from raw DNS UDP payloads (RFC 1035).
 //! **Public API**: `struct DnsInfo`, `fn analyze_dns(&[u8]) -> Option<DnsInfo>`
-//! **Dependencies**: `parser::types`
+//! **Dependencies**: (none)
 //! **Platform**: `cross-platform`
 //! **Privilege**: `none`
-//! **Line budget**: 200 / 260
+//! **Line budget**: 381 / 420
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -55,6 +55,26 @@ impl std::fmt::Display for DnsQueryType {
     }
 }
 
+impl DnsQueryType {
+    /// Returns the numeric DNS record type code.
+    #[must_use]
+    pub const fn code(self) -> u16 {
+        match self {
+            Self::A => 1,
+            Self::Ns => 2,
+            Self::Cname => 5,
+            Self::Soa => 6,
+            Self::Ptr => 12,
+            Self::Mx => 15,
+            Self::Txt => 16,
+            Self::Aaaa => 28,
+            Self::Srv => 33,
+            Self::Caa => 257,
+            Self::Other(code) => code,
+        }
+    }
+}
+
 /// Parsed DNS information from a single UDP payload.
 #[derive(Debug, Clone, Serialize)]
 pub struct DnsInfo {
@@ -64,6 +84,8 @@ pub struct DnsInfo {
     pub query_type: Option<DnsQueryType>,
     /// Response IPs extracted from A/AAAA answer records.
     pub response_ips: Vec<IpAddr>,
+    /// DNS response code from the packet header. `None` for queries.
+    pub response_code: Option<u32>,
     /// `true` if this is a response packet (QR bit set).
     pub is_response: bool,
 }
@@ -236,6 +258,7 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
         query_name,
         query_type,
         response_ips,
+        response_code: is_response.then_some(u32::from(flags & 0x000F)),
         is_response,
     })
 }
@@ -305,7 +328,9 @@ mod tests {
         let info = analyze_dns(&pkt).expect("parse");
         assert_eq!(info.query_name.as_deref(), Some("example.com"));
         assert_eq!(info.query_type, Some(DnsQueryType::A));
+        assert_eq!(info.query_type.expect("qtype").code(), 1);
         assert!(!info.is_response);
+        assert_eq!(info.response_code, None);
         assert!(info.response_ips.is_empty());
     }
 
@@ -314,6 +339,7 @@ mod tests {
         let pkt = build_response_a("example.com", 1, &[&[93, 184, 216, 34]]);
         let info = analyze_dns(&pkt).expect("parse");
         assert!(info.is_response);
+        assert_eq!(info.response_code, Some(0));
         assert_eq!(info.response_ips.len(), 1);
         assert_eq!(
             info.response_ips[0],

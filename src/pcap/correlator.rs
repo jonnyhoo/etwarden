@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 110 / 140
+//! **Line budget**: 242 / 260
 
 use std::{collections::HashMap, sync::Mutex};
 
@@ -41,19 +41,13 @@ impl Correlator {
         }
     }
 
-    /// Registers a TCP connect event, ignoring other event kinds.
+    /// Registers tuple-bearing connection events, ignoring non-flow event kinds.
     pub fn register_event(&self, event: &NetEvent) {
-        if let NetEvent::Connect {
-            pid,
-            proto,
-            src,
-            dst,
-            ..
-        } = event
-        {
-            if let Some(tuple) = parse_tuple_from_event(src, dst, *proto) {
-                self.register_connection(*pid, tuple);
-            }
+        let Some((pid, proto, src, dst)) = event_tuple_parts(event) else {
+            return;
+        };
+        if let Some(tuple) = parse_tuple_from_event(src, dst, proto) {
+            self.register_connection(pid, tuple);
         }
     }
 
@@ -70,6 +64,36 @@ impl Correlator {
     /// Returns `true` if no connections are registered.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+}
+
+fn event_tuple_parts(event: &NetEvent) -> Option<(u32, Protocol, &str, &str)> {
+    match event {
+        NetEvent::Connect {
+            pid,
+            proto,
+            src,
+            dst,
+            ..
+        }
+        | NetEvent::Send {
+            pid,
+            proto,
+            src,
+            dst,
+            ..
+        }
+        | NetEvent::Recv {
+            pid,
+            proto,
+            src,
+            dst,
+            ..
+        } => Some((*pid, *proto, src, dst)),
+        NetEvent::Disconnect { .. }
+        | NetEvent::RawCapture { .. }
+        | NetEvent::DnsQuery { .. }
+        | NetEvent::DnsResponse { .. } => None,
     }
 }
 
@@ -165,6 +189,29 @@ mod tests {
         let t = tuple("10.0.0.1", 1234, "10.0.0.2", 80);
         corr.register_event(&event);
         assert_eq!(corr.resolve_pid(&t), Some(42));
+    }
+
+    #[test]
+    fn register_event_from_udp_send() {
+        let corr = Correlator::new();
+        let event = NetEvent::Send {
+            timestamp: chrono::Utc::now(),
+            pid: 77,
+            proto: Protocol::Udp,
+            src: "10.0.0.1:1234".into(),
+            dst: "8.8.8.8:53".into(),
+            bytes_out: 32,
+            bytes_in: 0,
+        };
+        let t = FiveTuple {
+            src_ip: "10.0.0.1".into(),
+            src_port: 1234,
+            dst_ip: "8.8.8.8".into(),
+            dst_port: 53,
+            protocol: Protocol::Udp,
+        };
+        corr.register_event(&event);
+        assert_eq!(corr.resolve_pid(&t), Some(77));
     }
 
     #[test]

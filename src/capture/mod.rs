@@ -2,10 +2,10 @@
 //!
 //! **Purpose**: ETW session lifecycle — start, enable providers, consume events, stop.
 //! **Public API**: `struct CaptureConfig`, `fn run_capture`
-//! **Dependencies**: `parser`, `filter`, `output`, `error`
+//! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 100 / 120
+//! **Line budget**: 99 / 120
 
 pub mod event_loop;
 pub mod provider;
@@ -16,10 +16,7 @@ use std::sync::{atomic::AtomicBool, Arc};
 use crate::{
     capture::{
         event_loop::run_event_loop,
-        provider::{
-            build_correlation_provider, build_dns_client_provider, build_ndis_provider,
-            build_tcpip_provider,
-        },
+        provider::{build_correlation_provider, build_ndis_provider, build_tcpip_provider},
         session::EtwSession,
     },
     error::Result,
@@ -57,21 +54,23 @@ pub struct CaptureConfig {
 /// Returns [`EtwardenError`] if the ETW session fails.
 pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
-    let has_pcap = config.pcap_sink.is_some();
+    let emit_raw_capture = config.pcap_sink.is_some();
     let correlator = Arc::new(Correlator::new());
     let provider = build_tcpip_provider(Arc::clone(&registry), Some(Arc::clone(&correlator)));
-    let dns_provider = build_dns_client_provider(Arc::clone(&registry));
+    let ndis_provider = build_ndis_provider(
+        Arc::clone(&registry),
+        Arc::clone(&correlator),
+        emit_raw_capture,
+    );
 
     let mut session_builder = EtwSession::new();
     session_builder.add_provider(provider);
-    session_builder.add_provider(dns_provider);
+    session_builder.add_provider(ndis_provider);
 
-    // When pcap sink is present, enable NDIS + Correlation providers.
-    if has_pcap {
+    // When pcap sink is present, add Correlation provider for future ActivityId joins.
+    if emit_raw_capture {
         let activity_map = Arc::new(ActivityMap::new());
-        let ndis_provider = build_ndis_provider(Arc::clone(&registry), Arc::clone(&correlator));
         let correlation_provider = build_correlation_provider(Arc::clone(&activity_map));
-        session_builder.add_provider(ndis_provider);
         session_builder.add_provider(correlation_provider);
     }
 

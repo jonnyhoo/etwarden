@@ -1,11 +1,11 @@
 //! # `parser::tcpip`
 //!
-//! **Purpose**: Parses Microsoft-Windows-Kernel-Network TCP ETW events into `NetEvent`.
+//! **Purpose**: Parses Microsoft-Windows-Kernel-Network TCP/UDP ETW events into `NetEvent`.
 //! **Public API**: `struct TcpIpParser` (implements `EventParser`)
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 480 / 540
+//! **Line budget**: 487 / 540
 
 use std::net::{Ipv4Addr, Ipv6Addr};
 
@@ -37,6 +37,10 @@ pub const EVENT_ID_TCP_CONNECT_IPV6: u16 = 28;
 pub const EVENT_ID_TCP_DISCONNECT_IPV6: u16 = 29;
 pub const EVENT_ID_TCP_RETRANSMIT_IPV6: u16 = 30;
 pub const EVENT_ID_TCP_ESTABLISHED_IPV6: u16 = 31;
+pub const EVENT_ID_UDP_SEND_IPV4: u16 = 42;
+pub const EVENT_ID_UDP_RECV_IPV4: u16 = 43;
+pub const EVENT_ID_UDP_SEND_IPV6: u16 = 58;
+pub const EVENT_ID_UDP_RECV_IPV6: u16 = 59;
 
 // ---------------------------------------------------------------------------
 // TcpIpParser
@@ -44,7 +48,7 @@ pub const EVENT_ID_TCP_ESTABLISHED_IPV6: u16 = 31;
 
 /// Parses ETW events from the Microsoft-Windows-Kernel-Network provider.
 ///
-/// Handles TCP connect (IPv4/IPv6), disconnect, send, and recv events.
+/// Handles TCP connect/disconnect/send/recv and UDP send/recv events.
 /// The raw event `data` buffer is parsed at fixed offsets matching the
 /// TCPIP ETW manifest layout.
 pub struct TcpIpParser;
@@ -61,13 +65,17 @@ impl EventParser for TcpIpParser {
             EVENT_ID_TCP_DISCONNECT_IPV4 => parse_disconnect_v4(raw),
             EVENT_ID_TCP_DISCONNECT_IPV6 => parse_disconnect_v6(raw),
             EVENT_ID_TCP_SEND_IPV4 | EVENT_ID_TCP_RETRANSMIT_IPV4 => {
-                parse_send_recv_v4(raw, SendRecv::Send)
+                parse_send_recv_v4(raw, SendRecv::Send, Protocol::Tcp)
             }
             EVENT_ID_TCP_SEND_IPV6 | EVENT_ID_TCP_RETRANSMIT_IPV6 => {
-                parse_send_recv_v6(raw, SendRecv::Send)
+                parse_send_recv_v6(raw, SendRecv::Send, Protocol::Tcp)
             }
-            EVENT_ID_TCP_RECV_IPV4 => parse_send_recv_v4(raw, SendRecv::Recv),
-            EVENT_ID_TCP_RECV_IPV6 => parse_send_recv_v6(raw, SendRecv::Recv),
+            EVENT_ID_TCP_RECV_IPV4 => parse_send_recv_v4(raw, SendRecv::Recv, Protocol::Tcp),
+            EVENT_ID_TCP_RECV_IPV6 => parse_send_recv_v6(raw, SendRecv::Recv, Protocol::Tcp),
+            EVENT_ID_UDP_SEND_IPV4 => parse_send_recv_v4(raw, SendRecv::Send, Protocol::Udp),
+            EVENT_ID_UDP_RECV_IPV4 => parse_send_recv_v4(raw, SendRecv::Recv, Protocol::Udp),
+            EVENT_ID_UDP_SEND_IPV6 => parse_send_recv_v6(raw, SendRecv::Send, Protocol::Udp),
+            EVENT_ID_UDP_RECV_IPV6 => parse_send_recv_v6(raw, SendRecv::Recv, Protocol::Udp),
             _ => None,
         }
     }
@@ -238,7 +246,7 @@ const fn make_send_recv(
 }
 
 /// Send/Recv IPv4 share the same layout as connect but produce different variants.
-fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
+fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option<NetEvent> {
     let d = &raw.data;
     if d.len() < 20 {
         return None;
@@ -254,7 +262,7 @@ fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
         kind,
         raw.timestamp,
         raw.pid,
-        Protocol::Tcp,
+        proto,
         fmt_addr_port(&fmt_ipv4(saddr), sport),
         fmt_addr_port(&fmt_ipv4(daddr), dport),
         bytes_out,
@@ -262,7 +270,7 @@ fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
     ))
 }
 
-fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
+fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option<NetEvent> {
     let d = &raw.data;
     if d.len() < 44 {
         return None;
@@ -278,7 +286,7 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv) -> Option<NetEvent> {
         kind,
         raw.timestamp,
         raw.pid,
-        Protocol::Tcp,
+        proto,
         fmt_addr_port(&fmt_ipv6(saddr), sport),
         fmt_addr_port(&fmt_ipv6(daddr), dport),
         bytes_out,

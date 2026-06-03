@@ -1,12 +1,12 @@
 //! # `parser::types`
 //!
 //! **Purpose**: Core type definitions for ETW event parsing — pure types, no ETW imports.
-//! **Public API**: `struct RawEvent`, `struct RawFrame`, `enum NetEvent`, `enum Protocol`,
-//!   `struct FiveTuple`, `struct Timestamp`
+//! **Public API**: `enum Protocol`, `struct FiveTuple`, `enum NetEvent`, `struct RawEvent`,
+//!   `struct RawFrame`
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 165 / 200
+//! **Line budget**: 277 / 300
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -75,7 +75,7 @@ pub enum NetEvent {
     },
     /// Raw frame from NDIS provider — routed to pcap sink, not NDJSON.
     RawCapture { frame: RawFrame, pid: u32 },
-    /// DNS query observed via Microsoft-Windows-DNS-Client ETW (`EventID` 3006).
+    /// DNS query observed from an attributed ETW source.
     DnsQuery {
         #[serde(rename = "t")]
         timestamp: DateTime<Utc>,
@@ -84,7 +84,7 @@ pub enum NetEvent {
         query_type: u16,
         query_type_name: String,
     },
-    /// DNS response observed via Microsoft-Windows-DNS-Client ETW (`EventID` 3008).
+    /// DNS response observed from an attributed ETW source.
     DnsResponse {
         #[serde(rename = "t")]
         timestamp: DateTime<Utc>,
