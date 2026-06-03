@@ -11,26 +11,26 @@ use clap::Parser;
 
 use etwarden::capture::{self, CaptureConfig};
 use etwarden::cli::Cli;
+use etwarden::output::json::JsonEmitter;
 use etwarden::output::schema::OutputLine;
-use etwarden::parser::ParserRegistry;
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     let target_pid = resolve_target_pid(&cli)?;
 
-    let config = CaptureConfig {
+    let mut config = CaptureConfig {
         target_pid,
         duration: if cli.duration > 0 {
             Some(std::time::Duration::from_secs(cli.duration))
         } else {
             None
         },
-        parsers: ParserRegistry::new(),
         filters: Vec::new(),
+        emitter: Box::new(JsonEmitter::new(std::io::stdout())),
     };
 
-    let summary = capture::run_capture(&config).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let summary = capture::run_capture(&mut config).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     let output = OutputLine::Summary(summary);
     let json = serde_json::to_string(&output)?;

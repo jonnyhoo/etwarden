@@ -39,7 +39,7 @@ pub fn run_event_loop(
     mut session: RunningSession,
     registry: &ParserRegistry,
     filters: &[Box<dyn Filter>],
-    mut emitter: Box<dyn Emitter>,
+    emitter: &mut dyn Emitter,
 ) -> Result<SummaryLine> {
     let mut connections_total: u64 = 0;
     let mut bytes_out_total: u64 = 0;

@@ -5,17 +5,21 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 60 / 70
+//! **Line budget**: 70 / 80
 
 pub mod event_loop;
 pub mod provider;
 pub mod session;
 
-use std::time::Duration;
+use std::sync::Arc;
 
-use crate::error::EtwardenError;
+use crate::capture::event_loop::run_event_loop;
+use crate::capture::provider::build_tcpip_provider;
+use crate::capture::session::EtwSession;
+use crate::error::Result;
 use crate::filter::Filter;
 use crate::output::schema::SummaryLine;
+use crate::output::Emitter;
 use crate::parser::ParserRegistry;
 
 /// Configuration for a capture session.
@@ -23,11 +27,11 @@ pub struct CaptureConfig {
     /// The process ID being monitored.
     pub target_pid: u32,
     /// Maximum capture duration. `None` = run until Ctrl+C.
-    pub duration: Option<Duration>,
-    /// Parser registry for dispatching ETW events.
-    pub parsers: ParserRegistry,
+    pub duration: Option<std::time::Duration>,
     /// Filters to apply before emitting events.
     pub filters: Vec<Box<dyn Filter>>,
+    /// Output emitter for NDJSON lines.
+    pub emitter: Box<dyn Emitter>,
 }
 
 /// Runs the capture loop with the given configuration.
@@ -40,15 +44,23 @@ pub struct CaptureConfig {
 ///
 /// # Errors
 /// Returns [`EtwardenError`] if the ETW session fails.
-pub fn run_capture(config: &CaptureConfig) -> std::result::Result<SummaryLine, EtwardenError> {
-    // T19 will implement the real ETW capture loop.
+pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
+    let registry = Arc::new(ParserRegistry::new());
+    let provider = build_tcpip_provider(Arc::clone(&registry));
+
+    let mut session_builder = EtwSession::new();
+    session_builder.add_provider(provider);
+
+    let running = session_builder.start()?;
+    let summary = run_event_loop(running, &registry, &config.filters, config.emitter.as_mut())?;
+
     Ok(SummaryLine {
         kind: "summary".into(),
         pid: config.target_pid,
         duration_ms: 0,
-        connections_total: 0,
-        bytes_out_total: 0,
-        bytes_in_total: 0,
+        connections_total: summary.connections_total,
+        bytes_out_total: summary.bytes_out_total,
+        bytes_in_total: summary.bytes_in_total,
         pcap_written: false,
     })
 }
