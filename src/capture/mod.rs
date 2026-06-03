@@ -13,14 +13,13 @@ pub mod session;
 
 use std::sync::Arc;
 
-use crate::capture::event_loop::run_event_loop;
-use crate::capture::provider::build_tcpip_provider;
-use crate::capture::session::EtwSession;
-use crate::error::Result;
-use crate::filter::Filter;
-use crate::output::schema::SummaryLine;
-use crate::output::Emitter;
-use crate::parser::ParserRegistry;
+use crate::{
+    capture::{event_loop::run_event_loop, provider::build_tcpip_provider, session::EtwSession},
+    error::Result,
+    filter::Filter,
+    output::{schema::SummaryLine, Emitter},
+    parser::ParserRegistry,
+};
 
 /// Configuration for a capture session.
 pub struct CaptureConfig {

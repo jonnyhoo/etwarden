@@ -9,10 +9,11 @@
 
 use std::io::Write;
 
-use crate::error::EtwardenError;
-use crate::output::schema::event_to_line;
-use crate::output::Emitter;
-use crate::parser::types::NetEvent;
+use crate::{
+    error::EtwardenError,
+    output::{schema::event_to_line, Emitter},
+    parser::types::NetEvent,
+};
 
 /// Writes `NetEvent` as NDJSON lines to a `Write` sink.
 pub struct JsonEmitter<W: Write> {

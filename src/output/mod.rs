@@ -10,8 +10,7 @@
 pub mod json;
 pub mod schema;
 
-use crate::error::EtwardenError;
-use crate::parser::types::NetEvent;
+use crate::{error::EtwardenError, parser::types::NetEvent};
 
 /// Serializes `NetEvent` to an output sink.
 pub trait Emitter: Send {

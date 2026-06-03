@@ -55,8 +55,9 @@ pub enum TargetMode {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::Parser;
+
+    use super::*;
 
     #[test]
     fn cli_parses_pid_flag() {

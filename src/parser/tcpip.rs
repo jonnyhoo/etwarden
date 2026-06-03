@@ -12,8 +12,10 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use chrono::{DateTime, Utc};
 use windows::core::GUID;
 
-use crate::parser::types::{NetEvent, Protocol, RawEvent};
-use crate::parser::EventParser;
+use crate::parser::{
+    types::{NetEvent, Protocol, RawEvent},
+    EventParser,
+};
 
 // ---------------------------------------------------------------------------
 // Constants

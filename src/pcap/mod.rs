@@ -7,8 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 22 / 60
 
-use crate::error::EtwardenError;
-use crate::parser::types::RawFrame;
+use crate::{error::EtwardenError, parser::types::RawFrame};
 
 /// Writes raw packet frames to a pcapng file.
 pub trait PcapSink: Send {

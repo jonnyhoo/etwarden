@@ -8,11 +8,11 @@
 //! **Line budget**: 38 / 80
 
 use clap::Parser;
-
-use etwarden::capture::{self, CaptureConfig};
-use etwarden::cli::Cli;
-use etwarden::output::json::JsonEmitter;
-use etwarden::output::schema::OutputLine;
+use etwarden::{
+    capture::{self, CaptureConfig},
+    cli::Cli,
+    output::{json::JsonEmitter, schema::OutputLine},
+};
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();

@@ -7,18 +7,17 @@
 //! **Privilege**: `none`
 //! **Line budget**: 120 / 140
 
-use ferrisetw::parser::Parser;
-use ferrisetw::provider::Provider;
-use ferrisetw::EventRecord;
-use ferrisetw::SchemaLocator;
+use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 
-use crate::parser::tcpip::{
-    EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
-    EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
-    EVENT_ID_TCP_SEND_IPV4, EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
+use crate::parser::{
+    tcpip::{
+        EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
+        EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
+        EVENT_ID_TCP_SEND_IPV4, EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
+    },
+    types::{NetEvent, Protocol},
+    ParserRegistry,
 };
-use crate::parser::types::{NetEvent, Protocol};
-use crate::parser::ParserRegistry;
 
 // ---------------------------------------------------------------------------
 // build_tcpip_provider

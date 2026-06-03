@@ -11,6 +11,9 @@ license = "MIT"
 name = "etwarden"
 path = "src/main.rs"
 
+[package.metadata.cargo-machete]
+ignored = ["pcap-file"]
+
 [features]
 # Feature-gate integration tests requiring admin privileges
 integration = []

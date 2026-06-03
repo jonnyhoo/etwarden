@@ -7,8 +7,7 @@
 //! **Privilege**: `requires-admin`
 //! **Line budget**: 80 / 100
 
-use ferrisetw::provider::Provider;
-use ferrisetw::trace::UserTrace;
+use ferrisetw::{provider::Provider, trace::UserTrace};
 
 use crate::error::{EtwardenError, Result};
 

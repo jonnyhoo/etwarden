@@ -7,12 +7,13 @@
 //! **Privilege**: `requires-admin`
 //! **Line budget**: 80 / 100
 
-use crate::capture::session::RunningSession;
-use crate::error::Result;
-use crate::filter::Filter;
-use crate::output::schema::SummaryLine;
-use crate::output::Emitter;
-use crate::parser::ParserRegistry;
+use crate::{
+    capture::session::RunningSession,
+    error::Result,
+    filter::Filter,
+    output::{schema::SummaryLine, Emitter},
+    parser::ParserRegistry,
+};
 
 // ---------------------------------------------------------------------------
 // run_event_loop

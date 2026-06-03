@@ -9,8 +9,7 @@
 
 use std::collections::HashSet;
 
-use crate::filter::Filter;
-use crate::parser::types::NetEvent;
+use crate::{filter::Filter, parser::types::NetEvent};
 
 /// Allows events only from specific PIDs.
 pub struct PidFilter {
@@ -58,10 +57,10 @@ const fn extract_pid(event: &NetEvent) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::types::{NetEvent, Protocol};
     use chrono::{DateTime, Utc};
 
     use super::*;
+    use crate::parser::types::{NetEvent, Protocol};
 
     fn test_timestamp() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
