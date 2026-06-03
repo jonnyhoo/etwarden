@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::dns_codes`, `parser::dpi`, `parser::types`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 626 / 680
+//! **Line budget**: 620 / 680
 
 use std::sync::Arc;
 
@@ -35,9 +35,9 @@ pub const PROVIDER_NDIS: &str = "2ED6006E-4729-4609-B423-3EE7BCD678EF";
 
 /// Parses ETW events from the Microsoft-Windows-NDIS-PacketCapture provider.
 ///
-/// Each event contains a raw Ethernet frame. The parser wraps it in
-/// `NetEvent::RawCapture` and attempts to resolve the owning PID via the
-/// shared `Correlator` by extracting the five-tuple from IP/TCP/UDP headers.
+/// Each event contains a raw Ethernet frame. The parser emits `RawCapture`
+/// only when the frame has a TCP/UDP five-tuple that resolves through the
+/// shared `Correlator`.
 pub struct NdisParser {
     correlator: Arc<Correlator>,
 }
@@ -117,14 +117,12 @@ impl EventParser for NdisParser {
     }
 
     fn parse(&self, raw: &RawEvent) -> Option<NetEvent> {
+        let packet = extract_packet(&raw.data)?;
+        let pid = self.correlator.resolve_pid(&packet.tuple)?;
         let frame = RawFrame {
             timestamp: raw.timestamp,
             data: raw.data.clone(),
         };
-
-        let pid = extract_five_tuple(&raw.data)
-            .and_then(|tuple| self.correlator.resolve_pid(&tuple))
-            .unwrap_or(raw.pid);
 
         Some(NetEvent::RawCapture { frame, pid })
     }
@@ -144,14 +142,6 @@ const ETHERTYPE_IPV6: [u8; 2] = [0x86, 0xDD];
 const IPPROTO_TCP: u8 = 6;
 /// IP protocol number for UDP.
 const IPPROTO_UDP: u8 = 17;
-
-/// Extracts a `FiveTuple` from raw Ethernet frame bytes.
-///
-/// Parses Ethernet → IP → TCP/UDP headers to find src/dst IP and port.
-/// Returns `None` if the frame is too short or uses an unsupported protocol.
-fn extract_five_tuple(frame: &[u8]) -> Option<FiveTuple> {
-    extract_packet(frame).map(|packet| packet.tuple)
-}
 
 /// Extracts a `FiveTuple` and payload slice from raw Ethernet frame bytes.
 pub(crate) fn extract_packet(frame: &[u8]) -> Option<ParsedPacket<'_>> {
@@ -559,30 +549,22 @@ mod tests {
     }
 
     #[test]
-    fn unknown_correlation_falls_back_to_raw_pid() {
+    fn unknown_correlation_is_not_emitted() {
         let corr = Arc::new(Correlator::new());
         let parser = NdisParser::new(corr);
         let frame = build_ethernet_ipv4_tcp(10);
         let raw = raw_ndis(frame);
 
-        let event = parser.parse(&raw).expect("should parse");
-        match event {
-            NetEvent::RawCapture { pid, .. } => assert_eq!(pid, 99), // raw.pid
-            _ => unreachable!("expected RawCapture"),
-        }
+        assert!(parser.parse(&raw).is_none());
     }
 
     #[test]
-    fn truncated_frame_still_produces_event() {
+    fn truncated_frame_is_not_emitted() {
         let corr = Arc::new(Correlator::new());
         let parser = NdisParser::new(corr);
         let raw = raw_ndis(vec![0x00; 5]);
 
-        let event = parser.parse(&raw).expect("should parse");
-        match event {
-            NetEvent::RawCapture { pid, .. } => assert_eq!(pid, 99),
-            _ => unreachable!("expected RawCapture"),
-        }
+        assert!(parser.parse(&raw).is_none());
     }
 
     // --- Unit tests for extract_five_tuple ---
@@ -590,7 +572,7 @@ mod tests {
     #[test]
     fn extract_tuple_ipv4_tcp() {
         let frame = build_ethernet_ipv4_tcp(10);
-        let tuple = extract_five_tuple(&frame).expect("should extract");
+        let tuple = extract_packet(&frame).expect("should extract").tuple;
         assert_eq!(tuple.src_ip, "10.0.0.1");
         assert_eq!(tuple.src_port, 1234);
         assert_eq!(tuple.dst_ip, "10.0.0.2");
@@ -601,7 +583,7 @@ mod tests {
     #[test]
     fn extract_tuple_ipv6_udp() {
         let frame = build_ethernet_ipv6_udp(10);
-        let tuple = extract_five_tuple(&frame).expect("should extract");
+        let tuple = extract_packet(&frame).expect("should extract").tuple;
         assert_eq!(tuple.src_ip, "::1");
         assert_eq!(tuple.src_port, 5678);
         assert_eq!(tuple.dst_ip, "::1");
@@ -611,7 +593,7 @@ mod tests {
 
     #[test]
     fn extract_tuple_too_short_returns_none() {
-        assert!(extract_five_tuple(&[0x00; 20]).is_none());
+        assert!(extract_packet(&[0x00; 20]).is_none());
     }
 
     #[test]
@@ -620,6 +602,6 @@ mod tests {
         frame.extend_from_slice(&[0xAA; 6]);
         frame.extend_from_slice(&[0x08, 0x01]); // unknown ethertype
         frame.extend_from_slice(&[0x00; 40]);
-        assert!(extract_five_tuple(&frame).is_none());
+        assert!(extract_packet(&frame).is_none());
     }
 }
