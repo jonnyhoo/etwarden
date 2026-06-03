@@ -2,22 +2,28 @@
 //!
 //! **Purpose**: NDJSON emitter — writes one JSON line per `NetEvent` to stdout.
 //! **Public API**: `struct JsonEmitter`
-//! **Dependencies**: `output::schema`, `parser::types`, `error`
+//! **Dependencies**: `output::schema`, `parser::types`, `error`, `process::lookup`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 98 / 200
+//! **Line budget**: 120 / 200
 
 use std::io::Write;
+use std::sync::Arc;
 
 use crate::{
     error::EtwardenError,
-    output::{schema::event_to_line, Emitter},
+    output::{schema::event_to_line_enriched, Emitter},
     parser::types::NetEvent,
+    process::lookup::ProcessNameCache,
 };
 
 /// Writes `NetEvent` as NDJSON lines to a `Write` sink.
+///
+/// Optionally enriches output with process name resolution via
+/// an injected [`ProcessNameCache`].
 pub struct JsonEmitter<W: Write> {
     writer: W,
+    process_cache: Option<Arc<ProcessNameCache>>,
 }
 
 impl<W: Write> JsonEmitter<W> {
@@ -27,7 +33,17 @@ impl<W: Write> JsonEmitter<W> {
     /// * `writer` — Any type implementing `std::io::Write`.
     #[must_use]
     pub const fn new(writer: W) -> Self {
-        Self { writer }
+        Self {
+            writer,
+            process_cache: None,
+        }
+    }
+
+    /// Attaches a process name cache for enrichment.
+    #[must_use]
+    pub fn with_process_cache(mut self, cache: Arc<ProcessNameCache>) -> Self {
+        self.process_cache = Some(cache);
+        self
     }
 
     /// Consumes the emitter and returns the inner writer.
@@ -39,7 +55,11 @@ impl<W: Write> JsonEmitter<W> {
 
 impl<W: Write + Send> Emitter for JsonEmitter<W> {
     fn emit(&mut self, event: &NetEvent) -> std::result::Result<(), EtwardenError> {
-        let line = event_to_line(event);
+        let process_name = self
+            .process_cache
+            .as_ref()
+            .and_then(|cache| cache.get_name(event.pid()));
+        let line = event_to_line_enriched(event, process_name, None);
         let json = serde_json::to_string(&line)
             .map_err(|e| EtwardenError::OutputWrite(format!("serialize: {e}")))?;
         self.writer
@@ -135,5 +155,51 @@ mod tests {
         let emitter = JsonEmitter::new(buf);
         let inner = emitter.into_inner();
         assert!(inner.is_empty());
+    }
+
+    #[test]
+    fn emit_with_process_cache_includes_name() {
+        let mut buf = Vec::new();
+        let cache = Arc::new(ProcessNameCache::new());
+        let mut emitter = JsonEmitter::new(&mut buf).with_process_cache(cache);
+
+        let my_pid = std::process::id();
+        let event = NetEvent::Connect {
+            timestamp: test_timestamp(),
+            pid: my_pid,
+            proto: Protocol::Tcp,
+            src: "127.0.0.1:49152".into(),
+            dst: "127.0.0.1:8080".into(),
+            bytes_out: 0,
+            bytes_in: 0,
+        };
+        emitter.emit(&event).expect("emit");
+        let output = String::from_utf8(buf).expect("utf8");
+        assert!(
+            output.contains("\"process_name\""),
+            "should contain process_name: {output}"
+        );
+    }
+
+    #[test]
+    fn emit_without_cache_omits_name() {
+        let mut buf = Vec::new();
+        let mut emitter = JsonEmitter::new(&mut buf);
+
+        let event = NetEvent::Connect {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            proto: Protocol::Tcp,
+            src: "127.0.0.1:49152".into(),
+            dst: "127.0.0.1:8080".into(),
+            bytes_out: 0,
+            bytes_in: 0,
+        };
+        emitter.emit(&event).expect("emit");
+        let output = String::from_utf8(buf).expect("utf8");
+        assert!(
+            !output.contains("\"process_name\""),
+            "should NOT contain process_name: {output}"
+        );
     }
 }

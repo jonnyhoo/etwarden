@@ -90,6 +90,18 @@ impl NetEvent {
         }
     }
 
+    /// Returns the `pid` field from any variant.
+    #[must_use]
+    pub const fn pid(&self) -> u32 {
+        match self {
+            Self::Connect { pid, .. }
+            | Self::Disconnect { pid, .. }
+            | Self::Send { pid, .. }
+            | Self::Recv { pid, .. }
+            | Self::RawCapture { pid, .. } => *pid,
+        }
+    }
+
     /// Returns the `bytes_in` field from any variant.
     #[must_use]
     pub const fn bytes_in(&self) -> u64 {
