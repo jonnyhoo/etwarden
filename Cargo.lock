@@ -366,6 +366,7 @@ dependencies = [
  "pcap-file",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "windows 0.58.0",
 ]

@@ -1,11 +1,14 @@
 //! # `pcap`
 //!
 //! **Purpose**: Raw packet correlation and pcapng file writing.
-//! **Public API**: `trait PcapSink`
+//! **Public API**: `trait PcapSink`, `mod writer`, `mod correlator`
 //! **Dependencies**: `parser`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
 //! **Line budget**: 22 / 60
+
+pub mod correlator;
+pub mod writer;
 
 use crate::{error::EtwardenError, parser::types::RawFrame};
 
