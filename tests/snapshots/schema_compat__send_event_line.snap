@@ -10,5 +10,6 @@ expression: line
   "dst": "8.8.8.8:53",
   "event": "send",
   "bytes_out": 64,
-  "bytes_in": 0
+  "bytes_in": 0,
+  "scope": "PUBLIC"
 }

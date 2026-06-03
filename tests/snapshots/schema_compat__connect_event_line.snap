@@ -10,5 +10,6 @@ expression: line
   "dst": "93.184.216.34:443",
   "event": "connect",
   "bytes_out": 1024,
-  "bytes_in": 4096
+  "bytes_in": 4096,
+  "scope": "PUBLIC"
 }

@@ -10,5 +10,6 @@ expression: line
   "dst": "10.0.0.2:54321",
   "event": "recv",
   "bytes_out": 0,
-  "bytes_in": 128
+  "bytes_in": 128,
+  "scope": "PRIVATE"
 }
