@@ -152,23 +152,28 @@ fn extract_host_header(payload: &[u8]) -> Option<String> {
     let search_end = payload.len().min(4096);
     let window = &payload[..search_end];
 
-    let pos = window
-        .windows(needle.len())
-        .position(|w| w.eq_ignore_ascii_case(needle))?;
-
-    let header_start = pos + needle.len();
-    let header_end = find_byte(&window[header_start..], b'\n')?;
-    let value = &window[header_start..header_start + header_end];
-    let value = value
-        .strip_suffix(b"\r")
-        .unwrap_or(value)
-        .trim_ascii_start();
-
-    if value.is_empty() {
-        return None;
+    for line in window.split(|&b| b == b'\n').skip(1) {
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if line.is_empty() {
+            break;
+        }
+        let Some(value) = strip_prefix_ignore_ascii_case(line, needle) else {
+            continue;
+        };
+        let value = value.trim_ascii_start();
+        if value.is_empty() {
+            return None;
+        }
+        return Some(String::from_utf8_lossy(value).to_string());
     }
 
-    Some(String::from_utf8_lossy(value).to_string())
+    None
+}
+
+fn strip_prefix_ignore_ascii_case<'a>(input: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
+    let head = input.get(..prefix.len())?;
+    head.eq_ignore_ascii_case(prefix)
+        .then(|| &input[prefix.len()..])
 }
 
 // ---------------------------------------------------------------------------
@@ -436,6 +441,20 @@ mod tests {
         let payload = b"GET / HTTP/1.1\r\nhOsT: Example.COM\r\n\r\n";
         let host = extract_host_header(payload).expect("should find host");
         assert_eq!(host, "Example.COM");
+    }
+
+    #[test]
+    fn extract_host_header_ignores_uri_host_substring() {
+        let payload = b"GET /?x=Host:evil.test HTTP/1.1\r\nUser-Agent: test\r\n\r\n";
+
+        assert!(extract_host_header(payload).is_none());
+    }
+
+    #[test]
+    fn extract_host_header_ignores_prefixed_header_name() {
+        let payload = b"GET / HTTP/1.1\r\nX-Host: evil.test\r\n\r\n";
+
+        assert!(extract_host_header(payload).is_none());
     }
 
     fn build_tls_client_hello(host: &str) -> Vec<u8> {
