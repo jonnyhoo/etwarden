@@ -98,27 +98,39 @@ pub struct DnsInfo {
 /// Handles compression pointers (0xC0 prefix) with hop limit.
 fn skip_dns_name(payload: &[u8], start: usize) -> Option<usize> {
     let mut offset = start;
+    let mut end = None;
     let mut hops = 0;
+    let mut name_len = 0usize;
     loop {
         let label_len = *payload.get(offset)? as usize;
         if label_len == 0 {
-            return Some(offset + 1);
+            return end.or_else(|| offset.checked_add(1));
         }
         if label_len & 0xC0 == 0xC0 {
-            if offset + 1 >= payload.len() {
+            let pointer_end = offset.checked_add(2)?;
+            let pointer_next = *payload.get(offset + 1)? as usize;
+            let pointer = ((label_len & 0x3F) << 8) | pointer_next;
+            if pointer >= offset || pointer >= payload.len() {
                 return None;
             }
+            end.get_or_insert(pointer_end);
             hops += 1;
             if hops > MAX_NAME_POINTER_HOPS {
                 return None;
             }
-            return Some(offset + 2);
+            offset = pointer;
+            continue;
         }
         if label_len & 0xC0 != 0 {
             return None;
         }
         let next = offset.checked_add(1)?.checked_add(label_len)?;
         if next > payload.len() {
+            return None;
+        }
+        let dot_len = usize::from(name_len > 0);
+        name_len = name_len.checked_add(dot_len)?.checked_add(label_len)?;
+        if name_len > MAX_DNS_NAME_LEN {
             return None;
         }
         offset = next;
@@ -360,6 +372,36 @@ mod tests {
     fn truncated_answer_returns_none() {
         let mut pkt = build_response_a("example.com", 1, &[&[93, 184, 216, 34]]);
         pkt.truncate(pkt.len() - 2);
+
+        assert!(analyze_dns(&pkt).is_none());
+    }
+
+    #[test]
+    fn invalid_answer_name_pointer_returns_none() {
+        let mut pkt = build_query("example.com", 1);
+        pkt[2] |= 0x80;
+        pkt[6] = 0x00;
+        pkt[7] = 0x01;
+        pkt.extend_from_slice(&[0xC0, 0x7F]);
+        pkt.extend_from_slice(&[0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2C, 0x00, 0x04]);
+        pkt.extend_from_slice(&[93, 184, 216, 34]);
+
+        assert!(analyze_dns(&pkt).is_none());
+    }
+
+    #[test]
+    fn forward_answer_name_pointer_returns_none() {
+        let mut pkt = build_query("example.com", 1);
+        pkt[2] |= 0x80;
+        pkt[6] = 0x00;
+        pkt[7] = 0x01;
+        let answer_offset = pkt.len();
+        pkt.extend_from_slice(&[0xC0, 0x00]);
+        pkt.extend_from_slice(&[0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2C, 0x00, 0x04]);
+        pkt.extend_from_slice(&[93, 184, 216, 34]);
+        let target = u8::try_from(pkt.len()).expect("packet fits");
+        pkt[answer_offset + 1] = target;
+        pkt.push(0);
 
         assert!(analyze_dns(&pkt).is_none());
     }
