@@ -5,7 +5,7 @@
 //! **Dependencies**: `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 95 / 120
+//! **Line budget**: 165 / 180
 
 use crate::error::EtwardenError;
 
@@ -19,8 +19,8 @@ pub struct SpawnResult {
 
 /// Spawns a child process and returns its PID and handle without waiting.
 ///
-/// The command string is split into program + args. Quoted paths are handled
-/// (e.g. `"C:\Program Files\app.exe" --flag`).
+/// The command string is split into program + args. Quoted paths and quoted
+/// arguments are handled (e.g. `"C:\Program Files\app.exe" --name "A B"`).
 ///
 /// # Arguments
 /// * `cmd` — The command string to execute.
@@ -43,8 +43,9 @@ pub fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult, EtwardenError> {
 
 /// Splits a command string into (program, args).
 ///
-/// Handles quoted program paths: `"C:\Program Files\app.exe" --flag value`
-/// becomes `("C:\Program Files\app.exe", ["--flag", "value"])`.
+/// Handles quoted program paths and quoted arguments:
+/// `"C:\Program Files\app.exe" --name "A B"` becomes
+/// `("C:\Program Files\app.exe", ["--name", "A B"])`.
 fn parse_command(cmd: &str) -> (String, Vec<String>) {
     let trimmed = cmd.trim();
     if trimmed.is_empty() {
@@ -68,13 +69,41 @@ fn parse_command(cmd: &str) -> (String, Vec<String>) {
         },
     );
 
-    let args = if rest.is_empty() {
-        Vec::new()
-    } else {
-        rest.split_whitespace().map(String::from).collect()
-    };
+    let args = parse_args(rest);
 
     (program.to_string(), args)
+}
+
+fn parse_args(rest: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut in_quotes = false;
+    let mut started = false;
+
+    for ch in rest.chars() {
+        match ch {
+            '"' => {
+                in_quotes = !in_quotes;
+                started = true;
+            }
+            c if c.is_whitespace() && !in_quotes => {
+                if started {
+                    args.push(std::mem::take(&mut current));
+                    started = false;
+                }
+            }
+            c => {
+                current.push(c);
+                started = true;
+            }
+        }
+    }
+
+    if started {
+        args.push(current);
+    }
+
+    args
 }
 
 #[cfg(test)]
@@ -100,6 +129,20 @@ mod tests {
         let (prog, args) = parse_command(r#""C:\Program Files\app.exe" --flag value"#);
         assert_eq!(prog, r"C:\Program Files\app.exe");
         assert_eq!(args, vec!["--flag", "value"]);
+    }
+
+    #[test]
+    fn parse_quoted_argument() {
+        let (prog, args) = parse_command(r#"tool.exe --name "hello world" --flag"#);
+        assert_eq!(prog, "tool.exe");
+        assert_eq!(args, vec!["--name", "hello world", "--flag"]);
+    }
+
+    #[test]
+    fn parse_empty_quoted_argument() {
+        let (prog, args) = parse_command(r#"tool.exe "" tail"#);
+        assert_eq!(prog, "tool.exe");
+        assert_eq!(args, vec!["", "tail"]);
     }
 
     #[test]
