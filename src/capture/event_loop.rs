@@ -60,9 +60,9 @@ pub fn run_event_loop(
 
     loop {
         let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
-        connections_total += stats.connections_total;
-        bytes_out_total += stats.bytes_out_total;
-        bytes_in_total += stats.bytes_in_total;
+        connections_total = connections_total.saturating_add(stats.connections_total);
+        bytes_out_total = bytes_out_total.saturating_add(stats.bytes_out_total);
+        bytes_in_total = bytes_in_total.saturating_add(stats.bytes_in_total);
         pcap_written |= stats.pcap_written;
 
         if should_stop(started, duration, stop_signal) {
@@ -74,9 +74,9 @@ pub fn run_event_loop(
     session.stop()?;
 
     let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
-    connections_total += stats.connections_total;
-    bytes_out_total += stats.bytes_out_total;
-    bytes_in_total += stats.bytes_in_total;
+    connections_total = connections_total.saturating_add(stats.connections_total);
+    bytes_out_total = bytes_out_total.saturating_add(stats.bytes_out_total);
+    bytes_in_total = bytes_in_total.saturating_add(stats.bytes_in_total);
     pcap_written |= stats.pcap_written;
     emitter.flush()?;
 
@@ -133,9 +133,9 @@ fn drain_events(
         }
 
         emitter.emit(event)?;
-        stats.connections_total += 1;
-        stats.bytes_out_total += event.bytes_out();
-        stats.bytes_in_total += event.bytes_in();
+        stats.connections_total = stats.connections_total.saturating_add(1);
+        stats.bytes_out_total = stats.bytes_out_total.saturating_add(event.bytes_out());
+        stats.bytes_in_total = stats.bytes_in_total.saturating_add(event.bytes_in());
     }
     Ok(stats)
 }
@@ -221,6 +221,18 @@ mod tests {
         }
     }
 
+    fn send(pid: u32, bytes_out: u64) -> NetEvent {
+        NetEvent::Send {
+            timestamp: ts(),
+            pid,
+            proto: Protocol::Tcp,
+            src: "10.0.0.1:1234".into(),
+            dst: "10.0.0.2:443".into(),
+            bytes_out,
+            bytes_in: 0,
+        }
+    }
+
     fn push_event(registry: &ParserRegistry, event: NetEvent) {
         registry
             .events_buffer()
@@ -285,5 +297,21 @@ mod tests {
         assert!(!stats.pcap_written);
         assert_eq!(emitter.emitted, 1);
         assert_eq!(stats.connections_total, 1);
+    }
+
+    #[test]
+    fn summary_byte_totals_saturate() {
+        let registry = ParserRegistry::new();
+        push_event(&registry, send(42, u64::MAX));
+        push_event(&registry, send(42, 1));
+        let filters: Vec<Box<dyn Filter>> = vec![Box::new(PidFilter::single(42))];
+        let mut emitter = CountingEmitter::default();
+        let mut pcap_sink = None;
+
+        let stats = drain_events(&registry, &filters, &mut emitter, &mut pcap_sink, None)
+            .expect("drain events");
+
+        assert_eq!(emitter.emitted, 2);
+        assert_eq!(stats.bytes_out_total, u64::MAX);
     }
 }
