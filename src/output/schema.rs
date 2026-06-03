@@ -144,6 +144,9 @@ pub fn event_to_line(event: &NetEvent) -> EventLine {
             bytes_out,
             bytes_in,
         },
+        NetEvent::RawCapture { .. } => {
+            unreachable!("RawCapture events are routed to pcap sink, not NDJSON")
+        }
     }
 }
 

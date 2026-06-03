@@ -51,7 +51,8 @@ const fn extract_pid(event: &NetEvent) -> u32 {
         NetEvent::Connect { pid, .. }
         | NetEvent::Disconnect { pid, .. }
         | NetEvent::Send { pid, .. }
-        | NetEvent::Recv { pid, .. } => *pid,
+        | NetEvent::Recv { pid, .. }
+        | NetEvent::RawCapture { pid, .. } => *pid,
     }
 }
 

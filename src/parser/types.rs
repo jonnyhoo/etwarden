@@ -6,7 +6,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 148 / 200
+//! **Line budget**: 165 / 200
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -73,6 +73,8 @@ pub enum NetEvent {
         bytes_out: u64,
         bytes_in: u64,
     },
+    /// Raw frame from NDIS provider — routed to pcap sink, not NDJSON.
+    RawCapture { frame: RawFrame, pid: u32 },
 }
 
 impl NetEvent {
@@ -84,6 +86,7 @@ impl NetEvent {
             | Self::Disconnect { bytes_out, .. }
             | Self::Send { bytes_out, .. }
             | Self::Recv { bytes_out, .. } => *bytes_out,
+            Self::RawCapture { .. } => 0,
         }
     }
 
@@ -95,6 +98,7 @@ impl NetEvent {
             | Self::Disconnect { bytes_in, .. }
             | Self::Send { bytes_in, .. }
             | Self::Recv { bytes_in, .. } => *bytes_in,
+            Self::RawCapture { .. } => 0,
         }
     }
 }
@@ -109,7 +113,7 @@ pub struct RawEvent {
 }
 
 /// Raw Ethernet frame bytes captured by the NDIS ETW provider.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct RawFrame {
     pub timestamp: DateTime<Utc>,
     pub data: Vec<u8>,
