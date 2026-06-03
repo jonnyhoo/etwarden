@@ -115,6 +115,10 @@ fn fmt_addr_port(ip: &str, port: u16) -> String {
     format!("{ip}:{port}")
 }
 
+fn event_pid(d: &[u8]) -> Option<u32> {
+    read_u32(d, 0)
+}
+
 // ---------------------------------------------------------------------------
 // Parsers
 // ---------------------------------------------------------------------------
@@ -124,6 +128,7 @@ fn parse_connect_v4(raw: &RawEvent) -> Option<NetEvent> {
     if d.len() < 20 {
         return None;
     }
+    let pid = event_pid(d)?;
     let _size = read_u32(d, 4)?;
     let daddr = read_u32(d, 8)?;
     let saddr = read_u32(d, 12)?;
@@ -132,7 +137,7 @@ fn parse_connect_v4(raw: &RawEvent) -> Option<NetEvent> {
 
     Some(NetEvent::Connect {
         timestamp: raw.timestamp,
-        pid: raw.pid,
+        pid,
         proto: Protocol::Tcp,
         src: fmt_addr_port(&fmt_ipv4(saddr), sport),
         dst: fmt_addr_port(&fmt_ipv4(daddr), dport),
@@ -147,6 +152,7 @@ fn parse_connect_v6(raw: &RawEvent) -> Option<NetEvent> {
     if d.len() < 44 {
         return None;
     }
+    let pid = event_pid(d)?;
     let daddr = d.get(8..24)?;
     let saddr = d.get(24..40)?;
     let dport = read_u16(d, 40)?;
@@ -154,7 +160,7 @@ fn parse_connect_v6(raw: &RawEvent) -> Option<NetEvent> {
 
     Some(NetEvent::Connect {
         timestamp: raw.timestamp,
-        pid: raw.pid,
+        pid,
         proto: Protocol::Tcp,
         src: fmt_addr_port(&fmt_ipv6(saddr), sport),
         dst: fmt_addr_port(&fmt_ipv6(daddr), dport),
@@ -168,6 +174,7 @@ fn parse_disconnect_v4(raw: &RawEvent) -> Option<NetEvent> {
     if d.len() < 20 {
         return None;
     }
+    let pid = event_pid(d)?;
     let daddr = read_u32(d, 8)?;
     let saddr = read_u32(d, 12)?;
     let dport = read_u16(d, 16)?;
@@ -175,7 +182,7 @@ fn parse_disconnect_v4(raw: &RawEvent) -> Option<NetEvent> {
 
     Some(NetEvent::Disconnect {
         timestamp: raw.timestamp,
-        pid: raw.pid,
+        pid,
         proto: Protocol::Tcp,
         src: fmt_addr_port(&fmt_ipv4(saddr), sport),
         dst: fmt_addr_port(&fmt_ipv4(daddr), dport),
@@ -190,6 +197,7 @@ fn parse_disconnect_v6(raw: &RawEvent) -> Option<NetEvent> {
     if d.len() < 44 {
         return None;
     }
+    let pid = event_pid(d)?;
     let daddr = d.get(8..24)?;
     let saddr = d.get(24..40)?;
     let dport = read_u16(d, 40)?;
@@ -197,7 +205,7 @@ fn parse_disconnect_v6(raw: &RawEvent) -> Option<NetEvent> {
 
     Some(NetEvent::Disconnect {
         timestamp: raw.timestamp,
-        pid: raw.pid,
+        pid,
         proto: Protocol::Tcp,
         src: fmt_addr_port(&fmt_ipv6(saddr), sport),
         dst: fmt_addr_port(&fmt_ipv6(daddr), dport),
@@ -251,6 +259,7 @@ fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option
     if d.len() < 20 {
         return None;
     }
+    let pid = event_pid(d)?;
     let size = read_u32(d, 4)?;
     let daddr = read_u32(d, 8)?;
     let saddr = read_u32(d, 12)?;
@@ -261,7 +270,7 @@ fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option
     Some(make_send_recv(
         kind,
         raw.timestamp,
-        raw.pid,
+        pid,
         proto,
         fmt_addr_port(&fmt_ipv4(saddr), sport),
         fmt_addr_port(&fmt_ipv4(daddr), dport),
@@ -275,6 +284,7 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option
     if d.len() < 44 {
         return None;
     }
+    let pid = event_pid(d)?;
     let size = read_u32(d, 4)?;
     let daddr = d.get(8..24)?;
     let saddr = d.get(24..40)?;
@@ -285,7 +295,7 @@ fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option
     Some(make_send_recv(
         kind,
         raw.timestamp,
-        raw.pid,
+        pid,
         proto,
         fmt_addr_port(&fmt_ipv6(saddr), sport),
         fmt_addr_port(&fmt_ipv6(daddr), dport),
@@ -482,5 +492,18 @@ mod tests {
             data: vec![0; 10], // too short
         };
         assert!(TcpIpParser.parse(&raw).is_none());
+    }
+
+    #[test]
+    fn parser_uses_payload_pid_instead_of_record_pid() {
+        let mut raw = raw_v4(EVENT_ID_TCP_SEND_IPV4, 4321, &[]);
+        raw.pid = 9999;
+
+        let event = TcpIpParser.parse(&raw).expect("should parse send v4");
+        let NetEvent::Send { pid, .. } = event else {
+            unreachable!("expected Send variant");
+        };
+
+        assert_eq!(pid, 4321);
     }
 }
