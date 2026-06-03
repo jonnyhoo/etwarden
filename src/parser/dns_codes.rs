@@ -165,13 +165,7 @@ pub fn parse_query_results(results: &str) -> Vec<String> {
 
 /// Checks if a string looks like an IP address (v4 or v6).
 fn looks_like_ip(s: &str) -> bool {
-    // Quick heuristic: contains only digits, dots, colons, and hex letters
-    // and doesn't start with "type:" or contain spaces
-    if s.contains(' ') || s.starts_with("type:") {
-        return false;
-    }
-    s.chars()
-        .all(|c| c.is_ascii_hexdigit() || c == '.' || c == ':')
+    s.parse::<std::net::IpAddr>().is_ok()
 }
 
 #[cfg(test)]
@@ -227,6 +221,13 @@ mod tests {
     fn parse_query_results_empty() {
         assert!(parse_query_results("").is_empty());
         assert!(parse_query_results("type: 5 example.com;").is_empty());
+    }
+
+    #[test]
+    fn parse_query_results_rejects_invalid_ip_like_tokens() {
+        let results = "bad;::::;1.2.3.999;93.184.216.34";
+        let ips = parse_query_results(results);
+        assert_eq!(ips, vec!["93.184.216.34"]);
     }
 
     #[test]
