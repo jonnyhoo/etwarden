@@ -22,7 +22,7 @@ use crate::{
     filter::Filter,
     output::{schema::SummaryLine, Emitter},
     parser::{correlation::ActivityMap, ParserRegistry},
-    pcap::PcapSink,
+    pcap::{correlator::Correlator, PcapSink},
 };
 
 /// Configuration for a capture session.
@@ -67,12 +67,14 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     }
 
     let running = session_builder.start()?;
+    let correlator = Correlator::new();
     let summary = run_event_loop(
         running,
         &registry,
         &config.filters,
         config.emitter.as_mut(),
         config.pcap_sink.as_mut(),
+        Some(&correlator),
     )?;
 
     Ok(SummaryLine {
