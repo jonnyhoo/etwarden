@@ -126,7 +126,10 @@ fn skip_dns_name(payload: &[u8], start: usize) -> Option<usize> {
 }
 
 /// Parse a single question section, returning (name, `query_type`, `offset_after`).
-fn parse_question(payload: &[u8], start: usize) -> (Option<String>, Option<DnsQueryType>, usize) {
+fn parse_question(
+    payload: &[u8],
+    start: usize,
+) -> Option<(Option<String>, Option<DnsQueryType>, usize)> {
     let mut offset = start;
     let mut name = String::new();
 
@@ -136,12 +139,11 @@ fn parse_question(payload: &[u8], start: usize) -> (Option<String>, Option<DnsQu
             offset += 1;
             break;
         }
-        if label_len >= 0xC0 {
-            offset += 2;
-            break;
+        if label_len & 0xC0 != 0 {
+            return None;
         }
         if offset + 1 + label_len > payload.len() {
-            break;
+            return None;
         }
         if !name.is_empty() {
             name.push('.');
@@ -150,34 +152,36 @@ fn parse_question(payload: &[u8], start: usize) -> (Option<String>, Option<DnsQu
             name.push_str(label);
         }
         if name.len() > MAX_DNS_NAME_LEN {
-            break;
+            return None;
         }
         offset += 1 + label_len;
+    }
+    if offset >= payload.len() {
+        return None;
     }
 
     let query_name = if name.is_empty() { None } else { Some(name) };
 
-    let query_type = if offset + 2 <= payload.len() {
-        let qtype = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
-        Some(match qtype {
-            1 => DnsQueryType::A,
-            2 => DnsQueryType::Ns,
-            5 => DnsQueryType::Cname,
-            6 => DnsQueryType::Soa,
-            12 => DnsQueryType::Ptr,
-            15 => DnsQueryType::Mx,
-            16 => DnsQueryType::Txt,
-            28 => DnsQueryType::Aaaa,
-            33 => DnsQueryType::Srv,
-            257 => DnsQueryType::Caa,
-            other => DnsQueryType::Other(other),
-        })
-    } else {
-        None
-    };
-    offset = offset.saturating_add(4);
+    if offset.checked_add(4).is_none_or(|e| e > payload.len()) {
+        return None;
+    }
+    let qtype = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
+    let query_type = Some(match qtype {
+        1 => DnsQueryType::A,
+        2 => DnsQueryType::Ns,
+        5 => DnsQueryType::Cname,
+        6 => DnsQueryType::Soa,
+        12 => DnsQueryType::Ptr,
+        15 => DnsQueryType::Mx,
+        16 => DnsQueryType::Txt,
+        28 => DnsQueryType::Aaaa,
+        33 => DnsQueryType::Srv,
+        257 => DnsQueryType::Caa,
+        other => DnsQueryType::Other(other),
+    });
+    offset += 4;
 
-    (query_name, query_type, offset)
+    Some((query_name, query_type, offset))
 }
 
 /// Walk answer records, extracting A/AAAA response IPs.
@@ -244,7 +248,7 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
 
     // Parse first question only (most common case).
     let (query_name, query_type, offset) = if qdcount > 0 {
-        parse_question(payload, 12)
+        parse_question(payload, 12)?
     } else {
         (None, None, 12)
     };
@@ -376,5 +380,23 @@ mod tests {
         let info = analyze_dns(&pkt).expect("parse");
         assert!(info.query_name.is_none());
         assert!(info.query_type.is_none());
+    }
+
+    #[test]
+    fn truncated_question_returns_none() {
+        let mut pkt = build_query("example.com", 1);
+        pkt.truncate(pkt.len() - 2);
+
+        assert!(analyze_dns(&pkt).is_none());
+    }
+
+    #[test]
+    fn compressed_question_name_returns_none() {
+        let pkt = vec![
+            0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC0, 0x0C,
+            0x00, 0x01, 0x00, 0x01,
+        ];
+
+        assert!(analyze_dns(&pkt).is_none());
     }
 }
