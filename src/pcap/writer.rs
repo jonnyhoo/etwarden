@@ -5,7 +5,7 @@
 //! **Dependencies**: `pcap-file`, `parser::types`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 120 / 160
+//! **Line budget**: 224 / 240
 
 use std::{borrow::Cow, fs::File, path::Path, time::Duration};
 
@@ -67,11 +67,7 @@ impl PcapNgWriter {
 
 impl PcapSink for PcapNgWriter {
     fn write_frame(&mut self, frame: &RawFrame, pid: u32) -> Result<(), EtwardenError> {
-        let timestamp = frame
-            .timestamp
-            .timestamp_nanos_opt()
-            .map(|ns| Duration::from_nanos(ns.cast_unsigned()))
-            .unwrap_or_default();
+        let timestamp = pcap_timestamp(frame);
 
         let epb = EnhancedPacketBlock {
             interface_id: 0,
@@ -91,6 +87,15 @@ impl PcapSink for PcapNgWriter {
     }
 }
 
+fn pcap_timestamp(frame: &RawFrame) -> Duration {
+    frame
+        .timestamp
+        .timestamp_nanos_opt()
+        .and_then(|ns| u64::try_from(ns).ok())
+        .map(Duration::from_nanos)
+        .unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -99,15 +104,37 @@ impl PcapSink for PcapNgWriter {
 mod tests {
     use std::io::Read;
 
-    use chrono::Utc;
+    use chrono::{DateTime, Utc};
 
     use super::*;
 
     fn test_frame(data: &[u8]) -> RawFrame {
+        test_frame_at(data, Utc::now())
+    }
+
+    fn test_frame_at(data: &[u8], timestamp: DateTime<Utc>) -> RawFrame {
         RawFrame {
-            timestamp: Utc::now(),
+            timestamp,
             data: data.to_vec(),
         }
+    }
+
+    #[test]
+    fn pcap_timestamp_keeps_post_unix_nanos() {
+        let timestamp = DateTime::parse_from_rfc3339("1970-01-01T00:00:01.500000100Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+        let frame = test_frame_at(&[], timestamp);
+        assert_eq!(pcap_timestamp(&frame), Duration::new(1, 500_000_100));
+    }
+
+    #[test]
+    fn pcap_timestamp_clamps_pre_unix_to_zero() {
+        let timestamp = DateTime::parse_from_rfc3339("1969-12-31T23:59:59Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+        let frame = test_frame_at(&[], timestamp);
+        assert_eq!(pcap_timestamp(&frame), Duration::ZERO);
     }
 
     #[test]
