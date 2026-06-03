@@ -194,6 +194,10 @@ fn parse_ipv6_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
         return None;
     }
 
+    if ip[0] >> 4 != 6 {
+        return None;
+    }
+
     let payload_len = usize::from(u16::from_be_bytes([ip[4], ip[5]]));
     let payload_end = 40usize.checked_add(payload_len)?;
     if payload_end > ip.len() {
@@ -611,6 +615,14 @@ mod tests {
         let declared_payload_len = 24u16;
         frame[ETH_HDR_LEN + 4..ETH_HDR_LEN + 6]
             .copy_from_slice(&declared_payload_len.to_be_bytes());
+
+        assert!(extract_packet(&frame).is_none());
+    }
+
+    #[test]
+    fn extract_tuple_rejects_invalid_ipv6_version() {
+        let mut frame = build_ethernet_ipv6_udp(10);
+        frame[ETH_HDR_LEN] = 0x40;
 
         assert!(extract_packet(&frame).is_none());
     }
