@@ -6,7 +6,7 @@
 //! **Dependencies**: `parser::types`, `parser::tcp_state`, `parser::dpi`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 300 / 350
+//! **Line budget**: 477 / 500
 
 use std::{
     collections::HashMap,
@@ -87,7 +87,7 @@ pub struct ConnectionTracker {
 
 struct TrackerInner {
     connections: HashMap<FiveTuple, TrackedConnection>,
-    _max_connections: usize,
+    max_connections: usize,
     idle_timeout: Duration,
 }
 
@@ -104,7 +104,7 @@ impl ConnectionTracker {
         Self {
             inner: Mutex::new(TrackerInner {
                 connections: HashMap::new(),
-                _max_connections: max_connections,
+                max_connections,
                 idle_timeout,
             }),
         }
@@ -161,6 +161,12 @@ impl ConnectionTracker {
 
         let now = SystemTime::now();
         let mut inner = self.inner.lock().ok()?;
+
+        if !inner.connections.contains_key(&tuple)
+            && inner.connections.len() >= inner.max_connections
+        {
+            return None;
+        }
 
         let conn = inner
             .connections
@@ -458,5 +464,19 @@ mod tests {
         tracker.ingest(&connect_event(1, "10.0.0.1:1000", "10.0.0.2:80"));
         tracker.ingest(&connect_event(2, "10.0.0.1:1001", "10.0.0.2:80"));
         assert_eq!(tracker.len(), 2);
+    }
+
+    #[test]
+    fn capacity_limit_blocks_new_connections() {
+        let tracker = ConnectionTracker::with_config(1, Duration::from_secs(300));
+        let src = "10.0.0.1:1000";
+        let dst = "10.0.0.2:80";
+        assert!(tracker.ingest(&connect_event(1, src, dst)).is_some());
+        assert!(tracker.ingest(&send_event(1, src, dst, 10)).is_some());
+        assert!(tracker
+            .ingest(&connect_event(2, "10.0.0.3:1001", "10.0.0.4:81"))
+            .is_none());
+        assert_eq!(tracker.len(), 1);
+        assert_eq!(tracker.snapshot()[0].bytes_out, 10);
     }
 }
