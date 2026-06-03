@@ -95,14 +95,7 @@ pub fn analyze_udp_payload(payload: &[u8], src_port: u16, dst_port: u16) -> Opti
 
 /// HTTP methods to check for in plaintext traffic.
 const HTTP_METHODS: &[&[u8]] = &[
-    b"GET ",
-    b"POST ",
-    b"PUT ",
-    b"DELETE ",
-    b"HEAD ",
-    b"OPTIONS ",
-    b"PATCH ",
-    b"HTTP/",
+    b"GET", b"POST", b"PUT", b"DELETE", b"HEAD", b"OPTIONS", b"PATCH", b"HTTP/",
 ];
 
 /// Detect plaintext HTTP in a TCP payload.
@@ -129,14 +122,22 @@ fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
     }
 
     // Request: "GET /path HTTP/1.1"
-    let line_str = String::from_utf8_lossy(first_line);
-    let mut parts = line_str.splitn(3, ' ');
-    let method = parts.next().map(String::from);
-    let uri = parts.next().unwrap_or("/").to_string();
+    let mut parts = first_line.split(|&b| b == b' ');
+    let method = parts.next()?;
+    let uri = parts.next()?;
+    let version = parts.next()?;
+    if parts.next().is_some()
+        || method.is_empty()
+        || uri.is_empty()
+        || !HTTP_METHODS[..HTTP_METHODS.len() - 1].contains(&method)
+        || !version.starts_with(b"HTTP/")
+    {
+        return None;
+    }
 
     Some(HttpInfo {
-        method,
-        uri_or_status: uri,
+        method: Some(String::from_utf8_lossy(method).to_string()),
+        uri_or_status: String::from_utf8_lossy(uri).to_string(),
         host: extract_host_header(payload),
     })
 }
@@ -358,6 +359,17 @@ mod tests {
     fn non_http_returns_none() {
         let payload = b"random binary data that is not HTTP";
         assert!(analyze_http(payload).is_none());
+    }
+
+    #[test]
+    fn http_request_requires_uri_and_version() {
+        assert!(analyze_http(b"GET \r\nHost: example.com\r\n\r\n").is_none());
+        assert!(analyze_http(b"GET /\r\nHost: example.com\r\n\r\n").is_none());
+    }
+
+    #[test]
+    fn http_request_rejects_bad_version() {
+        assert!(analyze_http(b"GET / NOTHTTP/1.1\r\nHost: example.com\r\n\r\n").is_none());
     }
 
     #[test]
