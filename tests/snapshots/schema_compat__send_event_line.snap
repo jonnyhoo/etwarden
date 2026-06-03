@@ -1,0 +1,14 @@
+---
+source: tests/schema_compat.rs
+expression: line
+---
+{
+  "t": "2025-01-15T12:00:00Z",
+  "pid": 5678,
+  "proto": "UDP",
+  "src": "10.0.0.2:54321",
+  "dst": "8.8.8.8:53",
+  "event": "send",
+  "bytes_out": 64,
+  "bytes_in": 0
+}

@@ -1,0 +1,13 @@
+---
+source: tests/schema_compat.rs
+expression: output
+---
+{
+  "type": "summary",
+  "pid": 1234,
+  "duration_ms": 5000,
+  "connections_total": 42,
+  "bytes_out_total": 102400,
+  "bytes_in_total": 204800,
+  "pcap_written": true
+}
