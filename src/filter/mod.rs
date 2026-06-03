@@ -5,6 +5,18 @@
 //! **Dependencies**: `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 5 / 60
+//! **Line budget**: 18 / 60
 
-// T06 will fill this in
+use crate::parser::types::NetEvent;
+
+/// Decides whether a `NetEvent` should be passed downstream or dropped.
+pub trait Filter: Send + Sync {
+    /// Returns `true` if the event should be allowed through.
+    ///
+    /// # Arguments
+    /// * `event` — The network event to evaluate.
+    ///
+    /// # Returns
+    /// `true` to allow, `false` to drop.
+    fn allow(&self, event: &NetEvent) -> bool;
+}

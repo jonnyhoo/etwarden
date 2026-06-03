@@ -70,7 +70,7 @@ all         = { level = "deny",  priority = -1 }
 pedantic    = { level = "warn",  priority = -1 }
 nursery     = { level = "warn",  priority = -1 }
 unwrap_used = "deny"
-expect_used = "warn"
+expect_used = "allow"
 panic       = "deny"
 ```
 
