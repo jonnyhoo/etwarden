@@ -32,6 +32,11 @@ pub struct SpawnResult {
 /// Returns [`EtwardenError::ProcessSpawn`] if the spawn fails.
 pub fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult, EtwardenError> {
     let (program, args) = parse_command(cmd);
+    if program.is_empty() {
+        return Err(EtwardenError::ProcessSpawn(
+            "spawn command must not be empty".into(),
+        ));
+    }
     let child = std::process::Command::new(program)
         .args(&args)
         .spawn()
@@ -188,5 +193,14 @@ mod tests {
     fn spawn_nonexistent_fails() {
         let result = spawn_and_get_pid("nonexistent_program_xyz_12345");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn spawn_empty_command_fails_before_process_create() {
+        let result = spawn_and_get_pid("   ");
+        assert!(
+            matches!(result, Err(err) if err.to_string().contains("must not be empty")),
+            "empty command should fail"
+        );
     }
 }
