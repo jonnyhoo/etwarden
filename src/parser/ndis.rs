@@ -172,8 +172,10 @@ fn parse_ipv4_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
     if ihl < 20 || ip.len() < ihl {
         return None;
     }
-    let fragment_offset = u16::from_be_bytes([ip[6], ip[7]]) & 0x1FFF;
-    if fragment_offset != 0 {
+    let flags_fragment = u16::from_be_bytes([ip[6], ip[7]]);
+    let more_fragments = flags_fragment & 0x2000 != 0;
+    let fragment_offset = flags_fragment & 0x1FFF;
+    if more_fragments || fragment_offset != 0 {
         return None;
     }
     let total_len = usize::from(u16::from_be_bytes([ip[2], ip[3]]));
@@ -605,6 +607,14 @@ mod tests {
         let mut frame = build_ethernet_ipv4_tcp(10);
         let declared_len = u16::try_from(frame.len() - ETH_HDR_LEN + 5).expect("fits in u16");
         frame[ETH_HDR_LEN + 2..ETH_HDR_LEN + 4].copy_from_slice(&declared_len.to_be_bytes());
+
+        assert!(extract_packet(&frame).is_none());
+    }
+
+    #[test]
+    fn extract_tuple_rejects_ipv4_more_fragments() {
+        let mut frame = build_ethernet_ipv4_tcp(10);
+        frame[ETH_HDR_LEN + 6..ETH_HDR_LEN + 8].copy_from_slice(&0x2000u16.to_be_bytes());
 
         assert!(extract_packet(&frame).is_none());
     }
