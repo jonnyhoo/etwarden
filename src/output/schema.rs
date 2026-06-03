@@ -251,9 +251,9 @@ pub fn event_to_line_enriched(
                 process_name,
             })
         }
-        NetEvent::RawCapture { .. } => {
-            unreachable!("RawCapture events are routed to pcap sink, not NDJSON")
-        }
+        NetEvent::RawCapture { .. } => OutputLine::Error(ErrorLine::new(
+            "raw capture event cannot be serialized to NDJSON",
+        )),
         NetEvent::DnsQuery {
             timestamp,
             pid,
@@ -422,6 +422,26 @@ mod tests {
         let json = serde_json::to_string(&output).expect("serialize");
         let back: OutputLine = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(output, back);
+    }
+
+    #[test]
+    fn raw_capture_converts_to_error_line() {
+        let event = NetEvent::RawCapture {
+            frame: crate::parser::types::RawFrame {
+                timestamp: test_timestamp(),
+                data: vec![0xde, 0xad, 0xbe, 0xef],
+            },
+            pid: 1234,
+        };
+        let line = event_to_line(&event);
+        let OutputLine::Error(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.kind, "error");
+        assert_eq!(
+            line.message,
+            "raw capture event cannot be serialized to NDJSON"
+        );
     }
 
     #[test]
