@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 100 / 120
+//! **Line budget**: 93 / 120
 
 pub mod event_loop;
 pub mod provider;
@@ -17,13 +17,13 @@ use std::sync::{atomic::AtomicBool, Arc};
 use crate::{
     capture::{
         event_loop::run_event_loop,
-        provider::{build_correlation_provider, build_ndis_provider, build_tcpip_provider},
+        provider::{build_ndis_provider, build_tcpip_provider},
         session::EtwSession,
     },
     error::Result,
     filter::Filter,
     output::{schema::SummaryLine, Emitter},
-    parser::{correlation::ActivityMap, ParserRegistry},
+    parser::ParserRegistry,
     pcap::{correlator::Correlator, PcapSink},
 };
 
@@ -67,13 +67,6 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let mut session_builder = EtwSession::new();
     session_builder.add_provider(provider);
     session_builder.add_provider(ndis_provider);
-
-    // When pcap sink is present, add Correlation provider for future ActivityId joins.
-    if emit_raw_capture {
-        let activity_map = Arc::new(ActivityMap::new());
-        let correlation_provider = build_correlation_provider(Arc::clone(&activity_map));
-        session_builder.add_provider(correlation_provider);
-    }
 
     let running = session_builder.start()?;
     let summary = run_event_loop(

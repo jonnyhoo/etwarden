@@ -1,12 +1,11 @@
 //! # `capture::provider`
 //!
 //! **Purpose**: Builds pre-configured ferrisetw Provider instances.
-//! **Public API**: `fn build_tcpip_provider()`, `fn build_ndis_provider()`,
-//!                `fn build_correlation_provider()`, `fn build_dns_client_provider()`
+//! **Public API**: `fn build_tcpip_provider()`, `fn build_ndis_provider()`
 //! **Dependencies**: `ferrisetw`, `capture::timestamp`, `parser::*`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 469 / 500
+//! **Line budget**: 356 / 500
 
 use std::sync::Arc;
 
@@ -15,8 +14,6 @@ use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 use crate::{
     capture::timestamp,
     parser::{
-        correlation::{ActivityMap, PROVIDER_CORRELATION},
-        dns_codes::{dns_status_name, dns_type_name, parse_query_results},
         ndis::{NdisParser, PROVIDER_NDIS},
         tcpip::{
             EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
@@ -353,116 +350,4 @@ pub fn build_ndis_provider(
             }
         })
         .build()
-}
-
-// ---------------------------------------------------------------------------
-// build_correlation_provider
-// ---------------------------------------------------------------------------
-
-/// Builds the Microsoft-Windows-Networking-Correlation ETW provider with a
-/// callback that populates the given `ActivityMap`.
-pub fn build_correlation_provider(activity_map: std::sync::Arc<ActivityMap>) -> Provider {
-    Provider::by_guid(PROVIDER_CORRELATION)
-        .add_callback(move |record: &EventRecord, _locator: &SchemaLocator| {
-            // Correlation event parsing will be implemented when the schema
-            // is reverse-engineered. For now, we just acknowledge the callback.
-            let _ = (record, &activity_map);
-        })
-        .build()
-}
-
-// ---------------------------------------------------------------------------
-// build_dns_client_provider
-// ---------------------------------------------------------------------------
-
-/// Microsoft-Windows-DNS-Client ETW provider GUID.
-const PROVIDER_DNS_CLIENT: &str = "1c95126e-7eea-49a9-a3fe-a378b03ddb4d";
-
-/// `EventID` 3006 — DNS query issued by the local resolver.
-const EVENT_ID_DNS_QUERY: u16 = 3006;
-
-/// `EventID` 3008 — DNS response received by the local resolver.
-const EVENT_ID_DNS_RESPONSE: u16 = 3008;
-
-/// Builds the Microsoft-Windows-DNS-Client ETW provider with a callback that
-/// parses DNS query (3006) and response (3008) events.
-///
-/// This provider works with encrypted DNS (DoH/DoT) because the OS resolver
-/// has already parsed the DNS payload before emitting the ETW event.
-pub fn build_dns_client_provider(registry: std::sync::Arc<ParserRegistry>) -> Provider {
-    Provider::by_guid(PROVIDER_DNS_CLIENT)
-        .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
-            if let Some(event) = parse_dns_client_event(record, locator) {
-                if let Ok(mut events) = registry.events_buffer().lock() {
-                    events.push(event);
-                }
-            }
-        })
-        .build()
-}
-
-/// Dispatches DNS Client ETW events by `EventID`.
-fn parse_dns_client_event(record: &EventRecord, locator: &SchemaLocator) -> Option<NetEvent> {
-    let schema = locator.event_schema(record).ok()?;
-    let parser = Parser::create(record, &schema);
-    let event_id = record.event_id();
-    let pid = record.process_id();
-    let timestamp = record_timestamp(record)?;
-
-    match event_id {
-        EVENT_ID_DNS_QUERY => parse_dns_query(&parser, pid, timestamp),
-        EVENT_ID_DNS_RESPONSE => parse_dns_response(&parser, pid, timestamp),
-        _ => None,
-    }
-}
-
-/// Parses `EventID` 3006 (DNS query) fields.
-///
-/// `WhoYouCalling` extracts: `QueryName`, `QueryType`, `QueryOptions`.
-/// We extract the same plus resolve the human-readable type name.
-fn parse_dns_query(
-    parser: &Parser<'_, '_>,
-    pid: u32,
-    ts: chrono::DateTime<chrono::Utc>,
-) -> Option<NetEvent> {
-    let domain: String = parser.try_parse("QueryName").ok()?;
-    let query_type: u16 = parser.try_parse("QueryType").ok()?;
-
-    Some(NetEvent::DnsQuery {
-        timestamp: ts,
-        pid,
-        domain,
-        query_type,
-        query_type_name: dns_type_name(query_type).to_string(),
-    })
-}
-
-/// Parses `EventID` 3008 (DNS response) fields.
-///
-/// `WhoYouCalling` extracts: `QueryName`, `QueryType`, `QueryResults`, `QueryStatus`.
-/// We extract the same plus parse resolved IPs from `QueryResults` and
-/// resolve human-readable type/status names.
-fn parse_dns_response(
-    parser: &Parser<'_, '_>,
-    pid: u32,
-    ts: chrono::DateTime<chrono::Utc>,
-) -> Option<NetEvent> {
-    let domain: String = parser.try_parse("QueryName").ok()?;
-    let query_type: u16 = parser.try_parse("QueryType").ok()?;
-    let status: u32 = parser.try_parse("QueryStatus").ok()?;
-
-    // QueryResults format: "1.2.3.4;5.6.7.8;type: 1 example.com;"
-    let query_results: String = parser.try_parse("QueryResults").unwrap_or_default();
-    let result_ips = parse_query_results(&query_results);
-
-    Some(NetEvent::DnsResponse {
-        timestamp: ts,
-        pid,
-        domain,
-        query_type,
-        query_type_name: dns_type_name(query_type).to_string(),
-        status,
-        status_name: dns_status_name(status).to_string(),
-        result_ips,
-    })
 }

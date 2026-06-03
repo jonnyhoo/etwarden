@@ -7,7 +7,6 @@
 //! **Privilege**: `none`
 //! **Line budget**: 38 / 80
 
-pub mod correlation;
 pub mod dns;
 pub mod dns_codes;
 pub mod dpi;
