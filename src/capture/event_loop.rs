@@ -71,7 +71,7 @@ pub fn run_event_loop(
         std::thread::sleep(Duration::from_millis(100));
     }
 
-    session.stop()?;
+    let stop_result = session.stop();
 
     let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
     connections_total = connections_total.saturating_add(stats.connections_total);
@@ -79,6 +79,7 @@ pub fn run_event_loop(
     bytes_in_total = bytes_in_total.saturating_add(stats.bytes_in_total);
     pcap_written |= stats.pcap_written;
     emitter.flush()?;
+    stop_result?;
 
     Ok(SummaryLine {
         kind: "summary".into(),
@@ -133,7 +134,9 @@ fn drain_events(
         }
 
         emitter.emit(event)?;
-        stats.connections_total = stats.connections_total.saturating_add(1);
+        if matches!(event, NetEvent::Connect { .. }) {
+            stats.connections_total = stats.connections_total.saturating_add(1);
+        }
         stats.bytes_out_total = stats.bytes_out_total.saturating_add(event.bytes_out());
         stats.bytes_in_total = stats.bytes_in_total.saturating_add(event.bytes_in());
     }

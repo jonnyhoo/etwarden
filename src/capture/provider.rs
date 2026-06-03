@@ -46,9 +46,7 @@ pub fn build_tcpip_provider(
                 if let Some(corr) = correlator.as_deref() {
                     corr.register_event(&event);
                 }
-                if let Ok(mut events) = registry.events_buffer().lock() {
-                    events.push(event);
-                }
+                registry.push_event(event);
             }
         })
         .build()
@@ -305,6 +303,13 @@ fn format_ip_addr_port(ip: &std::net::IpAddr, port: u16) -> String {
     }
 }
 
+fn parse_ndis_frame_buffer(record: &EventRecord, locator: &SchemaLocator) -> Option<Vec<u8>> {
+    let schema = locator.event_schema(record).ok()?;
+    let parser = Parser::create(record, &schema);
+    let data = parser.try_parse::<Vec<u8>>("FrameBuffer").ok()?;
+    (!data.is_empty()).then_some(data)
+}
+
 // ---------------------------------------------------------------------------
 // build_ndis_provider
 // ---------------------------------------------------------------------------
@@ -325,17 +330,10 @@ pub fn build_ndis_provider(
                 return;
             };
 
-            // Extract raw frame bytes via ferrisetw's Parser.
-            // NDIS PacketCapture events typically have a "FrameBuffer" property.
-            // If schema parsing fails, fall back to empty data.
-            let data = locator
-                .event_schema(record)
-                .ok()
-                .and_then(|schema| {
-                    let parser = Parser::create(record, &schema);
-                    parser.try_parse::<Vec<u8>>("FrameBuffer").ok()
-                })
-                .unwrap_or_default();
+            let Some(data) = parse_ndis_frame_buffer(record, locator) else {
+                eprintln!("[etwarden] dropped NDIS packet: missing or empty FrameBuffer");
+                return;
+            };
 
             let raw = RawEvent {
                 event_id: record.event_id(),
@@ -344,15 +342,11 @@ pub fn build_ndis_provider(
                 data,
             };
             if let Some(event) = parser.parse_dns_event(&raw) {
-                if let Ok(mut events) = registry.events_buffer().lock() {
-                    events.push(event);
-                }
+                registry.push_event(event);
             }
             if emit_raw_capture {
                 if let Some(event) = parser.parse(&raw) {
-                    if let Ok(mut events) = registry.events_buffer().lock() {
-                        events.push(event);
-                    }
+                    registry.push_event(event);
                 }
             }
         })

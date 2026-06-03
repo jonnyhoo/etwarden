@@ -47,20 +47,22 @@ impl Correlator {
         if self.max_mappings < 2 {
             return;
         }
-        if let Ok(mut map) = self.map.lock() {
-            let reverse = reverse_tuple(&tuple);
-            let is_new = !map.contains_key(&tuple) && !map.contains_key(&reverse);
-            if is_new {
-                evict_until(
-                    &mut map,
-                    self.max_mappings.saturating_sub(2),
-                    &tuple,
-                    &reverse,
-                );
-            }
-            map.insert(tuple, pid);
-            map.insert(reverse, pid);
+        let Ok(mut map) = self.map.lock() else {
+            eprintln!("[etwarden] dropped correlator mapping: correlator lock poisoned");
+            return;
+        };
+        let reverse = reverse_tuple(&tuple);
+        let is_new = !map.contains_key(&tuple) && !map.contains_key(&reverse);
+        if is_new {
+            evict_until(
+                &mut map,
+                self.max_mappings.saturating_sub(2),
+                &tuple,
+                &reverse,
+            );
         }
+        map.insert(tuple, pid);
+        map.insert(reverse, pid);
     }
 
     /// Registers tuple-bearing connection events, ignoring non-flow event kinds.
@@ -75,12 +77,20 @@ impl Correlator {
 
     /// Resolves the PID for a given five-tuple.
     pub fn resolve_pid(&self, tuple: &FiveTuple) -> Option<u32> {
-        self.map.lock().ok()?.get(tuple).copied()
+        let Ok(map) = self.map.lock() else {
+            eprintln!("[etwarden] failed correlator lookup: correlator lock poisoned");
+            return None;
+        };
+        map.get(tuple).copied()
     }
 
     /// Returns the number of registered tuple mappings.
     pub fn len(&self) -> usize {
-        self.map.lock().map_or(0, |m| m.len())
+        let Ok(map) = self.map.lock() else {
+            eprintln!("[etwarden] skipped correlator len: correlator lock poisoned");
+            return 0;
+        };
+        map.len()
     }
 
     /// Returns `true` if no connections are registered.

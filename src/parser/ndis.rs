@@ -73,7 +73,10 @@ pub(crate) fn parse_dns_event(
         return None;
     }
 
-    let pid = correlator.resolve_pid(&packet.tuple)?;
+    let Some(pid) = correlator.resolve_pid(&packet.tuple) else {
+        eprintln!("[etwarden] dropped DNS packet: missing PID correlation");
+        return None;
+    };
     let DpiResult::Dns(info) =
         dpi::analyze_udp_payload(packet.payload, packet.tuple.src_port, packet.tuple.dst_port)?
     else {
@@ -118,7 +121,10 @@ impl EventParser for NdisParser {
 
     fn parse(&self, raw: &RawEvent) -> Option<NetEvent> {
         let packet = extract_packet(&raw.data)?;
-        let pid = self.correlator.resolve_pid(&packet.tuple)?;
+        let Some(pid) = self.correlator.resolve_pid(&packet.tuple) else {
+            eprintln!("[etwarden] dropped raw packet: missing PID correlation");
+            return None;
+        };
         let frame = RawFrame {
             timestamp: raw.timestamp,
             data: raw.data.clone(),
@@ -142,6 +148,12 @@ const ETHERTYPE_IPV6: [u8; 2] = [0x86, 0xDD];
 const IPPROTO_TCP: u8 = 6;
 /// IP protocol number for UDP.
 const IPPROTO_UDP: u8 = 17;
+const IPPROTO_HOPOPTS: u8 = 0;
+const IPPROTO_FRAGMENT: u8 = 44;
+const IPPROTO_ROUTING: u8 = 43;
+const IPPROTO_AH: u8 = 51;
+const IPPROTO_DSTOPTS: u8 = 60;
+const MAX_IPV6_EXTENSION_HEADERS: usize = 8;
 
 /// Extracts a `FiveTuple` and payload slice from raw Ethernet frame bytes.
 pub(crate) fn extract_packet(frame: &[u8]) -> Option<ParsedPacket<'_>> {
@@ -206,11 +218,71 @@ fn parse_ipv6_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
         return None;
     }
 
-    let protocol = ip[6];
     let src_ip = format_ipv6(&ip[8..24]);
     let dst_ip = format_ipv6(&ip[24..40]);
+    let (protocol, transport) = ipv6_transport_slice(ip, payload_end)?;
 
-    parse_transport_packet(&ip[40..payload_end], protocol, src_ip, dst_ip)
+    parse_transport_packet(transport, protocol, src_ip, dst_ip)
+}
+
+fn ipv6_transport_slice(ip: &[u8], payload_end: usize) -> Option<(u8, &[u8])> {
+    let mut protocol = ip[6];
+    let mut offset = 40;
+    let mut headers_seen = 0;
+
+    while is_ipv6_extension_header(protocol) {
+        headers_seen += 1;
+        if headers_seen > MAX_IPV6_EXTENSION_HEADERS {
+            return None;
+        }
+        let header = ip.get(offset..payload_end)?;
+        match protocol {
+            IPPROTO_FRAGMENT => {
+                if header.len() < 8 {
+                    return None;
+                }
+                let fragment = u16::from_be_bytes([header[2], header[3]]);
+                let offset_units = (fragment >> 3) & 0x1FFF;
+                let more_fragments = fragment & 0x0001 != 0;
+                if offset_units != 0 || more_fragments {
+                    return None;
+                }
+                protocol = header[0];
+                offset = offset.checked_add(8)?;
+            }
+            IPPROTO_AH => {
+                if header.len() < 2 {
+                    return None;
+                }
+                let header_len = (usize::from(header[1]) + 2).checked_mul(4)?;
+                if header_len < 8 || header_len > header.len() {
+                    return None;
+                }
+                protocol = header[0];
+                offset = offset.checked_add(header_len)?;
+            }
+            _ => {
+                if header.len() < 2 {
+                    return None;
+                }
+                let header_len = (usize::from(header[1]) + 1).checked_mul(8)?;
+                if header_len < 8 || header_len > header.len() {
+                    return None;
+                }
+                protocol = header[0];
+                offset = offset.checked_add(header_len)?;
+            }
+        }
+    }
+
+    Some((protocol, ip.get(offset..payload_end)?))
+}
+
+const fn is_ipv6_extension_header(protocol: u8) -> bool {
+    matches!(
+        protocol,
+        IPPROTO_HOPOPTS | IPPROTO_ROUTING | IPPROTO_FRAGMENT | IPPROTO_AH | IPPROTO_DSTOPTS
+    )
 }
 
 /// Parses TCP/UDP transport header for port numbers and payload bytes.
@@ -595,6 +667,24 @@ mod tests {
     fn extract_tuple_ipv6_udp() {
         let frame = build_ethernet_ipv6_udp(10);
         let tuple = extract_packet(&frame).expect("should extract").tuple;
+        assert_eq!(tuple.src_ip, "::1");
+        assert_eq!(tuple.src_port, 5678);
+        assert_eq!(tuple.dst_ip, "::1");
+        assert_eq!(tuple.dst_port, 443);
+        assert_eq!(tuple.protocol, Protocol::Udp);
+    }
+
+    #[test]
+    fn extract_tuple_ipv6_udp_after_extension_header() {
+        let mut frame = build_ethernet_ipv6_udp(10);
+        let ipv6 = ETH_HDR_LEN;
+        let payload_len = u16::from_be_bytes([frame[ipv6 + 4], frame[ipv6 + 5]]);
+        frame[ipv6 + 4..ipv6 + 6].copy_from_slice(&payload_len.saturating_add(8).to_be_bytes());
+        frame[ipv6 + 6] = IPPROTO_HOPOPTS;
+        frame.splice(ipv6 + 40..ipv6 + 40, [IPPROTO_UDP, 0, 0, 0, 0, 0, 0, 0]);
+
+        let tuple = extract_packet(&frame).expect("should extract").tuple;
+
         assert_eq!(tuple.src_ip, "::1");
         assert_eq!(tuple.src_port, 5678);
         assert_eq!(tuple.dst_ip, "::1");

@@ -65,20 +65,29 @@ impl ParserRegistry {
     pub fn dispatch(&self, raw: &RawEvent) -> bool {
         for parser in &self.parsers {
             if let Some(event) = parser.parse(raw) {
-                if let Ok(mut events) = self.events.lock() {
-                    events.push(event);
-                }
-                return true;
+                return self.push_event(event);
             }
         }
         false
     }
 
+    /// Pushes a parsed event into the shared buffer.
+    pub fn push_event(&self, event: NetEvent) -> bool {
+        let Ok(mut events) = self.events.lock() else {
+            eprintln!("[etwarden] dropped parsed event: parser registry buffer lock poisoned");
+            return false;
+        };
+        events.push(event);
+        true
+    }
+
     /// Drains all buffered events.
     pub fn drain(&self) -> Vec<NetEvent> {
-        self.events
-            .lock()
-            .map_or_else(|_| Vec::new(), |mut events| events.drain(..).collect())
+        let Ok(mut events) = self.events.lock() else {
+            eprintln!("[etwarden] dropped buffered events: parser registry buffer lock poisoned");
+            return Vec::new();
+        };
+        events.drain(..).collect()
     }
 
     /// Returns a handle to the internal event buffer for direct pushing.
@@ -90,5 +99,64 @@ impl ParserRegistry {
 impl Default for ParserRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{DateTime, Utc};
+
+    use super::*;
+    use crate::parser::types::Protocol;
+
+    struct AlwaysConnectParser;
+
+    impl EventParser for AlwaysConnectParser {
+        fn provider_guid(&self) -> GUID {
+            GUID::zeroed()
+        }
+
+        fn parse(&self, raw: &RawEvent) -> Option<NetEvent> {
+            Some(NetEvent::Connect {
+                timestamp: raw.timestamp,
+                pid: raw.pid,
+                proto: Protocol::Tcp,
+                src: "10.0.0.1:1234".into(),
+                dst: "10.0.0.2:443".into(),
+                bytes_out: 0,
+                bytes_in: 0,
+            })
+        }
+    }
+
+    fn raw_event() -> RawEvent {
+        RawEvent {
+            event_id: 1,
+            pid: 42,
+            timestamp: DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
+                .expect("valid timestamp")
+                .with_timezone(&Utc),
+            data: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn dispatch_uses_shared_push_path() {
+        let mut registry = ParserRegistry::new();
+        registry.register(Box::new(AlwaysConnectParser));
+
+        assert!(registry.dispatch(&raw_event()));
+
+        assert_eq!(registry.drain().len(), 1);
+    }
+
+    #[test]
+    fn push_event_buffers_event() {
+        let registry = ParserRegistry::new();
+        let event = AlwaysConnectParser.parse(&raw_event()).expect("event");
+
+        assert!(registry.push_event(event));
+
+        assert_eq!(registry.drain().len(), 1);
     }
 }

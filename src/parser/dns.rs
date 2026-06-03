@@ -94,19 +94,45 @@ pub struct DnsInfo {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-/// Walk a DNS name in the answer section, returning the offset after the name.
-/// Handles compression pointers (0xC0 prefix) with hop limit.
-fn skip_dns_name(payload: &[u8], start: usize) -> Option<usize> {
+const fn dns_query_type_from_code(qtype: u16) -> DnsQueryType {
+    match qtype {
+        1 => DnsQueryType::A,
+        2 => DnsQueryType::Ns,
+        5 => DnsQueryType::Cname,
+        6 => DnsQueryType::Soa,
+        12 => DnsQueryType::Ptr,
+        15 => DnsQueryType::Mx,
+        16 => DnsQueryType::Txt,
+        28 => DnsQueryType::Aaaa,
+        33 => DnsQueryType::Srv,
+        257 => DnsQueryType::Caa,
+        other => DnsQueryType::Other(other),
+    }
+}
+
+/// Parse a DNS name, returning (name, offset after encoded name).
+/// Handles compression pointers when `allow_compression` is true.
+fn parse_dns_name(
+    payload: &[u8],
+    start: usize,
+    allow_compression: bool,
+) -> Option<(Option<String>, usize)> {
     let mut offset = start;
     let mut end = None;
     let mut hops = 0;
     let mut name_len = 0usize;
+    let mut name = String::new();
+
     loop {
         let label_len = *payload.get(offset)? as usize;
         if label_len == 0 {
-            return end.or_else(|| offset.checked_add(1));
+            let next = end.or_else(|| offset.checked_add(1))?;
+            return Some(((!name.is_empty()).then_some(name), next));
         }
         if label_len & 0xC0 == 0xC0 {
+            if !allow_compression {
+                return None;
+            }
             let pointer_end = offset.checked_add(2)?;
             let pointer_next = *payload.get(offset + 1)? as usize;
             let pointer = ((label_len & 0x3F) << 8) | pointer_next;
@@ -128,11 +154,16 @@ fn skip_dns_name(payload: &[u8], start: usize) -> Option<usize> {
         if next > payload.len() {
             return None;
         }
+        if !name.is_empty() {
+            name.push('.');
+        }
         let dot_len = usize::from(name_len > 0);
         name_len = name_len.checked_add(dot_len)?.checked_add(label_len)?;
         if name_len > MAX_DNS_NAME_LEN {
             return None;
         }
+        let label = std::str::from_utf8(&payload[offset + 1..next]).ok()?;
+        name.push_str(label);
         offset = next;
     }
 }
@@ -142,54 +173,16 @@ fn parse_question(
     payload: &[u8],
     start: usize,
 ) -> Option<(Option<String>, Option<DnsQueryType>, usize)> {
-    let mut offset = start;
-    let mut name = String::new();
-
-    while offset < payload.len() {
-        let label_len = payload[offset] as usize;
-        if label_len == 0 {
-            offset += 1;
-            break;
-        }
-        if label_len & 0xC0 != 0 {
-            return None;
-        }
-        if offset + 1 + label_len > payload.len() {
-            return None;
-        }
-        if !name.is_empty() {
-            name.push('.');
-        }
-        let label = std::str::from_utf8(&payload[offset + 1..offset + 1 + label_len]).ok()?;
-        name.push_str(label);
-        if name.len() > MAX_DNS_NAME_LEN {
-            return None;
-        }
-        offset += 1 + label_len;
-    }
+    let (query_name, mut offset) = parse_dns_name(payload, start, false)?;
     if offset >= payload.len() {
         return None;
     }
-
-    let query_name = if name.is_empty() { None } else { Some(name) };
 
     if offset.checked_add(4).is_none_or(|e| e > payload.len()) {
         return None;
     }
     let qtype = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
-    let query_type = Some(match qtype {
-        1 => DnsQueryType::A,
-        2 => DnsQueryType::Ns,
-        5 => DnsQueryType::Cname,
-        6 => DnsQueryType::Soa,
-        12 => DnsQueryType::Ptr,
-        15 => DnsQueryType::Mx,
-        16 => DnsQueryType::Txt,
-        28 => DnsQueryType::Aaaa,
-        33 => DnsQueryType::Srv,
-        257 => DnsQueryType::Caa,
-        other => DnsQueryType::Other(other),
-    });
+    let query_type = Some(dns_query_type_from_code(qtype));
     offset += 4;
 
     Some((query_name, query_type, offset))
@@ -201,16 +194,18 @@ fn walk_a_aaaa_records(
     start: usize,
     count: usize,
     ips: &mut Vec<IpAddr>,
+    answer_question: &mut Option<(String, DnsQueryType)>,
 ) -> Option<usize> {
     let mut offset = start;
     let count = count.min(MAX_ANSWERS_TO_PARSE);
     for _ in 0..count {
-        let after_name = skip_dns_name(payload, offset)?;
+        let (answer_name, after_name) = parse_dns_name(payload, offset, true)?;
         // TYPE(2) + CLASS(2) + TTL(4) + RDLENGTH(2) = 10
         if after_name.checked_add(10).is_none_or(|e| e > payload.len()) {
             return None;
         }
         let atype = u16::from_be_bytes([payload[after_name], payload[after_name + 1]]);
+        let answer_type = dns_query_type_from_code(atype);
         let rdlength =
             u16::from_be_bytes([payload[after_name + 8], payload[after_name + 9]]) as usize;
         let rdata_start = after_name + 10;
@@ -222,10 +217,20 @@ fn walk_a_aaaa_records(
         if ips.len() < MAX_RESPONSE_IPS_PER_PACKET {
             match atype {
                 1 if rdlength == 4 => {
+                    if answer_question.is_none() {
+                        if let Some(name) = answer_name.clone() {
+                            *answer_question = Some((name, answer_type));
+                        }
+                    }
                     let octets: [u8; 4] = payload[rdata_start..rdata_end].try_into().ok()?;
                     ips.push(IpAddr::V4(Ipv4Addr::from(octets)));
                 }
                 28 if rdlength == 16 => {
+                    if answer_question.is_none() {
+                        if let Some(name) = answer_name.clone() {
+                            *answer_question = Some((name, answer_type));
+                        }
+                    }
                     let octets: [u8; 16] = payload[rdata_start..rdata_end].try_into().ok()?;
                     ips.push(IpAddr::V6(Ipv6Addr::from(octets)));
                 }
@@ -257,7 +262,7 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
     let ancount = u16::from_be_bytes([payload[6], payload[7]]) as usize;
 
     // Parse first question only (most common case).
-    let (query_name, query_type, mut offset) = if qdcount > 0 {
+    let (mut query_name, mut query_type, mut offset) = if qdcount > 0 {
         parse_question(payload, 12)?
     } else {
         (None, None, 12)
@@ -268,8 +273,19 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
     }
 
     let mut response_ips = Vec::new();
+    let mut answer_question = None;
     if ancount > 0 && is_response {
-        walk_a_aaaa_records(payload, offset, ancount, &mut response_ips)?;
+        walk_a_aaaa_records(
+            payload,
+            offset,
+            ancount,
+            &mut response_ips,
+            &mut answer_question,
+        )?;
+    }
+    if let Some((answer_name, answer_type)) = answer_question {
+        query_name.get_or_insert(answer_name);
+        query_type.get_or_insert(answer_type);
     }
 
     Some(DnsInfo {
@@ -387,6 +403,31 @@ mod tests {
 
         let info = analyze_dns(&pkt).expect("parse");
         assert_eq!(info.query_name.as_deref(), Some("example.com"));
+        assert_eq!(
+            info.response_ips,
+            vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))]
+        );
+    }
+
+    #[test]
+    fn response_without_question_uses_answer_name() {
+        let mut pkt = vec![
+            0x12, 0x34, // ID
+            0x81, 0x80, // flags: standard response
+            0x00, 0x00, // QDCOUNT
+            0x00, 0x01, // ANCOUNT
+            0x00, 0x00, // NSCOUNT
+            0x00, 0x00, // ARCOUNT
+        ];
+        pkt.extend_from_slice(&[7, b'e', b'x', b'a', b'm', b'p', b'l', b'e']);
+        pkt.extend_from_slice(&[3, b'c', b'o', b'm', 0]);
+        pkt.extend_from_slice(&[0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2C, 0x00, 0x04]);
+        pkt.extend_from_slice(&[93, 184, 216, 34]);
+
+        let info = analyze_dns(&pkt).expect("parse");
+
+        assert_eq!(info.query_name.as_deref(), Some("example.com"));
+        assert_eq!(info.query_type, Some(DnsQueryType::A));
         assert_eq!(
             info.response_ips,
             vec![IpAddr::V4(Ipv4Addr::new(93, 184, 216, 34))]

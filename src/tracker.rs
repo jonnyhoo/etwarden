@@ -160,7 +160,10 @@ impl ConnectionTracker {
         };
 
         let now = SystemTime::now();
-        let mut inner = self.inner.lock().ok()?;
+        let Ok(mut inner) = self.inner.lock() else {
+            eprintln!("[etwarden] dropped tracker ingest: tracker lock poisoned");
+            return None;
+        };
 
         if !inner.connections.contains_key(&tuple)
             && inner.connections.len() >= inner.max_connections
@@ -208,10 +211,12 @@ impl ConnectionTracker {
         };
 
         if let Some(dpi_result) = result {
-            if let Ok(mut inner) = self.inner.lock() {
-                if let Some(conn) = inner.connections.get_mut(tuple) {
-                    conn.dpi_result = Some(dpi_result);
-                }
+            let Ok(mut inner) = self.inner.lock() else {
+                eprintln!("[etwarden] dropped DPI enrichment: tracker lock poisoned");
+                return;
+            };
+            if let Some(conn) = inner.connections.get_mut(tuple) {
+                conn.dpi_result = Some(dpi_result);
             }
         }
     }
@@ -219,6 +224,7 @@ impl ConnectionTracker {
     /// Removes stale connections and returns them.
     pub fn cleanup(&self) -> Vec<TrackedConnection> {
         let Ok(mut inner) = self.inner.lock() else {
+            eprintln!("[etwarden] skipped tracker cleanup: tracker lock poisoned");
             return Vec::new();
         };
         let now = SystemTime::now();
@@ -242,15 +248,20 @@ impl ConnectionTracker {
 
     /// Returns a snapshot of all active connections.
     pub fn snapshot(&self) -> Vec<TrackedConnection> {
-        self.inner
-            .lock()
-            .map(|m| m.connections.values().cloned().collect())
-            .unwrap_or_default()
+        let Ok(inner) = self.inner.lock() else {
+            eprintln!("[etwarden] skipped tracker snapshot: tracker lock poisoned");
+            return Vec::new();
+        };
+        inner.connections.values().cloned().collect()
     }
 
     /// Returns the number of tracked connections.
     pub fn len(&self) -> usize {
-        self.inner.lock().map_or(0, |m| m.connections.len())
+        let Ok(inner) = self.inner.lock() else {
+            eprintln!("[etwarden] skipped tracker len: tracker lock poisoned");
+            return 0;
+        };
+        inner.connections.len()
     }
 
     /// Returns `true` if no connections are tracked.
@@ -260,9 +271,11 @@ impl ConnectionTracker {
 
     /// Clears all tracked connections.
     pub fn clear(&self) {
-        if let Ok(mut inner) = self.inner.lock() {
-            inner.connections.clear();
-        }
+        let Ok(mut inner) = self.inner.lock() else {
+            eprintln!("[etwarden] skipped tracker clear: tracker lock poisoned");
+            return;
+        };
+        inner.connections.clear();
     }
 }
 
