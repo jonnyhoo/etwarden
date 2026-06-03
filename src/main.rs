@@ -5,7 +5,7 @@
 //! **Dependencies**: `cli`, `capture`, `parser`, `output::schema`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 44 / 80
+//! **Line budget**: 60 / 80
 
 use clap::Parser;
 use etwarden::{
@@ -13,12 +13,13 @@ use etwarden::{
     cli::Cli,
     output::{json::JsonEmitter, schema::OutputLine},
     pcap::writer::PcapNgWriter,
+    process::{spawn_and_get_pid, ProcessMonitor},
 };
 
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let target_pid = resolve_target_pid(&cli)?;
+    let (target_pid, _monitor) = resolve_target(&cli)?;
 
     let mut config = CaptureConfig {
         target_pid,
@@ -50,12 +51,18 @@ fn main() -> anyhow::Result<()> {
 }
 
 /// Resolves the target PID from CLI arguments.
-fn resolve_target_pid(cli: &Cli) -> anyhow::Result<u32> {
+///
+/// For `--pid`: returns the given PID directly.
+/// For `--spawn`: spawns the command, returns its PID and a `ProcessMonitor`
+/// for the caller to wait on.
+fn resolve_target(cli: &Cli) -> anyhow::Result<(u32, Option<ProcessMonitor>)> {
     match (cli.pid, &cli.spawn) {
-        (Some(pid), None) => Ok(pid),
-        (None, Some(_cmd)) => {
-            // T31 will implement spawn mode
-            anyhow::bail!("--spawn mode not yet implemented");
+        (Some(pid), None) => Ok((pid, None)),
+        (None, Some(cmd)) => {
+            let result = spawn_and_get_pid(cmd).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let monitor = ProcessMonitor::new(result.child);
+            eprintln!("[etwarden] spawned PID {}", monitor.pid());
+            Ok((monitor.pid(), Some(monitor)))
         }
         (None, None) => {
             anyhow::bail!("specify --pid <PID> or --spawn <command>");
