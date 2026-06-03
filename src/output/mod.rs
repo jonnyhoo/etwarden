@@ -1,12 +1,13 @@
 //! # `output`
 //!
 //! **Purpose**: Event serialization to NDJSON stdout — the stable agent API surface.
-//! **Public API**: `trait Emitter`, `mod schema`
+//! **Public API**: `trait Emitter`, `mod schema`, `mod json`
 //! **Dependencies**: `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 22 / 60
+//! **Line budget**: 24 / 60
 
+pub mod json;
 pub mod schema;
 
 use crate::error::EtwardenError;

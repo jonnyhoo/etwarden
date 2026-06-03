@@ -1,11 +1,13 @@
 //! # `filter`
 //!
 //! **Purpose**: Event filtering — drop/allow per `NetEvent`.
-//! **Public API**: `trait Filter`
+//! **Public API**: `trait Filter`, `mod pid`
 //! **Dependencies**: `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 18 / 60
+//! **Line budget**: 20 / 60
+
+pub mod pid;
 
 use crate::parser::types::NetEvent;
 
