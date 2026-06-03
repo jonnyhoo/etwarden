@@ -143,8 +143,8 @@ fn parse_connect_v6(
         timestamp: ts,
         pid,
         proto: Protocol::Tcp,
-        src: format!("{saddr}:{sport}"),
-        dst: format!("{daddr}:{dport}"),
+        src: format_ip_addr_port(&saddr, sport),
+        dst: format_ip_addr_port(&daddr, dport),
         bytes_out: 0,
         bytes_in: 0,
     })
@@ -183,8 +183,8 @@ fn parse_disconnect_v6(
         timestamp: ts,
         pid,
         proto: Protocol::Tcp,
-        src: format!("{saddr}:{sport}"),
-        dst: format!("{daddr}:{dport}"),
+        src: format_ip_addr_port(&saddr, sport),
+        dst: format_ip_addr_port(&daddr, dport),
         bytes_out: 0,
         bytes_in: 0,
     })
@@ -251,8 +251,8 @@ fn parse_send_recv_v6(
         ts,
         pid,
         proto,
-        format!("{saddr}:{sport}"),
-        format!("{daddr}:{dport}"),
+        format_ip_addr_port(&saddr, sport),
+        format_ip_addr_port(&daddr, dport),
         size,
         direction,
     ))
@@ -296,6 +296,13 @@ fn make_send_recv_event(
 fn format_addr_port(raw_ip: u32, port: u16) -> String {
     let ip = std::net::Ipv4Addr::from(raw_ip.to_be());
     format!("{ip}:{port}")
+}
+
+fn format_ip_addr_port(ip: &std::net::IpAddr, port: u16) -> String {
+    match ip {
+        std::net::IpAddr::V4(addr) => format!("{addr}:{port}"),
+        std::net::IpAddr::V6(addr) => format!("[{addr}]:{port}"),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -350,4 +357,21 @@ pub fn build_ndis_provider(
             }
         })
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_ip_addr_port_keeps_ipv4_plain() {
+        let ip = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
+        assert_eq!(format_ip_addr_port(&ip, 443), "127.0.0.1:443");
+    }
+
+    #[test]
+    fn format_ip_addr_port_brackets_ipv6() {
+        let ip = std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST);
+        assert_eq!(format_ip_addr_port(&ip, 443), "[::1]:443");
+    }
 }
