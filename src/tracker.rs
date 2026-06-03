@@ -296,9 +296,9 @@ fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
         if addr.get(close + 1..close + 2)? != ":" {
             return None;
         }
-        let ip = addr[1..close].to_string();
+        let ip: std::net::IpAddr = addr[1..close].parse().ok()?;
         let port = addr.get(close + 2..)?.parse().ok()?;
-        return Some((ip, port));
+        return Some((ip.to_string(), port));
     }
     if addr.contains('[') || addr.contains(']') {
         return None;
@@ -307,9 +307,9 @@ fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
     if addr[..colon].contains(':') {
         return None;
     }
-    let ip = addr[..colon].to_string();
+    let ip: std::net::IpAddr = addr[..colon].parse().ok()?;
     let port = addr[colon + 1..].parse().ok()?;
-    Some((ip, port))
+    Some((ip.to_string(), port))
 }
 
 /// Classify the remote endpoint IP scope.
@@ -468,6 +468,7 @@ mod tests {
         let (ip, port) = parse_addr_port("192.168.1.1:443").expect("valid ipv4 addr");
         assert_eq!(ip, "192.168.1.1");
         assert_eq!(port, 443);
+        assert!(parse_addr_port("not-ip:443").is_none());
     }
 
     #[test]
@@ -478,6 +479,7 @@ mod tests {
         assert!(parse_addr_port("[::1]").is_none());
         assert!(parse_addr_port("x]::1:443").is_none());
         assert!(parse_addr_port("::1:443").is_none());
+        assert!(parse_addr_port("[not-ip]:443").is_none());
     }
 
     #[test]
