@@ -190,29 +190,34 @@ fn is_tls_handshake(payload: &[u8]) -> bool {
 
 /// Parse TLS `ClientHello` to extract SNI and version.
 fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
-    if payload.len() < 43 {
+    if payload.len() < 43 || !is_tls_handshake(payload) {
         return None;
     }
 
     // TLS record header: type(1) + version(2) + length(2)
     let record_version = u16::from_be_bytes([payload[1], payload[2]]);
+    let record_len = usize::from(u16::from_be_bytes([payload[3], payload[4]]));
+    let record_end = checked_end(5, record_len, payload.len())?;
 
     // Handshake header starts at offset 5
     // HandshakeType(1) should be 0x01 (ClientHello)
     if payload[5] != 0x01 {
         return None;
     }
+    let handshake_len =
+        (usize::from(payload[6]) << 16) | (usize::from(payload[7]) << 8) | usize::from(payload[8]);
+    let handshake_end = checked_end(9, handshake_len, record_end)?;
 
     // Random: 32 bytes starting at offset 11
     let random_end = 11 + 32;
-    if payload.len() <= random_end {
+    if handshake_end <= random_end {
         return None;
     }
 
     // Session ID length at offset 43
     let session_id_len = payload[random_end] as usize;
     let cipher_suites_start = random_end + 1 + session_id_len;
-    if payload.len() <= cipher_suites_start + 1 {
+    if handshake_end <= cipher_suites_start + 1 {
         return None;
     }
 
@@ -222,27 +227,29 @@ fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
         payload[cipher_suites_start + 1],
     ]) as usize;
     let compression_start = cipher_suites_start + 2 + cipher_suites_len;
-    if payload.len() <= compression_start + 1 {
+    if handshake_end <= compression_start + 1 {
         return None;
     }
 
     // Compression methods length (1 byte)
     let compression_len = payload[compression_start] as usize;
     let extensions_start = compression_start + 1 + compression_len;
-    if payload.len() <= extensions_start + 2 {
+    if handshake_end <= extensions_start + 2 {
         return None;
     }
 
     // Extensions total length (2 bytes)
-    let _extensions_len =
+    let extensions_len =
         u16::from_be_bytes([payload[extensions_start], payload[extensions_start + 1]]) as usize;
+    let extensions_end = checked_end(extensions_start + 2, extensions_len, handshake_end)?;
     let mut offset = extensions_start + 2;
 
     // Walk extensions looking for SNI (type 0x0000)
-    while offset + 4 <= payload.len() {
+    while offset + 4 <= extensions_end {
         let ext_type = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
         let ext_len = u16::from_be_bytes([payload[offset + 2], payload[offset + 3]]) as usize;
         let ext_data_start = offset + 4;
+        let ext_data_end = checked_end(ext_data_start, ext_len, extensions_end)?;
 
         if ext_type == 0x0000 {
             // SNI extension
@@ -252,7 +259,10 @@ fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
             });
         }
 
-        offset = ext_data_start + ext_len;
+        offset = ext_data_end;
+    }
+    if offset != extensions_end {
+        return None;
     }
 
     // No SNI found but still a valid TLS handshake
@@ -260,6 +270,11 @@ fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
         sni: None,
         version: Some(tls_version_string(record_version)),
     })
+}
+
+fn checked_end(start: usize, len: usize, limit: usize) -> Option<usize> {
+    let end = start.checked_add(len)?;
+    (end <= limit).then_some(end)
 }
 
 /// Extract the hostname from the SNI extension data.
@@ -345,6 +360,36 @@ mod tests {
     }
 
     #[test]
+    fn tls_client_hello_with_sni_detected() {
+        let result = analyze_tls_hello(&build_tls_client_hello("example.com"))
+            .expect("should parse tls client hello");
+
+        assert_eq!(result.sni.as_deref(), Some("example.com"));
+        assert_eq!(result.version.as_deref(), Some("TLS 1.2/1.3"));
+    }
+
+    #[test]
+    fn tls_rejects_truncated_record_length() {
+        let mut payload = build_tls_client_hello("example.com");
+        let declared = u16::try_from(payload.len() - 4).expect("fits in u16");
+        payload[3..5].copy_from_slice(&declared.to_be_bytes());
+        payload.truncate(payload.len() - 2);
+
+        assert!(analyze_tls_hello(&payload).is_none());
+    }
+
+    #[test]
+    fn tls_rejects_extension_past_declared_length() {
+        let mut payload = build_tls_client_hello("example.com");
+        let ext_len_offset = 54;
+        let declared = u16::from_be_bytes([payload[ext_len_offset], payload[ext_len_offset + 1]]);
+        payload[ext_len_offset..ext_len_offset + 2]
+            .copy_from_slice(&declared.saturating_add(1).to_be_bytes());
+
+        assert!(analyze_tls_hello(&payload).is_none());
+    }
+
+    #[test]
     fn dns_udp_dispatch() {
         let pkt = build_test_query("example.com", 1);
         let result = analyze_udp_payload(&pkt, 50234, 53);
@@ -362,6 +407,59 @@ mod tests {
         let payload = b"GET / HTTP/1.1\r\nhOsT: Example.COM\r\n\r\n";
         let host = extract_host_header(payload).expect("should find host");
         assert_eq!(host, "Example.COM");
+    }
+
+    fn build_tls_client_hello(host: &str) -> Vec<u8> {
+        let mut sni = Vec::new();
+        sni.extend_from_slice(&[0x00, 0x00]);
+        sni.push(0x00);
+        sni.extend_from_slice(
+            &u16::try_from(host.len())
+                .expect("host length fits")
+                .to_be_bytes(),
+        );
+        sni.extend_from_slice(host.as_bytes());
+        let list_len = u16::try_from(sni.len() - 2)
+            .expect("sni list length fits")
+            .to_be_bytes();
+        sni[0..2].copy_from_slice(&list_len);
+
+        let mut extensions = Vec::new();
+        extensions.extend_from_slice(&0u16.to_be_bytes());
+        extensions.extend_from_slice(
+            &u16::try_from(sni.len())
+                .expect("sni length fits")
+                .to_be_bytes(),
+        );
+        extensions.extend_from_slice(&sni);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x03, 0x03]);
+        body.extend_from_slice(&[0u8; 32]);
+        body.push(0);
+        body.extend_from_slice(&2u16.to_be_bytes());
+        body.extend_from_slice(&[0x13, 0x01]);
+        body.push(1);
+        body.push(0);
+        body.extend_from_slice(
+            &u16::try_from(extensions.len())
+                .expect("extensions length fits")
+                .to_be_bytes(),
+        );
+        body.extend_from_slice(&extensions);
+
+        let mut payload = vec![0x16, 0x03, 0x03];
+        let record_len = 4 + body.len();
+        payload.extend_from_slice(
+            &u16::try_from(record_len)
+                .expect("record length fits")
+                .to_be_bytes(),
+        );
+        payload.push(0x01);
+        let handshake_len = u32::try_from(body.len()).expect("handshake length fits");
+        payload.extend_from_slice(&handshake_len.to_be_bytes()[1..4]);
+        payload.extend_from_slice(&body);
+        payload
     }
 
     /// Build a minimal DNS query packet for testing.
