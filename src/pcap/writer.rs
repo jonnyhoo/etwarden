@@ -23,6 +23,7 @@ use pcap_file::{
 use crate::{error::EtwardenError, parser::types::RawFrame, pcap::PcapSink};
 
 const PCAP_SNAPLEN: u32 = 0xFFFF;
+const NANOS_PER_SECOND: u128 = 1_000_000_000;
 
 // ---------------------------------------------------------------------------
 // PcapNgWriter
@@ -69,7 +70,7 @@ impl PcapNgWriter {
 
 impl PcapSink for PcapNgWriter {
     fn write_frame(&mut self, frame: &RawFrame, pid: u32) -> Result<(), EtwardenError> {
-        let timestamp = pcap_timestamp(frame);
+        let timestamp = pcap_timestamp(frame)?;
         let frame_len = frame_len_u32(frame.data.len())?;
 
         let epb = EnhancedPacketBlock {
@@ -101,13 +102,17 @@ fn frame_len_u32(len: usize) -> Result<u32, EtwardenError> {
     Ok(len)
 }
 
-fn pcap_timestamp(frame: &RawFrame) -> Duration {
-    frame
-        .timestamp
-        .timestamp_nanos_opt()
-        .and_then(|ns| u64::try_from(ns).ok())
-        .map(Duration::from_nanos)
-        .unwrap_or_default()
+fn pcap_timestamp(frame: &RawFrame) -> Result<Duration, EtwardenError> {
+    let Ok(secs) = u64::try_from(frame.timestamp.timestamp()) else {
+        return Ok(Duration::ZERO);
+    };
+    let nanos = u128::from(secs)
+        .saturating_mul(NANOS_PER_SECOND)
+        .saturating_add(u128::from(frame.timestamp.timestamp_subsec_nanos()));
+    let nanos = u64::try_from(nanos).map_err(|_| {
+        EtwardenError::PcapWrite("frame timestamp exceeds pcapng 64-bit nanosecond range".into())
+    })?;
+    Ok(Duration::from_nanos(nanos))
 }
 
 // ---------------------------------------------------------------------------
@@ -140,7 +145,10 @@ mod tests {
             .expect("valid timestamp")
             .with_timezone(&Utc);
         let frame = test_frame_at(&[], timestamp);
-        assert_eq!(pcap_timestamp(&frame), Duration::new(1, 500_000_100));
+        assert_eq!(
+            pcap_timestamp(&frame).expect("timestamp"),
+            Duration::new(1, 500_000_100)
+        );
     }
 
     #[test]
@@ -149,7 +157,32 @@ mod tests {
             .expect("valid timestamp")
             .with_timezone(&Utc);
         let frame = test_frame_at(&[], timestamp);
-        assert_eq!(pcap_timestamp(&frame), Duration::ZERO);
+        assert_eq!(pcap_timestamp(&frame).expect("timestamp"), Duration::ZERO);
+    }
+
+    #[test]
+    fn pcap_timestamp_keeps_future_after_i64_nanos() {
+        let timestamp = DateTime::parse_from_rfc3339("2263-01-01T00:00:00.000000123Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+        let frame = test_frame_at(&[], timestamp);
+        let secs = u64::try_from(timestamp.timestamp()).expect("post-epoch timestamp");
+
+        assert_eq!(
+            pcap_timestamp(&frame).expect("timestamp"),
+            Duration::new(secs, timestamp.timestamp_subsec_nanos())
+        );
+    }
+
+    #[test]
+    fn pcap_timestamp_rejects_pcapng_counter_overflow() {
+        let timestamp = DateTime::parse_from_rfc3339("2600-01-01T00:00:00Z")
+            .expect("valid timestamp")
+            .with_timezone(&Utc);
+        let frame = test_frame_at(&[], timestamp);
+
+        let err = pcap_timestamp(&frame).expect_err("timestamp should exceed pcapng range");
+        assert!(err.to_string().contains("64-bit nanosecond"));
     }
 
     #[test]
