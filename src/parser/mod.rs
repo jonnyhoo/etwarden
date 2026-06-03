@@ -8,7 +8,9 @@
 //! **Line budget**: 38 / 80
 
 pub mod correlation;
+pub mod dns;
 pub mod ndis;
+pub mod tcp_state;
 pub mod tcpip;
 pub mod types;
 
