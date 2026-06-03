@@ -176,8 +176,8 @@ fn parse_ipv4_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
     if fragment_offset != 0 {
         return None;
     }
-    let total_len = usize::from(u16::from_be_bytes([ip[2], ip[3]])).min(ip.len());
-    if total_len < ihl {
+    let total_len = usize::from(u16::from_be_bytes([ip[2], ip[3]]));
+    if total_len < ihl || total_len > ip.len() {
         return None;
     }
     let protocol = ip[9];
@@ -194,11 +194,17 @@ fn parse_ipv6_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
         return None;
     }
 
+    let payload_len = usize::from(u16::from_be_bytes([ip[4], ip[5]]));
+    let payload_end = 40usize.checked_add(payload_len)?;
+    if payload_end > ip.len() {
+        return None;
+    }
+
     let protocol = ip[6];
     let src_ip = format_ipv6(&ip[8..24]);
     let dst_ip = format_ipv6(&ip[24..40]);
 
-    parse_transport_packet(&ip[40..], protocol, src_ip, dst_ip)
+    parse_transport_packet(&ip[40..payload_end], protocol, src_ip, dst_ip)
 }
 
 /// Parses TCP/UDP transport header for port numbers and payload bytes.
@@ -231,11 +237,10 @@ fn parse_transport_packet(
                 return None;
             }
             let udp_len = usize::from(u16::from_be_bytes([transport[4], transport[5]]));
-            let payload_end = if udp_len >= 8 && udp_len <= transport.len() {
-                udp_len
-            } else {
-                transport.len()
-            };
+            if udp_len < 8 || udp_len > transport.len() {
+                return None;
+            }
+            let payload_end = udp_len;
             (Protocol::Udp, &transport[8..payload_end])
         }
         _ => return None,
@@ -589,6 +594,34 @@ mod tests {
         assert_eq!(tuple.dst_ip, "::1");
         assert_eq!(tuple.dst_port, 443);
         assert_eq!(tuple.protocol, Protocol::Udp);
+    }
+
+    #[test]
+    fn extract_tuple_rejects_truncated_ipv4_total_length() {
+        let mut frame = build_ethernet_ipv4_tcp(10);
+        let declared_len = u16::try_from(frame.len() - ETH_HDR_LEN + 5).expect("fits in u16");
+        frame[ETH_HDR_LEN + 2..ETH_HDR_LEN + 4].copy_from_slice(&declared_len.to_be_bytes());
+
+        assert!(extract_packet(&frame).is_none());
+    }
+
+    #[test]
+    fn extract_tuple_rejects_truncated_ipv6_payload_length() {
+        let mut frame = build_ethernet_ipv6_udp(10);
+        let declared_payload_len = 24u16;
+        frame[ETH_HDR_LEN + 4..ETH_HDR_LEN + 6]
+            .copy_from_slice(&declared_payload_len.to_be_bytes());
+
+        assert!(extract_packet(&frame).is_none());
+    }
+
+    #[test]
+    fn extract_tuple_rejects_invalid_udp_length() {
+        let mut frame = build_ethernet_ipv4_udp(&[1, 2, 3, 4], 53000, 53);
+        let udp_offset = ETH_HDR_LEN + 20;
+        frame[udp_offset + 4..udp_offset + 6].copy_from_slice(&6u16.to_be_bytes());
+
+        assert!(extract_packet(&frame).is_none());
     }
 
     #[test]
