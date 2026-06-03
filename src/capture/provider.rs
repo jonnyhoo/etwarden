@@ -1,21 +1,23 @@
 //! # `capture::provider`
 //!
 //! **Purpose**: Builds pre-configured ferrisetw Provider instances.
-//! **Public API**: `fn build_tcpip_provider()`
-//! **Dependencies**: `ferrisetw`, `parser::tcpip`, `parser::types`
+//! **Public API**: `fn build_tcpip_provider()`, `fn build_ndis_provider()`, `fn build_correlation_provider()`
+//! **Dependencies**: `ferrisetw`, `parser::tcpip`, `parser::ndis`, `parser::correlation`, `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 120 / 140
+//! **Line budget**: 280 / 320
 
 use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 
 use crate::parser::{
+    correlation::{ActivityMap, PROVIDER_CORRELATION},
+    ndis::PROVIDER_NDIS,
     tcpip::{
         EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
         EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
         EVENT_ID_TCP_SEND_IPV4, EVENT_ID_TCP_SEND_IPV6, PROVIDER_TCPIP,
     },
-    types::{NetEvent, Protocol},
+    types::{NetEvent, Protocol, RawFrame},
     ParserRegistry,
 };
 
@@ -236,4 +238,53 @@ fn parse_recv_v6(
 fn format_addr_port(raw_ip: u32, port: u16) -> String {
     let ip = std::net::Ipv4Addr::from(raw_ip.to_be());
     format!("{ip}:{port}")
+}
+
+// ---------------------------------------------------------------------------
+// build_ndis_provider
+// ---------------------------------------------------------------------------
+
+/// Builds the Microsoft-Windows-NDIS-PacketCapture ETW provider with a
+/// callback that wraps raw frame data into `NetEvent::RawCapture` and
+/// pushes it to the given `ParserRegistry`.
+pub fn build_ndis_provider(registry: std::sync::Arc<ParserRegistry>) -> Provider {
+    Provider::by_guid(PROVIDER_NDIS)
+        .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
+            let pid = record.process_id();
+            let timestamp = chrono::Utc::now();
+
+            // Extract raw frame bytes via ferrisetw's Parser.
+            // NDIS PacketCapture events typically have a "FrameBuffer" property.
+            // If schema parsing fails, fall back to empty data.
+            let data = locator
+                .event_schema(record)
+                .ok()
+                .and_then(|schema| {
+                    let parser = Parser::create(record, &schema);
+                    parser.try_parse::<Vec<u8>>("FrameBuffer").ok()
+                })
+                .unwrap_or_default();
+
+            let frame = RawFrame { timestamp, data };
+            if let Ok(mut events) = registry.events_buffer().lock() {
+                events.push(NetEvent::RawCapture { frame, pid });
+            }
+        })
+        .build()
+}
+
+// ---------------------------------------------------------------------------
+// build_correlation_provider
+// ---------------------------------------------------------------------------
+
+/// Builds the Microsoft-Windows-Networking-Correlation ETW provider with a
+/// callback that populates the given `ActivityMap`.
+pub fn build_correlation_provider(activity_map: std::sync::Arc<ActivityMap>) -> Provider {
+    Provider::by_guid(PROVIDER_CORRELATION)
+        .add_callback(move |record: &EventRecord, _locator: &SchemaLocator| {
+            // Correlation event parsing will be implemented when the schema
+            // is reverse-engineered. For now, we just acknowledge the callback.
+            let _ = (record, &activity_map);
+        })
+        .build()
 }
