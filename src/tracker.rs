@@ -291,14 +291,18 @@ fn parse_tuple_from_addrs(src: &str, dst: &str, proto: Protocol) -> Option<FiveT
 
 /// Split "ip:port" into (`ip_string`, `port_u16`).
 fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
-    // Handle IPv6 bracket notation: [::1]:443
-    if let Some(close) = addr.find(']') {
+    if addr.starts_with('[') {
+        let close = addr.find(']')?;
+        if addr.get(close + 1..close + 2)? != ":" {
+            return None;
+        }
         let ip = addr[1..close].to_string();
-        let port_str = addr.get(close + 2..)?;
-        let port = port_str.parse().ok()?;
+        let port = addr.get(close + 2..)?.parse().ok()?;
         return Some((ip, port));
     }
-    // IPv4: 192.168.1.1:443
+    if addr.contains('[') || addr.contains(']') {
+        return None;
+    }
     let colon = addr.rfind(':')?;
     let ip = addr[..colon].to_string();
     let port = addr[colon + 1..].parse().ok()?;
@@ -468,6 +472,8 @@ mod tests {
         let (ip, port) = parse_addr_port("[::1]:443").expect("valid ipv6 addr");
         assert_eq!(ip, "::1");
         assert_eq!(port, 443);
+        assert!(parse_addr_port("[::1]").is_none());
+        assert!(parse_addr_port("x]::1:443").is_none());
     }
 
     #[test]
