@@ -158,10 +158,17 @@ fn parse_tuple_from_event(src: &str, dst: &str, proto: Protocol) -> Option<FiveT
 }
 
 fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
-    if let Some(close) = addr.find(']') {
+    if addr.starts_with('[') {
+        let close = addr.find(']')?;
+        if addr.get(close + 1..close + 2)? != ":" {
+            return None;
+        }
         let ip = addr[1..close].to_string();
         let port = addr.get(close + 2..)?.parse().ok()?;
         return Some((ip, port));
+    }
+    if addr.contains('[') || addr.contains(']') {
+        return None;
     }
 
     let colon = addr.rfind(':')?;
@@ -257,6 +264,12 @@ mod tests {
         let corr = Correlator::new();
         let t = tuple("10.0.0.1", 1234, "10.0.0.2", 80);
         assert_eq!(corr.resolve_pid(&t), None);
+    }
+
+    #[test]
+    fn parse_addr_port_rejects_malformed_ipv6_brackets() {
+        assert!(parse_addr_port("[::1]").is_none());
+        assert!(parse_addr_port("x]::1:443").is_none());
     }
 
     #[test]
