@@ -74,6 +74,7 @@ expect_used         = "allow"
 panic               = "deny"
 fn_params_excessive_bools = "allow"
 struct_excessive_bools    = "allow"
+significant_drop_tightening = "allow"
 too_many_arguments = "allow"
 
 [profile.release]
