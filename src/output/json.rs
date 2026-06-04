@@ -2,7 +2,7 @@
 //!
 //! **Purpose**: NDJSON emitter — writes one JSON line per `NetEvent` to stdout.
 //! **Public API**: `struct JsonEmitter`
-//! **Dependencies**: `output::schema`, `parser::types`, `error`, `process::lookup`
+//! **Dependencies**: `output::schema`, `parser::types`, `error`, `process::tree`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
 //! **Line budget**: 120 / 200
@@ -11,18 +11,18 @@ use std::{io::Write, sync::Arc};
 
 use crate::{
     error::EtwardenError,
-    output::{schema::event_to_line_enriched, Emitter},
+    output::{schema::event_to_line_with_process_info, Emitter},
     parser::types::NetEvent,
-    process::lookup::ProcessNameCache,
+    process::ProcessTreeCache,
 };
 
 /// Writes `NetEvent` as NDJSON lines to a `Write` sink.
 ///
-/// Optionally enriches output with process name resolution via
-/// an injected [`ProcessNameCache`].
+/// Optionally enriches output with process-tree resolution via
+/// an injected [`ProcessTreeCache`].
 pub struct JsonEmitter<W: Write> {
     writer: W,
-    process_cache: Option<Arc<ProcessNameCache>>,
+    process_cache: Option<Arc<ProcessTreeCache>>,
 }
 
 impl<W: Write> JsonEmitter<W> {
@@ -40,7 +40,7 @@ impl<W: Write> JsonEmitter<W> {
 
     /// Attaches a process name cache for enrichment.
     #[must_use]
-    pub fn with_process_cache(mut self, cache: Arc<ProcessNameCache>) -> Self {
+    pub fn with_process_cache(mut self, cache: Arc<ProcessTreeCache>) -> Self {
         self.process_cache = Some(cache);
         self
     }
@@ -54,11 +54,11 @@ impl<W: Write> JsonEmitter<W> {
 
 impl<W: Write + Send> Emitter for JsonEmitter<W> {
     fn emit(&mut self, event: &NetEvent) -> std::result::Result<(), EtwardenError> {
-        let process_name = self
+        let process_info = self
             .process_cache
             .as_ref()
-            .and_then(|cache| cache.get_name(event.pid()));
-        let line = event_to_line_enriched(event, process_name, None);
+            .and_then(|cache| cache.get_info(event.pid()));
+        let line = event_to_line_with_process_info(event, process_info, None);
         let json = serde_json::to_string(&line)
             .map_err(|e| EtwardenError::OutputWrite(format!("serialize: {e}")))?;
         self.writer
@@ -159,7 +159,7 @@ mod tests {
     #[test]
     fn emit_with_process_cache_includes_name() {
         let mut buf = Vec::new();
-        let cache = Arc::new(ProcessNameCache::new());
+        let cache = Arc::new(ProcessTreeCache::new());
         let mut emitter = JsonEmitter::new(&mut buf).with_process_cache(cache);
 
         let my_pid = std::process::id();
@@ -177,6 +177,10 @@ mod tests {
         assert!(
             output.contains("\"process_name\""),
             "should contain process_name: {output}"
+        );
+        assert!(
+            output.contains("\"tree_path\""),
+            "should contain tree_path: {output}"
         );
     }
 

@@ -7,12 +7,12 @@
 //! **Privilege**: `none`
 //! **Line budget**: 90 / 140
 
-use super::super::network::network_event_line;
+use super::super::{network::network_event_line, process::ProcessFields};
 use crate::{output::schema::OutputLine, parser::types::NetEvent};
 
 pub(super) fn line(
     event: &NetEvent,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
     scope_override: Option<String>,
 ) -> OutputLine {
     match *event {
@@ -33,7 +33,7 @@ pub(super) fn line(
             "connect",
             bytes_out,
             bytes_in,
-            process_name,
+            process_fields,
             scope_override,
         ),
         NetEvent::Disconnect {
@@ -53,7 +53,7 @@ pub(super) fn line(
             "disconnect",
             bytes_out,
             bytes_in,
-            process_name,
+            process_fields,
             scope_override,
         ),
         NetEvent::Send {
@@ -73,7 +73,7 @@ pub(super) fn line(
             "send",
             bytes_out,
             bytes_in,
-            process_name,
+            process_fields,
             scope_override,
         ),
         NetEvent::Recv {
@@ -93,7 +93,7 @@ pub(super) fn line(
             "recv",
             bytes_out,
             bytes_in,
-            process_name,
+            process_fields,
             scope_override,
         ),
         _ => super::unsupported_event_line(),

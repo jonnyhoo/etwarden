@@ -11,6 +11,7 @@ mod dns;
 mod dpi;
 mod network;
 
+use super::process::ProcessFields;
 use crate::{
     output::schema::{ErrorLine, OutputLine},
     parser::types::NetEvent,
@@ -24,20 +25,22 @@ fn unsupported_event_line() -> OutputLine {
 
 pub(super) fn event_to_line_enriched(
     event: &NetEvent,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
     scope_override: Option<String>,
 ) -> OutputLine {
     match event {
         NetEvent::Connect { .. }
         | NetEvent::Disconnect { .. }
         | NetEvent::Send { .. }
-        | NetEvent::Recv { .. } => network::line(event, process_name, scope_override),
+        | NetEvent::Recv { .. } => network::line(event, process_fields, scope_override),
         NetEvent::RawCapture { .. } => OutputLine::Error(ErrorLine::new(
             "raw capture event cannot be serialized to NDJSON",
         )),
-        NetEvent::DnsQuery { .. } | NetEvent::DnsResponse { .. } => dns::line(event, process_name),
+        NetEvent::DnsQuery { .. } | NetEvent::DnsResponse { .. } => {
+            dns::line(event, process_fields)
+        }
         NetEvent::HttpRequest { .. }
         | NetEvent::HttpResponse { .. }
-        | NetEvent::TlsHello { .. } => dpi::line(event, process_name),
+        | NetEvent::TlsHello { .. } => dpi::line(event, process_fields),
     }
 }

@@ -7,10 +7,13 @@
 //! **Privilege**: `none`
 //! **Line budget**: 90 / 140
 
-use super::super::dpi::{http_request_line, http_response_line, tls_hello_line};
+use super::super::{
+    dpi::{http_request_line, http_response_line, tls_hello_line},
+    process::ProcessFields,
+};
 use crate::{output::schema::OutputLine, parser::types::NetEvent};
 
-pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine {
+pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLine {
     match *event {
         NetEvent::HttpRequest {
             timestamp,
@@ -34,7 +37,7 @@ pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine
             host.as_deref(),
             content_type.as_deref(),
             content_length,
-            process_name,
+            process_fields,
         ),
         NetEvent::HttpResponse {
             timestamp,
@@ -58,7 +61,7 @@ pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine
             host.as_deref(),
             content_type.as_deref(),
             content_length,
-            process_name,
+            process_fields,
         ),
         NetEvent::TlsHello {
             timestamp,
@@ -96,7 +99,7 @@ pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine
             alpn,
             cipher_count,
             extension_count,
-            process_name,
+            process_fields,
         ),
         _ => super::unsupported_event_line(),
     }

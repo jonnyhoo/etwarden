@@ -9,6 +9,7 @@
 
 use chrono::{DateTime, Utc};
 
+use super::process::ProcessFields;
 use crate::output::schema::{DnsEventLine, OutputLine};
 
 pub(super) fn dns_query_line(
@@ -17,8 +18,15 @@ pub(super) fn dns_query_line(
     domain: &str,
     query_type: u16,
     query_type_name: &str,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
 ) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
     OutputLine::DnsEvent(DnsEventLine {
         timestamp,
         pid,
@@ -30,7 +38,10 @@ pub(super) fn dns_query_line(
         status_name: None,
         result_ips: Vec::new(),
         truncated: false,
-        process_name,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
     })
 }
 
@@ -48,8 +59,15 @@ pub(super) fn dns_response_line(
     status_name: &str,
     result_ips: &[String],
     truncated: bool,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
 ) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
     OutputLine::DnsEvent(DnsEventLine {
         timestamp,
         pid,
@@ -61,6 +79,9 @@ pub(super) fn dns_response_line(
         status_name: Some(status_name.to_owned()),
         result_ips: result_ips.to_vec(),
         truncated,
-        process_name,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
     })
 }

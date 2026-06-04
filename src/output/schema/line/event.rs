@@ -38,6 +38,15 @@ pub struct EventLine {
     /// Resolved process name (e.g. `chrome.exe`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,
+    /// Parent process ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ppid: Option<u32>,
+    /// Process command line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_line: Option<String>,
+    /// Parent→child process tree path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_path: Option<String>,
 }
 
 /// A DNS event line in the agent contract.
@@ -72,6 +81,15 @@ pub struct DnsEventLine {
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,
+    /// Parent process ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ppid: Option<u32>,
+    /// Process command line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_line: Option<String>,
+    /// Parent→child process tree path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_path: Option<String>,
 }
 
 /// A plaintext HTTP DPI event line in the agent contract.
@@ -114,6 +132,15 @@ pub struct HttpEventLine {
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,
+    /// Parent process ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ppid: Option<u32>,
+    /// Process command line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_line: Option<String>,
+    /// Parent→child process tree path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_path: Option<String>,
 }
 
 /// A TLS `ClientHello` DPI event line in the agent contract.
@@ -162,6 +189,15 @@ pub struct TlsEventLine {
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,
+    /// Parent process ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ppid: Option<u32>,
+    /// Process command line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_line: Option<String>,
+    /// Parent→child process tree path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_path: Option<String>,
 }
 
 #[expect(

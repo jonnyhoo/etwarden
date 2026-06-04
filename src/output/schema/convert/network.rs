@@ -9,6 +9,7 @@
 
 use chrono::{DateTime, Utc};
 
+use super::process::ProcessFields;
 use crate::{
     output::schema::{scope::scope_from_addr, EventLine, OutputLine},
     parser::types::Protocol,
@@ -27,9 +28,16 @@ pub(super) fn network_event_line(
     event: &str,
     bytes_out: u64,
     bytes_in: u64,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
     scope_override: Option<String>,
 ) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
     OutputLine::Event(EventLine {
         timestamp,
         pid,
@@ -40,6 +48,9 @@ pub(super) fn network_event_line(
         bytes_out,
         bytes_in,
         scope: scope_override.or_else(|| scope_from_addr(dst)),
-        process_name,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
     })
 }

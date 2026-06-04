@@ -7,10 +7,13 @@
 //! **Privilege**: `none`
 //! **Line budget**: 70 / 120
 
-use super::super::dns::{dns_query_line, dns_response_line};
+use super::super::{
+    dns::{dns_query_line, dns_response_line},
+    process::ProcessFields,
+};
 use crate::{output::schema::OutputLine, parser::types::NetEvent};
 
-pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine {
+pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLine {
     match *event {
         NetEvent::DnsQuery {
             timestamp,
@@ -24,7 +27,7 @@ pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine
             domain,
             query_type,
             query_type_name,
-            process_name,
+            process_fields,
         ),
         NetEvent::DnsResponse {
             timestamp,
@@ -46,7 +49,7 @@ pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine
             status_name,
             result_ips,
             truncated,
-            process_name,
+            process_fields,
         ),
         _ => super::unsupported_event_line(),
     }

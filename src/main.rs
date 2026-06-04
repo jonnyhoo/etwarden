@@ -22,7 +22,7 @@ use etwarden::{
         schema::{ErrorLine, OutputLine},
     },
     pcap::writer::PcapNgWriter,
-    process::ProcessNameCache,
+    process::ProcessTreeCache,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -44,7 +44,7 @@ fn run() -> anyhow::Result<()> {
     let cli = parse_cli()?;
 
     let target = target::resolve(&cli)?;
-    let process_cache = Arc::new(ProcessNameCache::new());
+    let process_cache = Arc::new(ProcessTreeCache::new());
 
     let mut config = CaptureConfig {
         target_pid: target.pid,

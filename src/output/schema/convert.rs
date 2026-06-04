@@ -11,8 +11,11 @@ mod dns;
 mod dpi;
 mod event;
 mod network;
+mod process;
 
-use crate::{output::schema::OutputLine, parser::types::NetEvent};
+use process::ProcessFields;
+
+use crate::{output::schema::OutputLine, parser::types::NetEvent, process::ProcessInfo};
 
 /// Converts a `NetEvent` into an `EventLine` for output.
 ///
@@ -43,7 +46,34 @@ pub fn event_to_line_enriched(
     process_name: Option<String>,
     scope_override: Option<String>,
 ) -> OutputLine {
-    event::event_to_line_enriched(event, process_name, scope_override)
+    event::event_to_line_enriched(
+        event,
+        ProcessFields::from_name(process_name),
+        scope_override,
+    )
+}
+
+/// Converts a `NetEvent` into an enriched `OutputLine` with process tree metadata.
+///
+/// # Arguments
+/// * `event` — The parsed network event to convert.
+/// * `process_info` — Optional resolved process metadata.
+/// * `scope_override` — Optional pre-computed scope label; if `None`,
+///   scope is auto-detected from the remote address.
+///
+/// # Returns
+/// An `OutputLine` with process enrichment fields populated when available.
+#[must_use]
+pub fn event_to_line_with_process_info(
+    event: &NetEvent,
+    process_info: Option<ProcessInfo>,
+    scope_override: Option<String>,
+) -> OutputLine {
+    event::event_to_line_enriched(
+        event,
+        ProcessFields::from_info(process_info),
+        scope_override,
+    )
 }
 
 #[cfg(test)]

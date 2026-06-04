@@ -9,6 +9,7 @@
 
 use chrono::{DateTime, Utc};
 
+use super::process::ProcessFields;
 use crate::output::schema::{HttpEventLine, OutputLine, TlsEventLine};
 
 #[expect(
@@ -26,8 +27,15 @@ pub(super) fn http_request_line(
     host: Option<&str>,
     content_type: Option<&str>,
     content_length: Option<u64>,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
 ) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
     OutputLine::HttpEvent(HttpEventLine {
         timestamp,
         pid,
@@ -42,7 +50,10 @@ pub(super) fn http_request_line(
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
         content_length,
-        process_name,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
     })
 }
 
@@ -61,8 +72,15 @@ pub(super) fn http_response_line(
     host: Option<&str>,
     content_type: Option<&str>,
     content_length: Option<u64>,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
 ) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
     OutputLine::HttpEvent(HttpEventLine {
         timestamp,
         pid,
@@ -77,7 +95,10 @@ pub(super) fn http_response_line(
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
         content_length,
-        process_name,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
     })
 }
 
@@ -99,8 +120,15 @@ pub(super) fn tls_hello_line(
     alpn: &[String],
     cipher_count: usize,
     extension_count: usize,
-    process_name: Option<String>,
+    process_fields: ProcessFields,
 ) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
     OutputLine::TlsEvent(TlsEventLine {
         timestamp,
         pid,
@@ -120,6 +148,9 @@ pub(super) fn tls_hello_line(
         alpn: alpn.to_vec(),
         cipher_count,
         extension_count,
-        process_name,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
     })
 }
