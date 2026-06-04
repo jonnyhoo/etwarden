@@ -7,6 +7,8 @@
 //! **Privilege**: `none`
 //! **Line budget**: 130 / 200
 
+mod accessors;
+
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
@@ -121,57 +123,4 @@ pub enum NetEvent {
         cipher_count: usize,
         extension_count: usize,
     },
-}
-
-impl NetEvent {
-    /// Returns the `bytes_out` field from any variant.
-    #[must_use]
-    pub const fn bytes_out(&self) -> u64 {
-        match self {
-            Self::Connect { bytes_out, .. }
-            | Self::Disconnect { bytes_out, .. }
-            | Self::Send { bytes_out, .. }
-            | Self::Recv { bytes_out, .. } => *bytes_out,
-            Self::RawCapture { .. }
-            | Self::DnsQuery { .. }
-            | Self::DnsResponse { .. }
-            | Self::HttpRequest { .. }
-            | Self::HttpResponse { .. }
-            | Self::TlsHello { .. } => 0,
-        }
-    }
-
-    /// Returns the `pid` field from any variant.
-    #[must_use]
-    pub const fn pid(&self) -> u32 {
-        match self {
-            Self::Connect { pid, .. }
-            | Self::Disconnect { pid, .. }
-            | Self::Send { pid, .. }
-            | Self::Recv { pid, .. }
-            | Self::RawCapture { pid, .. }
-            | Self::DnsQuery { pid, .. }
-            | Self::DnsResponse { pid, .. }
-            | Self::HttpRequest { pid, .. }
-            | Self::HttpResponse { pid, .. }
-            | Self::TlsHello { pid, .. } => *pid,
-        }
-    }
-
-    /// Returns the `bytes_in` field from any variant.
-    #[must_use]
-    pub const fn bytes_in(&self) -> u64 {
-        match self {
-            Self::Connect { bytes_in, .. }
-            | Self::Disconnect { bytes_in, .. }
-            | Self::Send { bytes_in, .. }
-            | Self::Recv { bytes_in, .. } => *bytes_in,
-            Self::RawCapture { .. }
-            | Self::DnsQuery { .. }
-            | Self::DnsResponse { .. }
-            | Self::HttpRequest { .. }
-            | Self::HttpResponse { .. }
-            | Self::TlsHello { .. } => 0,
-        }
-    }
 }
