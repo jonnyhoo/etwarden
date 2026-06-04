@@ -12,7 +12,7 @@ name = "etwarden"
 path = "src/main.rs"
 
 [package.metadata.cargo-machete]
-ignored = ["pcap-file"]
+ignored = ["md-5", "pcap-file"]
 
 [features]
 # Feature-gate integration tests requiring admin privileges
@@ -40,7 +40,6 @@ http-body-util = "0.1"
 http-mitm-proxy = { version = "0.18", default-features = false, features = ["rustls-client"] }
 hyper-util  = { version = "0.1", features = ["tokio"] }
 rcgen       = { version = "0.14", features = ["pem", "x509-parser"] }
-sysproxy    = "0.3"
 tokio       = { version = "1.44", features = ["macros", "rt", "rt-multi-thread", "time", "net", "io-util", "sync"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
