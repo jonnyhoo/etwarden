@@ -6,9 +6,10 @@
 //! **Dependencies**: `parser::types`, `parser::tcp_state`, `parser::dpi`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 400 / 460
+//! **Line budget**: 360 / 420
 
 mod endpoint;
+mod ingest;
 
 use std::{
     collections::HashMap,
@@ -22,7 +23,7 @@ use crate::{
         tcp_state::TcpState,
         types::{FiveTuple, NetEvent, Protocol},
     },
-    tracker::endpoint::{classify_remote, parse_tuple_from_addrs},
+    tracker::{endpoint::classify_remote, ingest::TrackableEvent},
 };
 
 /// Maximum number of active connections before new ones are dropped.
@@ -116,50 +117,7 @@ impl ConnectionTracker {
     ///
     /// Returns the updated connection snapshot if the event was tracked.
     pub fn ingest(&self, event: &NetEvent) -> Option<TrackedConnection> {
-        let (tuple, pid, proto, bytes_out, bytes_in) = match event {
-            NetEvent::Connect {
-                pid,
-                proto,
-                src,
-                dst,
-                bytes_out,
-                bytes_in,
-                ..
-            }
-            | NetEvent::Disconnect {
-                pid,
-                proto,
-                src,
-                dst,
-                bytes_out,
-                bytes_in,
-                ..
-            }
-            | NetEvent::Send {
-                pid,
-                proto,
-                src,
-                dst,
-                bytes_out,
-                bytes_in,
-                ..
-            }
-            | NetEvent::Recv {
-                pid,
-                proto,
-                src,
-                dst,
-                bytes_out,
-                bytes_in,
-                ..
-            } => {
-                let tuple = parse_tuple_from_addrs(src, dst, *proto)?;
-                (tuple, *pid, *proto, *bytes_out, *bytes_in)
-            }
-            NetEvent::RawCapture { .. }
-            | NetEvent::DnsQuery { .. }
-            | NetEvent::DnsResponse { .. } => return None,
-        };
+        let trackable = TrackableEvent::from_net_event(event)?;
 
         let now = SystemTime::now();
         let Ok(mut inner) = self.inner.lock() else {
@@ -167,7 +125,7 @@ impl ConnectionTracker {
             return None;
         };
 
-        if !inner.connections.contains_key(&tuple)
+        if !inner.connections.contains_key(&trackable.tuple)
             && inner.connections.len() >= inner.max_connections
         {
             return None;
@@ -175,30 +133,30 @@ impl ConnectionTracker {
 
         let conn = inner
             .connections
-            .entry(tuple.clone())
+            .entry(trackable.tuple.clone())
             .or_insert_with(|| TrackedConnection {
-                tuple: tuple.clone(),
-                pid,
+                tuple: trackable.tuple.clone(),
+                pid: trackable.pid,
                 bytes_out: 0,
                 bytes_in: 0,
-                tcp_state: if proto == Protocol::Tcp {
+                tcp_state: if trackable.proto == Protocol::Tcp {
                     TcpState::SynSent
                 } else {
                     TcpState::Closed
                 },
                 dpi_result: None,
-                remote_scope: classify_remote(&tuple),
+                remote_scope: classify_remote(&trackable.tuple),
                 first_seen: now,
                 last_seen: now,
             });
 
         // Update byte counters.
-        conn.bytes_out = conn.bytes_out.saturating_add(bytes_out);
-        conn.bytes_in = conn.bytes_in.saturating_add(bytes_in);
+        conn.bytes_out = conn.bytes_out.saturating_add(trackable.bytes_out);
+        conn.bytes_in = conn.bytes_in.saturating_add(trackable.bytes_in);
         conn.last_seen = now;
 
         // Update TCP state for disconnect events.
-        if matches!(event, NetEvent::Disconnect { .. }) && proto == Protocol::Tcp {
+        if trackable.is_disconnect && trackable.proto == Protocol::Tcp {
             conn.tcp_state = TcpState::Closed;
         }
 
