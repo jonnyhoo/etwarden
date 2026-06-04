@@ -11,6 +11,7 @@ mod frame;
 mod packet;
 #[cfg(test)]
 mod test_support;
+mod transport;
 
 use std::sync::Arc;
 

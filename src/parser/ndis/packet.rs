@@ -7,7 +7,8 @@
 //! **Privilege**: `none`
 //! **Line budget**: 190 / 260
 
-use crate::parser::types::{FiveTuple, Protocol};
+use super::transport::parse_transport_packet;
+use crate::parser::types::FiveTuple;
 
 /// Parsed packet metadata extracted from an Ethernet frame.
 pub(super) struct ParsedPacket<'a> {
@@ -18,8 +19,6 @@ pub(super) struct ParsedPacket<'a> {
 const ETH_HDR_LEN: usize = 14;
 const ETHERTYPE_IPV4: [u8; 2] = [0x08, 0x00];
 const ETHERTYPE_IPV6: [u8; 2] = [0x86, 0xDD];
-const IPPROTO_TCP: u8 = 6;
-const IPPROTO_UDP: u8 = 17;
 const IPPROTO_HOPOPTS: u8 = 0;
 const IPPROTO_FRAGMENT: u8 = 44;
 const IPPROTO_ROUTING: u8 = 43;
@@ -67,7 +66,17 @@ fn parse_ipv4_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
 
     let src_ip = format!("{}.{}.{}.{}", ip[12], ip[13], ip[14], ip[15]);
     let dst_ip = format!("{}.{}.{}.{}", ip[16], ip[17], ip[18], ip[19]);
-    parse_transport_packet(ip.get(ihl..total_len)?, ip[9], src_ip, dst_ip)
+    let transport = parse_transport_packet(ip.get(ihl..total_len)?, ip[9])?;
+    Some(ParsedPacket {
+        tuple: FiveTuple {
+            src_ip,
+            src_port: transport.src_port,
+            dst_ip,
+            dst_port: transport.dst_port,
+            protocol: transport.protocol,
+        },
+        payload: transport.payload,
+    })
 }
 
 fn parse_ipv6_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
@@ -85,7 +94,17 @@ fn parse_ipv6_packet(ip: &[u8]) -> Option<ParsedPacket<'_>> {
     let dst_ip = format_ipv6(&ip[24..40]);
     let (protocol, transport) = ipv6_transport_slice(ip, payload_end)?;
 
-    parse_transport_packet(transport, protocol, src_ip, dst_ip)
+    let transport = parse_transport_packet(transport, protocol)?;
+    Some(ParsedPacket {
+        tuple: FiveTuple {
+            src_ip,
+            src_port: transport.src_port,
+            dst_ip,
+            dst_port: transport.dst_port,
+            protocol: transport.protocol,
+        },
+        payload: transport.payload,
+    })
 }
 
 fn ipv6_transport_slice(ip: &[u8], payload_end: usize) -> Option<(u8, &[u8])> {
@@ -148,55 +167,6 @@ const fn is_ipv6_extension_header(protocol: u8) -> bool {
     )
 }
 
-fn parse_transport_packet(
-    transport: &[u8],
-    protocol: u8,
-    src_ip: String,
-    dst_ip: String,
-) -> Option<ParsedPacket<'_>> {
-    if transport.len() < 4 {
-        return None;
-    }
-
-    let src_port = u16::from_be_bytes([transport[0], transport[1]]);
-    let dst_port = u16::from_be_bytes([transport[2], transport[3]]);
-
-    let (proto, payload) = match protocol {
-        IPPROTO_TCP => {
-            if transport.len() < 20 {
-                return None;
-            }
-            let data_offset = usize::from(transport[12] >> 4) * 4;
-            if data_offset < 20 || transport.len() < data_offset {
-                return None;
-            }
-            (Protocol::Tcp, &transport[data_offset..])
-        }
-        IPPROTO_UDP => {
-            if transport.len() < 8 {
-                return None;
-            }
-            let udp_len = usize::from(u16::from_be_bytes([transport[4], transport[5]]));
-            if udp_len < 8 || udp_len > transport.len() {
-                return None;
-            }
-            (Protocol::Udp, &transport[8..udp_len])
-        }
-        _ => return None,
-    };
-
-    Some(ParsedPacket {
-        tuple: FiveTuple {
-            src_ip,
-            src_port,
-            dst_ip,
-            dst_port,
-            protocol: proto,
-        },
-        payload,
-    })
-}
-
 fn format_ipv6(bytes: &[u8]) -> String {
     use std::net::Ipv6Addr;
     let arr: [u8; 16] = match bytes.try_into() {
@@ -209,9 +179,14 @@ fn format_ipv6(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::ndis::test_support::{
-        build_ethernet_ipv4_tcp, build_ethernet_ipv4_udp, build_ethernet_ipv6_udp,
+    use crate::parser::{
+        ndis::test_support::{
+            build_ethernet_ipv4_tcp, build_ethernet_ipv4_udp, build_ethernet_ipv6_udp,
+        },
+        types::Protocol,
     };
+
+    const IPPROTO_UDP: u8 = 17;
 
     #[test]
     fn extract_tuple_ipv4_tcp() {
