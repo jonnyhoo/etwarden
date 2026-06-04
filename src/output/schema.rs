@@ -73,9 +73,20 @@ pub struct DnsEventLine {
     /// Resolved IP addresses from the response (response only).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub result_ips: Vec<String>,
+    /// Whether the DNS response had the TC bit set.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub truncated: bool,
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,
+}
+
+#[expect(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde skip_serializing_if predicates receive field references"
+)]
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 /// The final summary line written on capture exit.
@@ -270,6 +281,7 @@ pub fn event_to_line_enriched(
             status: None,
             status_name: None,
             result_ips: Vec::new(),
+            truncated: false,
             process_name,
         }),
         NetEvent::DnsResponse {
@@ -281,6 +293,7 @@ pub fn event_to_line_enriched(
             status,
             ref status_name,
             ref result_ips,
+            truncated,
         } => OutputLine::DnsEvent(DnsEventLine {
             timestamp,
             pid,
@@ -291,6 +304,7 @@ pub fn event_to_line_enriched(
             status: Some(status),
             status_name: Some(status_name.clone()),
             result_ips: result_ips.clone(),
+            truncated,
             process_name,
         }),
     }
@@ -633,6 +647,7 @@ mod tests {
             status: 0,
             status_name: "NOERROR".into(),
             result_ips: vec!["93.184.216.34".into()],
+            truncated: false,
         };
         let line = event_to_line(&event);
         let OutputLine::DnsEvent(line) = line else {
@@ -641,5 +656,26 @@ mod tests {
         assert_eq!(line.hostname, "example.com");
         assert_eq!(line.status, Some(0));
         assert_eq!(line.result_ips, vec!["93.184.216.34"]);
+        assert!(!line.truncated);
+    }
+
+    #[test]
+    fn dns_response_line_keeps_truncated_flag() {
+        let event = NetEvent::DnsResponse {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            domain: "example.com".into(),
+            query_type: 1,
+            query_type_name: "A".into(),
+            status: 0,
+            status_name: "NOERROR".into(),
+            result_ips: Vec::new(),
+            truncated: true,
+        };
+        let line = event_to_line(&event);
+        let OutputLine::DnsEvent(line) = line else {
+            unreachable!()
+        };
+        assert!(line.truncated);
     }
 }

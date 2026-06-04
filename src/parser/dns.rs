@@ -86,6 +86,8 @@ pub struct DnsInfo {
     pub response_ips: Vec<IpAddr>,
     /// DNS response code from the packet header. `None` for queries.
     pub response_code: Option<u32>,
+    /// `true` if the DNS TC bit is set and the response may be incomplete.
+    pub truncated: bool,
     /// `true` if this is a response packet (QR bit set).
     pub is_response: bool,
 }
@@ -258,6 +260,7 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
 
     let flags = u16::from_be_bytes([payload[2], payload[3]]);
     let is_response = (flags >> 15) & 1 == 1;
+    let truncated = flags & 0x0200 != 0;
     let qdcount = u16::from_be_bytes([payload[4], payload[5]]) as usize;
     let ancount = u16::from_be_bytes([payload[6], payload[7]]) as usize;
 
@@ -293,6 +296,7 @@ pub fn analyze_dns(payload: &[u8]) -> Option<DnsInfo> {
         query_type,
         response_ips,
         response_code: is_response.then_some(u32::from(flags & 0x000F)),
+        truncated,
         is_response,
     })
 }
@@ -364,6 +368,7 @@ mod tests {
         assert_eq!(info.query_type, Some(DnsQueryType::A));
         assert_eq!(info.query_type.expect("qtype").code(), 1);
         assert!(!info.is_response);
+        assert!(!info.truncated);
         assert_eq!(info.response_code, None);
         assert!(info.response_ips.is_empty());
     }
@@ -374,6 +379,7 @@ mod tests {
         let info = analyze_dns(&pkt).expect("parse");
         assert!(info.is_response);
         assert_eq!(info.response_code, Some(0));
+        assert!(!info.truncated);
         assert_eq!(info.response_ips.len(), 1);
         assert_eq!(
             info.response_ips[0],
@@ -386,6 +392,17 @@ mod tests {
         let pkt = build_response_a("example.com", 1, &[&[1, 1, 1, 1], &[1, 0, 0, 1]]);
         let info = analyze_dns(&pkt).expect("parse");
         assert_eq!(info.response_ips.len(), 2);
+    }
+
+    #[test]
+    fn response_truncated_bit_is_exposed() {
+        let mut pkt = build_response_a("example.com", 1, &[&[93, 184, 216, 34]]);
+        pkt[2] |= 0x02;
+
+        let info = analyze_dns(&pkt).expect("parse");
+
+        assert!(info.truncated);
+        assert_eq!(info.response_ips.len(), 1);
     }
 
     #[test]

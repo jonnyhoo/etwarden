@@ -88,6 +88,7 @@ fn dns_response_event() -> NetEvent {
         status: 0,
         status_name: "NOERROR".into(),
         result_ips: vec!["93.184.216.34".into()],
+        truncated: false,
     }
 }
 

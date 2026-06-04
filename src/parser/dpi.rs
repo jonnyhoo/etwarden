@@ -136,8 +136,8 @@ fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
     }
 
     Some(HttpInfo {
-        method: Some(String::from_utf8_lossy(method).to_string()),
-        uri_or_status: String::from_utf8_lossy(uri).to_string(),
+        method: Some(http_token_to_string(method)?),
+        uri_or_status: http_visible_utf8(uri)?,
         host: extract_host_header(payload),
     })
 }
@@ -149,27 +149,36 @@ fn parse_http_response_line(first_line: &[u8]) -> Option<String> {
     if !is_http_version_token(version) || !is_http_status_code(status) {
         return None;
     }
-    Some(String::from_utf8_lossy(first_line).to_string())
+    http_visible_utf8(first_line)
 }
 
 fn is_http_version_token(version: &[u8]) -> bool {
     let Some(rest) = version.strip_prefix(b"HTTP/") else {
         return false;
     };
-    let mut dot_seen = false;
-    let mut digit_seen = false;
-    for &ch in rest {
-        match ch {
-            b'0'..=b'9' => digit_seen = true,
-            b'.' if digit_seen && !dot_seen => dot_seen = true,
-            _ => return false,
-        }
+    let Some(dot) = rest.iter().position(|&ch| ch == b'.') else {
+        return false;
+    };
+    let major = &rest[..dot];
+    let minor = &rest[dot + 1..];
+
+    if major.is_empty() || minor.is_empty() {
+        return false;
     }
-    digit_seen && dot_seen
+    major.iter().all(u8::is_ascii_digit) && minor.iter().all(u8::is_ascii_digit)
 }
 
 fn is_http_status_code(status: &[u8]) -> bool {
     status.len() == 3 && status.iter().all(u8::is_ascii_digit)
+}
+
+fn http_token_to_string(value: &[u8]) -> Option<String> {
+    std::str::from_utf8(value).ok().map(str::to_string)
+}
+
+fn http_visible_utf8(value: &[u8]) -> Option<String> {
+    let text = std::str::from_utf8(value).ok()?;
+    (!text.bytes().any(|b| b.is_ascii_control())).then(|| text.to_string())
 }
 
 /// Find first occurrence of a byte in a slice (replaces memchr dependency).
@@ -191,11 +200,11 @@ fn extract_host_header(payload: &[u8]) -> Option<String> {
         let Some(value) = strip_prefix_ignore_ascii_case(line, needle) else {
             continue;
         };
-        let value = value.trim_ascii_start();
+        let value = value.trim_ascii();
         if value.is_empty() {
             return None;
         }
-        return Some(String::from_utf8_lossy(value).to_string());
+        return http_visible_utf8(value);
     }
 
     None
@@ -388,6 +397,8 @@ mod tests {
     #[test]
     fn http_response_requires_valid_version_and_status() {
         assert!(analyze_http(b"HTTP/1 200 OK\r\n\r\n").is_none());
+        assert!(analyze_http(b"HTTP/1. 200 OK\r\n\r\n").is_none());
+        assert!(analyze_http(b"HTTP/1.1. 200 OK\r\n\r\n").is_none());
         assert!(analyze_http(b"HTTP/1.1 OK\r\n\r\n").is_none());
         assert!(analyze_http(b"HTTP/1.1\r\n\r\n").is_none());
     }
@@ -407,6 +418,17 @@ mod tests {
     #[test]
     fn http_request_rejects_bad_version() {
         assert!(analyze_http(b"GET / NOTHTTP/1.1\r\nHost: example.com\r\n\r\n").is_none());
+        assert!(analyze_http(b"GET / HTTP/1.\r\nHost: example.com\r\n\r\n").is_none());
+    }
+
+    #[test]
+    fn http_rejects_invalid_utf8_and_control_output() {
+        assert!(analyze_http(b"GET /\xFF HTTP/1.1\r\nHost: example.com\r\n\r\n").is_none());
+        assert!(analyze_http(b"GET /\x7F HTTP/1.1\r\nHost: example.com\r\n\r\n").is_none());
+        assert!(analyze_http(b"HTTP/1.1 200 O\xFFK\r\n\r\n").is_none());
+        assert!(analyze_http(b"HTTP/1.1 200 O\x00K\r\n\r\n").is_none());
+        assert!(extract_host_header(b"GET / HTTP/1.1\r\nHost: ex\xFFample.com\r\n\r\n").is_none());
+        assert!(extract_host_header(b"GET / HTTP/1.1\r\nHost: ex\x00ample.com\r\n\r\n").is_none());
     }
 
     #[test]

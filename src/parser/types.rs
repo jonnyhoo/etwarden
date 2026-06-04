@@ -95,6 +95,7 @@ pub enum NetEvent {
         status: u32,
         status_name: String,
         result_ips: Vec<String>,
+        truncated: bool,
     },
 }
 

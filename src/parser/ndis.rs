@@ -97,6 +97,7 @@ pub(crate) fn parse_dns_event(
             query_type_name,
             status,
             status_name: dns_status_name(status).to_string(),
+            truncated: info.truncated,
             result_ips: info
                 .response_ips
                 .into_iter()
@@ -611,6 +612,7 @@ mod tests {
             domain,
             status,
             result_ips,
+            truncated,
             ..
         } = event
         else {
@@ -619,6 +621,7 @@ mod tests {
         assert_eq!(pid, 42);
         assert_eq!(domain, "example.com");
         assert_eq!(status, 0);
+        assert!(!truncated);
         assert_eq!(result_ips, vec!["93.184.216.34"]);
     }
 
