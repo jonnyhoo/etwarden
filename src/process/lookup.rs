@@ -54,7 +54,10 @@ impl ProcessNameCache {
     ///
     /// Triggers a background refresh if the cache is stale.
     pub fn get_name(&self, pid: u32) -> Option<String> {
-        let mut guard = self.inner.lock().ok()?;
+        let Ok(mut guard) = self.inner.lock() else {
+            eprintln!("[etwarden] skipped process name lookup: process cache lock poisoned");
+            return None;
+        };
 
         // Refresh if stale
         if guard.last_refresh.elapsed() > REFRESH_INTERVAL {
@@ -66,9 +69,11 @@ impl ProcessNameCache {
 
     /// Force a refresh regardless of staleness.
     pub fn force_refresh(&self) {
-        if let Ok(mut guard) = self.inner.lock() {
-            Self::do_refresh(&mut guard);
-        }
+        let Ok(mut guard) = self.inner.lock() else {
+            eprintln!("[etwarden] skipped process cache refresh: process cache lock poisoned");
+            return;
+        };
+        Self::do_refresh(&mut guard);
     }
 
     fn do_refresh(cache: &mut CacheInner) {
@@ -94,6 +99,8 @@ impl Default for ProcessNameCache {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
 
     #[test]
@@ -116,5 +123,19 @@ mod tests {
     #[test]
     fn default_works() {
         let _cache = ProcessNameCache::default();
+    }
+
+    #[test]
+    fn poisoned_cache_lock_returns_none_and_refresh_noops() {
+        let cache = Arc::new(ProcessNameCache::new());
+        let poisoned = Arc::clone(&cache);
+        let handle = std::thread::spawn(move || {
+            let _guard = poisoned.inner.lock().expect("lock process cache");
+            std::panic::resume_unwind(Box::new("poison process cache lock"));
+        });
+
+        assert!(handle.join().is_err());
+        assert!(cache.get_name(std::process::id()).is_none());
+        cache.force_refresh();
     }
 }
