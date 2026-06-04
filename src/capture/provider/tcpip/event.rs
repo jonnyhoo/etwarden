@@ -10,7 +10,7 @@
 use chrono::{DateTime, Utc};
 use ferrisetw::{parser::Parser, EventRecord, SchemaLocator};
 
-use super::endpoint::{format_addr_port, format_ip_addr_port, parse_network_port};
+use super::endpoint::{parse_endpoints_v4, parse_endpoints_v6, parse_size};
 use crate::{
     capture::provider::common::record_timestamp,
     parser::{
@@ -70,64 +70,52 @@ fn parse_kernel_network_pid(parser: &Parser<'_, '_>) -> Option<u32> {
 }
 
 fn parse_connect_v4(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let daddr: u32 = parser.try_parse("daddr").ok()?;
-    let saddr: u32 = parser.try_parse("saddr").ok()?;
-    let dport = parse_network_port(parser, "dport")?;
-    let sport = parse_network_port(parser, "sport")?;
+    let endpoints = parse_endpoints_v4(parser)?;
     Some(NetEvent::Connect {
         timestamp: ts,
         pid,
         proto: Protocol::Tcp,
-        src: format_addr_port(saddr, sport),
-        dst: format_addr_port(daddr, dport),
+        src: endpoints.src,
+        dst: endpoints.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
 }
 
 fn parse_connect_v6(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let daddr: std::net::IpAddr = parser.try_parse("daddr").ok()?;
-    let saddr: std::net::IpAddr = parser.try_parse("saddr").ok()?;
-    let dport = parse_network_port(parser, "dport")?;
-    let sport = parse_network_port(parser, "sport")?;
+    let endpoints = parse_endpoints_v6(parser)?;
     Some(NetEvent::Connect {
         timestamp: ts,
         pid,
         proto: Protocol::Tcp,
-        src: format_ip_addr_port(&saddr, sport),
-        dst: format_ip_addr_port(&daddr, dport),
+        src: endpoints.src,
+        dst: endpoints.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
 }
 
 fn parse_disconnect_v4(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let daddr: u32 = parser.try_parse("daddr").ok()?;
-    let saddr: u32 = parser.try_parse("saddr").ok()?;
-    let dport = parse_network_port(parser, "dport")?;
-    let sport = parse_network_port(parser, "sport")?;
+    let endpoints = parse_endpoints_v4(parser)?;
     Some(NetEvent::Disconnect {
         timestamp: ts,
         pid,
         proto: Protocol::Tcp,
-        src: format_addr_port(saddr, sport),
-        dst: format_addr_port(daddr, dport),
+        src: endpoints.src,
+        dst: endpoints.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
 }
 
 fn parse_disconnect_v6(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let daddr: std::net::IpAddr = parser.try_parse("daddr").ok()?;
-    let saddr: std::net::IpAddr = parser.try_parse("saddr").ok()?;
-    let dport = parse_network_port(parser, "dport")?;
-    let sport = parse_network_port(parser, "sport")?;
+    let endpoints = parse_endpoints_v6(parser)?;
     Some(NetEvent::Disconnect {
         timestamp: ts,
         pid,
         proto: Protocol::Tcp,
-        src: format_ip_addr_port(&saddr, sport),
-        dst: format_ip_addr_port(&daddr, dport),
+        src: endpoints.src,
+        dst: endpoints.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
@@ -154,17 +142,14 @@ fn parse_send_recv_v4(
     proto: Protocol,
     direction: Direction,
 ) -> Option<NetEvent> {
-    let size: u32 = parser.try_parse("size").ok()?;
-    let daddr: u32 = parser.try_parse("daddr").ok()?;
-    let saddr: u32 = parser.try_parse("saddr").ok()?;
-    let dport = parse_network_port(parser, "dport")?;
-    let sport = parse_network_port(parser, "sport")?;
+    let size = parse_size(parser)?;
+    let endpoints = parse_endpoints_v4(parser)?;
     Some(make_send_recv_event(
         ts,
         pid,
         proto,
-        format_addr_port(saddr, sport),
-        format_addr_port(daddr, dport),
+        endpoints.src,
+        endpoints.dst,
         size,
         direction,
     ))
@@ -177,17 +162,14 @@ fn parse_send_recv_v6(
     proto: Protocol,
     direction: Direction,
 ) -> Option<NetEvent> {
-    let size: u32 = parser.try_parse("size").ok()?;
-    let daddr: std::net::IpAddr = parser.try_parse("daddr").ok()?;
-    let saddr: std::net::IpAddr = parser.try_parse("saddr").ok()?;
-    let dport = parse_network_port(parser, "dport")?;
-    let sport = parse_network_port(parser, "sport")?;
+    let size = parse_size(parser)?;
+    let endpoints = parse_endpoints_v6(parser)?;
     Some(make_send_recv_event(
         ts,
         pid,
         proto,
-        format_ip_addr_port(&saddr, sport),
-        format_ip_addr_port(&daddr, dport),
+        endpoints.src,
+        endpoints.dst,
         size,
         direction,
     ))
