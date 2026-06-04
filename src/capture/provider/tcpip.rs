@@ -7,6 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 45 / 100
 
+mod endpoint;
 mod event;
 
 use std::sync::Arc;

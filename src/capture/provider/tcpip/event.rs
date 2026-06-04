@@ -10,6 +10,7 @@
 use chrono::{DateTime, Utc};
 use ferrisetw::{parser::Parser, EventRecord, SchemaLocator};
 
+use super::endpoint::{format_addr_port, format_ip_addr_port, parse_network_port};
 use crate::{
     capture::provider::common::record_timestamp,
     parser::{
@@ -220,48 +221,5 @@ fn make_send_recv_event(
             bytes_out: 0,
             bytes_in: u64::from(size),
         },
-    }
-}
-
-fn format_addr_port(raw_ip: u32, port: u16) -> String {
-    let ip = std::net::Ipv4Addr::from(raw_ip.to_be());
-    format!("{ip}:{port}")
-}
-
-fn format_ip_addr_port(ip: &std::net::IpAddr, port: u16) -> String {
-    match ip {
-        std::net::IpAddr::V4(addr) => format!("{addr}:{port}"),
-        std::net::IpAddr::V6(addr) => format!("[{addr}]:{port}"),
-    }
-}
-
-fn parse_network_port(parser: &Parser<'_, '_>, name: &str) -> Option<u16> {
-    parser.try_parse::<u16>(name).ok().map(network_port)
-}
-
-const fn network_port(raw: u16) -> u16 {
-    u16::from_be(raw)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn format_ip_addr_port_keeps_ipv4_plain() {
-        let ip = std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST);
-        assert_eq!(format_ip_addr_port(&ip, 443), "127.0.0.1:443");
-    }
-
-    #[test]
-    fn format_ip_addr_port_brackets_ipv6() {
-        let ip = std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST);
-        assert_eq!(format_ip_addr_port(&ip, 443), "[::1]:443");
-    }
-
-    #[test]
-    fn network_port_decodes_wire_order() {
-        let raw = u16::from_ne_bytes(443u16.to_be_bytes());
-        assert_eq!(network_port(raw), 443);
     }
 }
