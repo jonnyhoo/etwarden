@@ -16,6 +16,7 @@ use etwarden::{
     capture::{self, CaptureConfig},
     cli::Cli,
     filter::pid::PidFilter,
+    mitm::{CertificateAuthorityConfig, MitmCaptureConfig},
     output::{
         diagnostic,
         json::JsonEmitter,
@@ -64,6 +65,16 @@ fn run() -> anyhow::Result<()> {
             })
             .transpose()
             .map_err(|e| anyhow::anyhow!("{e}"))?,
+        mitm: cli.mitm.then(|| MitmCaptureConfig {
+            listen_addr: cli.mitm_listen,
+            ca: CertificateAuthorityConfig {
+                cert_path: cli.mitm_ca_cert.clone(),
+                key_path: cli.mitm_ca_key.clone(),
+            },
+            body_limit: cli.mitm_body_limit,
+            max_body_bytes: cli.mitm_max_body_bytes,
+            enable_system_proxy: cli.mitm_system_proxy,
+        }),
         stop_signal: Some(target.stop_signal),
     };
 

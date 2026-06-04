@@ -96,6 +96,24 @@ pub enum NetEvent {
         content_type: Option<String>,
         content_length: Option<u64>,
     },
+    /// Decrypted HTTP request observed from the active HTTPS MITM proxy.
+    DecryptedHttpRequest {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        src: String,
+        dst: String,
+        method: String,
+        path: String,
+        host: Option<String>,
+        version: String,
+        content_type: Option<String>,
+        content_length: Option<u64>,
+        content_encoding: Option<String>,
+        decoded: bool,
+        body_base64: Option<String>,
+        body_truncated: bool,
+    },
     /// Plaintext HTTP response observed from an attributed TCP packet.
     HttpResponse {
         #[serde(rename = "t")]
@@ -109,6 +127,24 @@ pub enum NetEvent {
         status_code: u16,
         content_type: Option<String>,
         content_length: Option<u64>,
+    },
+    /// Decrypted HTTP response observed from the active HTTPS MITM proxy.
+    DecryptedHttpResponse {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        src: String,
+        dst: String,
+        status_line: String,
+        host: Option<String>,
+        version: String,
+        status_code: u16,
+        content_type: Option<String>,
+        content_length: Option<u64>,
+        content_encoding: Option<String>,
+        decoded: bool,
+        body_base64: Option<String>,
+        body_truncated: bool,
     },
     /// TLS `ClientHello` metadata observed from an attributed TCP packet.
     TlsHello {

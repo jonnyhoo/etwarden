@@ -64,7 +64,9 @@ impl TrackableEvent {
             | NetEvent::DnsQuery { .. }
             | NetEvent::DnsResponse { .. }
             | NetEvent::HttpRequest { .. }
+            | NetEvent::DecryptedHttpRequest { .. }
             | NetEvent::HttpResponse { .. }
+            | NetEvent::DecryptedHttpResponse { .. }
             | NetEvent::TlsHello { .. } => return None,
         };
 

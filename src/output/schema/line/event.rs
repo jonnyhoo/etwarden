@@ -129,6 +129,21 @@ pub struct HttpEventLine {
     /// Content-Length header value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content_length: Option<u64>,
+    /// Whether the event came from active HTTPS MITM decryption.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub decrypted: bool,
+    /// Original Content-Encoding header when the body stayed encoded.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_encoding: Option<String>,
+    /// Whether the captured body was decoded before serialization.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub decoded: bool,
+    /// Base64-encoded bounded HTTP body bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_base64: Option<String>,
+    /// Whether `body_base64` was truncated by the capture limit.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub body_truncated: bool,
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,

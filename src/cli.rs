@@ -7,6 +7,8 @@
 //! **Privilege**: `none`
 //! **Line budget**: 58 / 100
 
+use std::{net::SocketAddr, path::PathBuf};
+
 use clap::Parser;
 
 /// Process-level network capture CLI for agent runtime consumption.
@@ -32,6 +34,34 @@ pub struct Cli {
     /// Write raw packets to a pcapng file.
     #[arg(long)]
     pub pcap_out: Option<String>,
+
+    /// Run active local HTTPS MITM proxy for the target PID.
+    #[arg(long)]
+    pub mitm: bool,
+
+    /// Local MITM proxy listen address.
+    #[arg(long, default_value = "127.0.0.1:3003")]
+    pub mitm_listen: SocketAddr,
+
+    /// MITM root CA certificate path.
+    #[arg(long, default_value = "etwarden-mitm-ca.crt")]
+    pub mitm_ca_cert: PathBuf,
+
+    /// MITM root CA private key path.
+    #[arg(long, default_value = "etwarden-mitm-ca.key")]
+    pub mitm_ca_key: PathBuf,
+
+    /// Max decoded body bytes emitted into NDJSON per decrypted HTTP event.
+    #[arg(long, default_value = "65536")]
+    pub mitm_body_limit: usize,
+
+    /// Max body bytes buffered from the proxy before forwarding.
+    #[arg(long, default_value = "1048576")]
+    pub mitm_max_body_bytes: usize,
+
+    /// Opt in to global OS proxy mutation while MITM is running.
+    #[arg(long)]
+    pub mitm_system_proxy: bool,
 }
 
 /// How to target the process to monitor.
@@ -80,6 +110,26 @@ mod tests {
         let cli = Cli::try_parse_from(["etwarden", "--pid", "1234", "--pcap-out", "out.pcapng"])
             .expect("parse");
         assert_eq!(cli.pcap_out, Some("out.pcapng".into()));
+    }
+
+    #[test]
+    fn cli_parses_mitm_options() {
+        let cli = Cli::try_parse_from([
+            "etwarden",
+            "--pid",
+            "1234",
+            "--mitm",
+            "--mitm-listen",
+            "127.0.0.1:4000",
+            "--mitm-body-limit",
+            "1024",
+            "--mitm-system-proxy",
+        ])
+        .expect("parse");
+        assert!(cli.mitm);
+        assert_eq!(cli.mitm_listen.port(), 4000);
+        assert_eq!(cli.mitm_body_limit, 1024);
+        assert!(cli.mitm_system_proxy);
     }
 
     #[test]

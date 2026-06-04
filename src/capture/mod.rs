@@ -22,6 +22,7 @@ use crate::{
     },
     error::Result,
     filter::Filter,
+    mitm::{start_mitm_proxy, MitmCaptureConfig, MitmProxyConfig},
     output::{schema::SummaryLine, Emitter},
     parser::ParserRegistry,
     pcap::{correlator::Correlator, PcapSink},
@@ -39,6 +40,8 @@ pub struct CaptureConfig {
     pub emitter: Box<dyn Emitter>,
     /// Optional pcap sink for raw frame capture.
     pub pcap_sink: Option<Box<dyn PcapSink>>,
+    /// Optional active HTTPS MITM proxy settings.
+    pub mitm: Option<MitmCaptureConfig>,
     /// Optional external stop signal, used by `--spawn` child exit handling.
     pub stop_signal: Option<Arc<AtomicBool>>,
 }
@@ -69,6 +72,19 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     session_builder.add_provider(ndis_provider);
 
     let running = session_builder.start()?;
+    let mitm_handle = config
+        .mitm
+        .clone()
+        .map(|mitm| {
+            start_mitm_proxy(MitmProxyConfig {
+                capture: mitm,
+                target_pid: config.target_pid,
+                registry: Arc::clone(&registry),
+                correlator: Arc::clone(&correlator),
+                stop_signal: config.stop_signal.clone(),
+            })
+        })
+        .transpose()?;
     let summary = run_event_loop(
         running,
         &registry,
@@ -79,6 +95,9 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
         config.duration,
         config.stop_signal.as_deref(),
     )?;
+    if let Some(handle) = mitm_handle {
+        handle.stop()?;
+    }
 
     Ok(SummaryLine {
         kind: "summary".into(),

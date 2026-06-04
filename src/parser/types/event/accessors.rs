@@ -22,7 +22,9 @@ impl NetEvent {
             | Self::DnsQuery { .. }
             | Self::DnsResponse { .. }
             | Self::HttpRequest { .. }
+            | Self::DecryptedHttpRequest { .. }
             | Self::HttpResponse { .. }
+            | Self::DecryptedHttpResponse { .. }
             | Self::TlsHello { .. } => 0,
         }
     }
@@ -39,7 +41,9 @@ impl NetEvent {
             | Self::DnsQuery { pid, .. }
             | Self::DnsResponse { pid, .. }
             | Self::HttpRequest { pid, .. }
+            | Self::DecryptedHttpRequest { pid, .. }
             | Self::HttpResponse { pid, .. }
+            | Self::DecryptedHttpResponse { pid, .. }
             | Self::TlsHello { pid, .. } => *pid,
         }
     }
@@ -56,7 +60,9 @@ impl NetEvent {
             | Self::DnsQuery { .. }
             | Self::DnsResponse { .. }
             | Self::HttpRequest { .. }
+            | Self::DecryptedHttpRequest { .. }
             | Self::HttpResponse { .. }
+            | Self::DecryptedHttpResponse { .. }
             | Self::TlsHello { .. } => 0,
         }
     }

@@ -13,6 +13,7 @@ pub mod classify;
 pub mod cli;
 pub mod error;
 pub mod filter;
+pub mod mitm;
 pub mod output;
 pub mod parser;
 pub mod pcap;

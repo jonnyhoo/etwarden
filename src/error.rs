@@ -29,6 +29,10 @@ pub enum EtwardenError {
     /// Output serialization or write failure.
     #[error("output write error: {0}")]
     OutputWrite(String),
+
+    /// HTTPS MITM proxy startup, runtime, or system-proxy failure.
+    #[error("MITM proxy error: {0}")]
+    MitmProxy(String),
 }
 
 /// Convenience alias for results in this crate.
@@ -88,6 +92,13 @@ mod tests {
         let err = EtwardenError::OutputWrite("pipe closed".into());
         let msg = err.to_string();
         assert!(msg.contains("output write error"), "actual: {msg}");
+    }
+
+    #[test]
+    fn mitm_proxy_variant_displays_message() {
+        let err = EtwardenError::MitmProxy("bind failed".into());
+        let msg = err.to_string();
+        assert!(msg.contains("MITM proxy error"), "actual: {msg}");
     }
 
     #[test]

@@ -50,6 +50,11 @@ pub(super) fn http_request_line(
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
         content_length,
+        decrypted: false,
+        content_encoding: None,
+        decoded: false,
+        body_base64: None,
+        body_truncated: false,
         process_name: name,
         ppid,
         command_line,
@@ -95,6 +100,119 @@ pub(super) fn http_response_line(
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
         content_length,
+        decrypted: false,
+        content_encoding: None,
+        decoded: false,
+        body_base64: None,
+        body_truncated: false,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "decrypted HTTP schema projection keeps source fields explicit"
+)]
+pub(super) fn decrypted_http_request_line(
+    timestamp: DateTime<Utc>,
+    pid: u32,
+    src: &str,
+    dst: &str,
+    method: &str,
+    path: &str,
+    version: &str,
+    host: Option<&str>,
+    content_type: Option<&str>,
+    content_length: Option<u64>,
+    content_encoding: Option<&str>,
+    decoded: bool,
+    body_base64: Option<&str>,
+    body_truncated: bool,
+    process_fields: ProcessFields,
+) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
+    OutputLine::HttpEvent(HttpEventLine {
+        timestamp,
+        pid,
+        event: "decrypted_http_request".into(),
+        src: src.to_owned(),
+        dst: dst.to_owned(),
+        method: Some(method.to_owned()),
+        path: Some(path.to_owned()),
+        status_line: None,
+        version: version.to_owned(),
+        status_code: None,
+        host: host.map(str::to_owned),
+        content_type: content_type.map(str::to_owned),
+        content_length,
+        decrypted: true,
+        content_encoding: content_encoding.map(str::to_owned),
+        decoded,
+        body_base64: body_base64.map(str::to_owned),
+        body_truncated,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "decrypted HTTP schema projection keeps source fields explicit"
+)]
+pub(super) fn decrypted_http_response_line(
+    timestamp: DateTime<Utc>,
+    pid: u32,
+    src: &str,
+    dst: &str,
+    status_line: &str,
+    version: &str,
+    status_code: u16,
+    host: Option<&str>,
+    content_type: Option<&str>,
+    content_length: Option<u64>,
+    content_encoding: Option<&str>,
+    decoded: bool,
+    body_base64: Option<&str>,
+    body_truncated: bool,
+    process_fields: ProcessFields,
+) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
+    OutputLine::HttpEvent(HttpEventLine {
+        timestamp,
+        pid,
+        event: "decrypted_http_response".into(),
+        src: src.to_owned(),
+        dst: dst.to_owned(),
+        method: None,
+        path: None,
+        status_line: Some(status_line.to_owned()),
+        version: version.to_owned(),
+        status_code: Some(status_code),
+        host: host.map(str::to_owned),
+        content_type: content_type.map(str::to_owned),
+        content_length,
+        decrypted: true,
+        content_encoding: content_encoding.map(str::to_owned),
+        decoded,
+        body_base64: body_base64.map(str::to_owned),
+        body_truncated,
         process_name: name,
         ppid,
         command_line,

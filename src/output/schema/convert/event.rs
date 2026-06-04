@@ -40,7 +40,9 @@ pub(super) fn event_to_line_enriched(
             dns::line(event, process_fields)
         }
         NetEvent::HttpRequest { .. }
+        | NetEvent::DecryptedHttpRequest { .. }
         | NetEvent::HttpResponse { .. }
+        | NetEvent::DecryptedHttpResponse { .. }
         | NetEvent::TlsHello { .. } => dpi::line(event, process_fields),
     }
 }
