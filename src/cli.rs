@@ -5,7 +5,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 58 / 100
+//! **Line budget**: 72 / 110
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -26,6 +26,14 @@ pub struct Cli {
     /// Spawn a command and monitor the child process.
     #[arg(long)]
     pub spawn: Option<String>,
+
+    /// Write spawned child stdout to a file. Parent stdout remains NDJSON-only.
+    #[arg(long)]
+    pub spawn_stdout: Option<PathBuf>,
+
+    /// Write spawned child stderr to a file instead of inheriting parent stderr.
+    #[arg(long)]
+    pub spawn_stderr: Option<PathBuf>,
 
     /// Capture duration in seconds. 0 = until Ctrl+C or child exits.
     #[arg(long, default_value = "0")]
@@ -96,6 +104,26 @@ mod tests {
         let cli = Cli::try_parse_from(["etwarden", "--spawn", "curl.exe https://example.com"])
             .expect("parse");
         assert_eq!(cli.spawn, Some("curl.exe https://example.com".into()));
+    }
+
+    #[test]
+    fn cli_parses_spawn_output_paths() {
+        let cli = Cli::try_parse_from([
+            "etwarden",
+            "--spawn",
+            "cmd /C exit 0",
+            "--spawn-stdout",
+            "captures/result.json",
+            "--spawn-stderr",
+            "captures/result.err",
+        ])
+        .expect("parse");
+
+        assert_eq!(
+            cli.spawn_stdout,
+            Some(PathBuf::from("captures/result.json"))
+        );
+        assert_eq!(cli.spawn_stderr, Some(PathBuf::from("captures/result.err")));
     }
 
     #[test]

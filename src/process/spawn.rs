@@ -1,15 +1,19 @@
 //! # `process::spawn`
 //!
 //! **Purpose**: Spawn a child process and extract its PID for capture monitoring.
-//! **Public API**: `fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult>`
+//! **Public API**: `struct SpawnOptions`, `fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult>`
 //! **Dependencies**: `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 165 / 180
+//! **Line budget**: 130 / 150
 
 use std::process::{Command, Stdio};
 
 use crate::error::EtwardenError;
+
+mod output;
+
+pub use output::SpawnOptions;
 
 /// Result of spawning a child process via `--spawn` mode.
 pub struct SpawnResult {
@@ -33,17 +37,39 @@ pub struct SpawnResult {
 /// # Errors
 /// Returns [`EtwardenError::ProcessSpawn`] if the spawn fails.
 pub fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult, EtwardenError> {
+    spawn_and_get_pid_with_options(cmd, &SpawnOptions::default())
+}
+
+/// Spawns a child process with explicit output routing options.
+///
+/// Parent stdout remains independent from child stdout so etwarden can keep stdout NDJSON-only.
+///
+/// # Arguments
+/// * `cmd` — The command string to execute.
+/// * `options` — Child stdout/stderr file routing.
+///
+/// # Returns
+/// A [`SpawnResult`] containing the child PID and process handle.
+///
+/// # Errors
+/// Returns [`EtwardenError::ProcessSpawn`] if command parsing, output file setup, or spawn fails.
+pub fn spawn_and_get_pid_with_options(
+    cmd: &str,
+    options: &SpawnOptions,
+) -> Result<SpawnResult, EtwardenError> {
     let (program, args) = parse_command(cmd);
     if program.is_empty() {
         return Err(EtwardenError::ProcessSpawn(
             "spawn command must not be empty".into(),
         ));
     }
+    let (stdout, stderr) = options.stdio()?;
+
     let child = Command::new(program)
         .args(&args)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::inherit())
+        .stdout(stdout)
+        .stderr(stderr)
         .spawn()
         .map_err(|e| EtwardenError::ProcessSpawn(format!("failed to spawn '{cmd}': {e}")))?;
 
@@ -117,95 +143,4 @@ fn parse_args(rest: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_simple_command() {
-        let (prog, args) = parse_command("notepad.exe");
-        assert_eq!(prog, "notepad.exe");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn parse_command_with_args() {
-        let (prog, args) = parse_command("ping -n 1 127.0.0.1");
-        assert_eq!(prog, "ping");
-        assert_eq!(args, vec!["-n", "1", "127.0.0.1"]);
-    }
-
-    #[test]
-    fn parse_quoted_program() {
-        let (prog, args) = parse_command(r#""C:\Program Files\app.exe" --flag value"#);
-        assert_eq!(prog, r"C:\Program Files\app.exe");
-        assert_eq!(args, vec!["--flag", "value"]);
-    }
-
-    #[test]
-    fn parse_quoted_argument() {
-        let (prog, args) = parse_command(r#"tool.exe --name "hello world" --flag"#);
-        assert_eq!(prog, "tool.exe");
-        assert_eq!(args, vec!["--name", "hello world", "--flag"]);
-    }
-
-    #[test]
-    fn parse_empty_quoted_argument() {
-        let (prog, args) = parse_command(r#"tool.exe "" tail"#);
-        assert_eq!(prog, "tool.exe");
-        assert_eq!(args, vec!["", "tail"]);
-    }
-
-    #[test]
-    fn parse_quoted_program_no_args() {
-        let (prog, args) = parse_command(r#""C:\My App\test.exe""#);
-        assert_eq!(prog, r"C:\My App\test.exe");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn parse_unclosed_quote_falls_back() {
-        let (prog, args) = parse_command(r#""C:\Program Files\app.exe"#);
-        assert_eq!(prog, r#""C:\Program Files\app.exe"#);
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn parse_empty_string() {
-        let (prog, args) = parse_command("");
-        assert!(prog.is_empty());
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn parse_whitespace_only() {
-        let (prog, args) = parse_command("   ");
-        assert!(prog.is_empty());
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn spawn_cmd_exits_quickly() {
-        // cmd /C exit should spawn and return a PID
-        let result = spawn_and_get_pid("cmd /C exit 0");
-        assert!(result.is_ok(), "spawn should succeed");
-        let sr = result.expect("spawn cmd should succeed");
-        assert!(sr.pid > 0, "PID should be positive");
-        // child should still be accessible
-        assert_eq!(sr.child.id(), sr.pid);
-    }
-
-    #[test]
-    fn spawn_nonexistent_fails() {
-        let result = spawn_and_get_pid("nonexistent_program_xyz_12345");
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn spawn_empty_command_fails_before_process_create() {
-        let result = spawn_and_get_pid("   ");
-        assert!(
-            matches!(result, Err(err) if err.to_string().contains("must not be empty")),
-            "empty command should fail"
-        );
-    }
-}
+mod tests;

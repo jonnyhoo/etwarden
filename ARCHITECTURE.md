@@ -24,7 +24,11 @@ is the primary API surface.
 ```
 etwarden --pid 1234 --duration 10
 etwarden --spawn "curl.exe https://example.com"
+etwarden --spawn "cmd /C claude -p prompt --output-format json" --spawn-stdout captures/claude-result.json --spawn-stderr captures/claude-stderr.log
 ```
+
+Spawned child output never enters etwarden stdout. Use `--spawn-stdout <path>` and
+`--spawn-stderr <path>` for autonomous result capture while etwarden stdout stays NDJSON-only.
 
 ---
 

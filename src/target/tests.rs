@@ -5,11 +5,14 @@
 //! **Dependencies**: `target`, `clap`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 69 / 100
+//! **Line budget**: 100 / 130
 
 use clap::Parser;
 
-use super::*;
+use super::{
+    spawn::{primary_pid, should_wait_for_spawn_descendant, SpawnTarget},
+    *,
+};
 
 #[test]
 fn target_spec_accepts_pid_flag() {
@@ -46,6 +49,37 @@ fn target_spec_rejects_zero_pid_flag() {
 fn target_spec_rejects_zero_pid_subcommand() {
     let cli = Cli::try_parse_from(["etwarden", "pid", "0"]).expect("parse");
     assert!(target_spec(&cli).is_err());
+}
+
+#[test]
+fn target_spec_passes_spawn_output_paths() {
+    let cli = Cli::try_parse_from([
+        "etwarden",
+        "--spawn",
+        "cmd /C exit 0",
+        "--spawn-stdout",
+        "result.json",
+        "--spawn-stderr",
+        "result.err",
+    ])
+    .expect("parse");
+    let TargetSpec::Spawn(spec) = target_spec(&cli).expect("target") else {
+        unreachable!("expected spawn target");
+    };
+
+    assert_eq!(spec.cmd, "cmd /C exit 0");
+    assert_eq!(spec.options.stdout_path, Some("result.json".into()));
+    assert_eq!(spec.options.stderr_path, Some("result.err".into()));
+}
+
+#[test]
+fn target_spec_rejects_spawn_output_paths_for_pid_target() {
+    let cli = Cli::try_parse_from(["etwarden", "--pid", "42", "--spawn-stdout", "result.json"])
+        .expect("parse");
+
+    assert!(
+        matches!(target_spec(&cli), Err(err) if err.to_string().contains("require a spawn target"))
+    );
 }
 
 #[test]
