@@ -5,10 +5,17 @@
 //! **Dependencies**: `output::schema`, `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 215 / 280
+//! **Line budget**: 185 / 240
 
+mod dns;
+mod network;
+
+use self::{
+    dns::{dns_query_line, dns_response_line},
+    network::network_event_line,
+};
 use crate::{
-    output::schema::{scope::scope_from_addr, DnsEventLine, ErrorLine, EventLine, OutputLine},
+    output::schema::{ErrorLine, OutputLine},
     parser::types::NetEvent,
 };
 
@@ -131,19 +138,14 @@ pub fn event_to_line_enriched(
             ref domain,
             query_type,
             ref query_type_name,
-        } => OutputLine::DnsEvent(DnsEventLine {
+        } => dns_query_line(
             timestamp,
             pid,
-            event: "dns_query".into(),
-            hostname: domain.clone(),
+            domain,
             query_type,
-            query_type_name: query_type_name.clone(),
-            status: None,
-            status_name: None,
-            result_ips: Vec::new(),
-            truncated: false,
+            query_type_name,
             process_name,
-        }),
+        ),
         NetEvent::DnsResponse {
             timestamp,
             pid,
@@ -154,50 +156,19 @@ pub fn event_to_line_enriched(
             ref status_name,
             ref result_ips,
             truncated,
-        } => OutputLine::DnsEvent(DnsEventLine {
+        } => dns_response_line(
             timestamp,
             pid,
-            event: "dns_response".into(),
-            hostname: domain.clone(),
+            domain,
             query_type,
-            query_type_name: query_type_name.clone(),
-            status: Some(status),
-            status_name: Some(status_name.clone()),
-            result_ips: result_ips.clone(),
+            query_type_name,
+            status,
+            status_name,
+            result_ips,
             truncated,
             process_name,
-        }),
+        ),
     }
-}
-
-#[expect(
-    clippy::too_many_arguments,
-    reason = "schema projection keeps fields explicit"
-)]
-fn network_event_line(
-    timestamp: chrono::DateTime<chrono::Utc>,
-    pid: u32,
-    proto: crate::parser::types::Protocol,
-    src: &str,
-    dst: &str,
-    event: &str,
-    bytes_out: u64,
-    bytes_in: u64,
-    process_name: Option<String>,
-    scope_override: Option<String>,
-) -> OutputLine {
-    OutputLine::Event(EventLine {
-        timestamp,
-        pid,
-        proto,
-        src: src.to_owned(),
-        dst: dst.to_owned(),
-        event: event.into(),
-        bytes_out,
-        bytes_in,
-        scope: scope_override.or_else(|| scope_from_addr(dst)),
-        process_name,
-    })
 }
 
 #[cfg(test)]
