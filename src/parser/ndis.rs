@@ -133,6 +133,10 @@ pub(crate) fn parse_dpi_event(
                 method,
                 uri_or_status,
                 host,
+                version,
+                status_code,
+                content_type,
+                content_length,
             } = info;
             if let Some(method) = method {
                 Some(NetEvent::HttpRequest {
@@ -143,6 +147,9 @@ pub(crate) fn parse_dpi_event(
                     method,
                     path: uri_or_status,
                     host,
+                    version,
+                    content_type,
+                    content_length,
                 })
             } else {
                 Some(NetEvent::HttpResponse {
@@ -152,6 +159,10 @@ pub(crate) fn parse_dpi_event(
                     dst,
                     status_line: uri_or_status,
                     host,
+                    version,
+                    status_code: status_code?,
+                    content_type,
+                    content_length,
                 })
             }
         }
@@ -372,6 +383,9 @@ mod tests {
             host,
             src,
             dst,
+            version,
+            content_type,
+            content_length,
             ..
         } = event
         else {
@@ -383,6 +397,51 @@ mod tests {
         assert_eq!(host.as_deref(), Some("example.com"));
         assert_eq!(src, "10.0.0.1:51000");
         assert_eq!(dst, "10.0.0.2:80");
+        assert_eq!(version, "HTTP/1.1");
+        assert_eq!(content_type, None);
+        assert_eq!(content_length, None);
+    }
+
+    #[test]
+    fn parse_http_response_from_tcp_frame() {
+        let corr = Arc::new(Correlator::new());
+        corr.register_connection(
+            42,
+            FiveTuple {
+                src_ip: "10.0.0.1".into(),
+                src_port: 80,
+                dst_ip: "10.0.0.2".into(),
+                dst_port: 51000,
+                protocol: Protocol::Tcp,
+            },
+        );
+        let parser = NdisParser::new(corr);
+        let frame = build_ethernet_ipv4_tcp_payload(
+            b"HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 9\r\n\r\nnot found",
+            80,
+            51000,
+        );
+        let raw = raw_ndis(frame);
+
+        let event = parser.parse_dpi_event(&raw).expect("http response");
+        let NetEvent::HttpResponse {
+            pid,
+            status_line,
+            version,
+            status_code,
+            content_type,
+            content_length,
+            ..
+        } = event
+        else {
+            unreachable!("expected HTTP response")
+        };
+        assert_eq!(pid, 42);
+        assert_eq!(status_line, "HTTP/1.1 404 Not Found");
+        assert_eq!(version, "HTTP/1.1");
+        assert_eq!(status_code, 404);
+        assert_eq!(content_type.as_deref(), Some("text/plain"));
+        assert_eq!(content_length, Some(9));
     }
 
     #[test]

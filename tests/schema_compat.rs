@@ -101,6 +101,24 @@ fn http_request_event() -> NetEvent {
         method: "GET".into(),
         path: "/api/data".into(),
         host: Some("example.com".into()),
+        version: "HTTP/1.1".into(),
+        content_type: Some("application/json".into()),
+        content_length: Some(42),
+    }
+}
+
+fn http_response_event() -> NetEvent {
+    NetEvent::HttpResponse {
+        timestamp: ts(),
+        pid: 1234,
+        src: "93.184.216.34:80".into(),
+        dst: "10.0.0.1:49152".into(),
+        status_line: "HTTP/1.1 200 OK".into(),
+        host: None,
+        version: "HTTP/1.1".into(),
+        status_code: 200,
+        content_type: Some("application/json".into()),
+        content_length: Some(1234),
     }
 }
 
@@ -158,6 +176,12 @@ fn snapshot_dns_response_event_line() {
 fn snapshot_http_request_event_line() {
     let line = event_to_line(&http_request_event());
     insta::assert_json_snapshot!("http_request_event_line", line);
+}
+
+#[test]
+fn snapshot_http_response_event_line() {
+    let line = event_to_line(&http_response_event());
+    insta::assert_json_snapshot!("http_response_event_line", line);
 }
 
 #[test]

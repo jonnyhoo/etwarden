@@ -178,6 +178,9 @@ pub fn event_to_line_enriched(
             ref method,
             ref path,
             ref host,
+            ref version,
+            ref content_type,
+            content_length,
         } => http_request_line(
             timestamp,
             pid,
@@ -185,7 +188,10 @@ pub fn event_to_line_enriched(
             dst,
             method,
             path,
+            version,
             host.as_deref(),
+            content_type.as_deref(),
+            content_length,
             process_name,
         ),
         NetEvent::HttpResponse {
@@ -195,13 +201,21 @@ pub fn event_to_line_enriched(
             ref dst,
             ref status_line,
             ref host,
+            ref version,
+            status_code,
+            ref content_type,
+            content_length,
         } => http_response_line(
             timestamp,
             pid,
             src,
             dst,
             status_line,
+            version,
+            status_code,
             host.as_deref(),
+            content_type.as_deref(),
+            content_length,
             process_name,
         ),
         NetEvent::TlsHello {
@@ -408,6 +422,9 @@ mod tests {
             method: "GET".into(),
             path: "/index.html".into(),
             host: Some("example.com".into()),
+            version: "HTTP/1.1".into(),
+            content_type: None,
+            content_length: None,
         };
         let line = event_to_line(&event);
         let OutputLine::HttpEvent(line) = line else {
@@ -417,6 +434,33 @@ mod tests {
         assert_eq!(line.method.as_deref(), Some("GET"));
         assert_eq!(line.path.as_deref(), Some("/index.html"));
         assert_eq!(line.host.as_deref(), Some("example.com"));
+        assert_eq!(line.version, "HTTP/1.1");
+        assert_eq!(line.status_code, None);
+    }
+
+    #[test]
+    fn http_response_line_keeps_status_and_content_headers() {
+        let event = NetEvent::HttpResponse {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            src: "93.184.216.34:80".into(),
+            dst: "10.0.0.1:51000".into(),
+            status_line: "HTTP/1.1 200 OK".into(),
+            host: None,
+            version: "HTTP/1.1".into(),
+            status_code: 200,
+            content_type: Some("application/json".into()),
+            content_length: Some(123),
+        };
+        let line = event_to_line(&event);
+        let OutputLine::HttpEvent(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.event, "http_response");
+        assert_eq!(line.status_line.as_deref(), Some("HTTP/1.1 200 OK"));
+        assert_eq!(line.status_code, Some(200));
+        assert_eq!(line.content_type.as_deref(), Some("application/json"));
+        assert_eq!(line.content_length, Some(123));
     }
 
     #[test]

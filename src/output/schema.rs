@@ -103,9 +103,20 @@ pub struct HttpEventLine {
     /// HTTP response status line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_line: Option<String>,
+    /// HTTP version token.
+    pub version: String,
+    /// HTTP response status code.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_code: Option<u16>,
     /// HTTP Host header value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub host: Option<String>,
+    /// Content-Type header value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<String>,
+    /// Content-Length header value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_length: Option<u64>,
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,

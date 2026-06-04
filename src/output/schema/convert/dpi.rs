@@ -22,7 +22,10 @@ pub(super) fn http_request_line(
     dst: &str,
     method: &str,
     path: &str,
+    version: &str,
     host: Option<&str>,
+    content_type: Option<&str>,
+    content_length: Option<u64>,
     process_name: Option<String>,
 ) -> OutputLine {
     OutputLine::HttpEvent(HttpEventLine {
@@ -34,18 +37,30 @@ pub(super) fn http_request_line(
         method: Some(method.to_owned()),
         path: Some(path.to_owned()),
         status_line: None,
+        version: version.to_owned(),
+        status_code: None,
         host: host.map(str::to_owned),
+        content_type: content_type.map(str::to_owned),
+        content_length,
         process_name,
     })
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "HTTP schema projection keeps source fields explicit"
+)]
 pub(super) fn http_response_line(
     timestamp: DateTime<Utc>,
     pid: u32,
     src: &str,
     dst: &str,
     status_line: &str,
+    version: &str,
+    status_code: u16,
     host: Option<&str>,
+    content_type: Option<&str>,
+    content_length: Option<u64>,
     process_name: Option<String>,
 ) -> OutputLine {
     OutputLine::HttpEvent(HttpEventLine {
@@ -57,7 +72,11 @@ pub(super) fn http_response_line(
         method: None,
         path: None,
         status_line: Some(status_line.to_owned()),
+        version: version.to_owned(),
+        status_code: Some(status_code),
         host: host.map(str::to_owned),
+        content_type: content_type.map(str::to_owned),
+        content_length,
         process_name,
     })
 }

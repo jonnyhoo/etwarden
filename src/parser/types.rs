@@ -107,6 +107,9 @@ pub enum NetEvent {
         method: String,
         path: String,
         host: Option<String>,
+        version: String,
+        content_type: Option<String>,
+        content_length: Option<u64>,
     },
     /// Plaintext HTTP response observed from an attributed TCP packet.
     HttpResponse {
@@ -117,6 +120,10 @@ pub enum NetEvent {
         dst: String,
         status_line: String,
         host: Option<String>,
+        version: String,
+        status_code: u16,
+        content_type: Option<String>,
+        content_length: Option<u64>,
     },
     /// TLS `ClientHello` metadata observed from an attributed TCP packet.
     TlsHello {

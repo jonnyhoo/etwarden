@@ -5,7 +5,7 @@
 //! **Dependencies**: `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 135 / 190
+//! **Line budget**: 210 / 260
 
 use serde::Serialize;
 
@@ -18,6 +18,14 @@ pub struct HttpInfo {
     pub uri_or_status: String,
     /// Host header value if present.
     pub host: Option<String>,
+    /// HTTP version token.
+    pub version: String,
+    /// Response status code.
+    pub status_code: Option<u16>,
+    /// Content-Type header value if present.
+    pub content_type: Option<String>,
+    /// Content-Length header value if present and valid.
+    pub content_length: Option<u64>,
 }
 
 const HTTP_METHODS: &[&[u8]] = &[
@@ -39,11 +47,15 @@ pub(super) fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
     let first_line = first_line.strip_suffix(b"\r").unwrap_or(first_line);
 
     if first_line.starts_with(b"HTTP/") {
-        let status_line = parse_http_response_line(first_line)?;
+        let line = parse_http_response_line(first_line)?;
         return Some(HttpInfo {
             method: None,
-            uri_or_status: status_line,
+            uri_or_status: line.status_line,
             host: extract_host_header(payload),
+            version: line.version,
+            status_code: Some(line.status_code),
+            content_type: extract_header(payload, b"Content-Type:"),
+            content_length: extract_content_length_header(payload),
         });
     }
 
@@ -64,17 +76,33 @@ pub(super) fn analyze_http(payload: &[u8]) -> Option<HttpInfo> {
         method: Some(http_token_to_string(method)?),
         uri_or_status: http_visible_utf8(uri)?,
         host: extract_host_header(payload),
+        version: http_token_to_string(version)?,
+        status_code: None,
+        content_type: extract_header(payload, b"Content-Type:"),
+        content_length: extract_content_length_header(payload),
     })
 }
 
-fn parse_http_response_line(first_line: &[u8]) -> Option<String> {
+struct HttpResponseLine {
+    status_line: String,
+    version: String,
+    status_code: u16,
+}
+
+fn parse_http_response_line(first_line: &[u8]) -> Option<HttpResponseLine> {
     let mut parts = first_line.splitn(3, |&byte| byte == b' ');
     let version = parts.next()?;
     let status = parts.next()?;
-    if !is_http_version_token(version) || !is_http_status_code(status) {
+    if !is_http_version_token(version) {
         return None;
     }
-    http_visible_utf8(first_line)
+    let status_code = parse_http_status_code(status)?;
+
+    Some(HttpResponseLine {
+        status_line: http_visible_utf8(first_line)?,
+        version: http_token_to_string(version)?,
+        status_code,
+    })
 }
 
 fn is_http_version_token(version: &[u8]) -> bool {
@@ -93,8 +121,11 @@ fn is_http_version_token(version: &[u8]) -> bool {
     major.iter().all(u8::is_ascii_digit) && minor.iter().all(u8::is_ascii_digit)
 }
 
-fn is_http_status_code(status: &[u8]) -> bool {
-    status.len() == 3 && status.iter().all(u8::is_ascii_digit)
+fn parse_http_status_code(status: &[u8]) -> Option<u16> {
+    if status.len() != 3 || !status.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(status).ok()?.parse().ok()
 }
 
 fn http_token_to_string(value: &[u8]) -> Option<String> {
@@ -111,7 +142,14 @@ fn find_byte(haystack: &[u8], needle: u8) -> Option<usize> {
 }
 
 fn extract_host_header(payload: &[u8]) -> Option<String> {
-    let needle = b"Host:";
+    extract_header(payload, b"Host:")
+}
+
+fn extract_content_length_header(payload: &[u8]) -> Option<u64> {
+    extract_header(payload, b"Content-Length:")?.parse().ok()
+}
+
+fn extract_header(payload: &[u8], needle: &[u8]) -> Option<String> {
     let search_end = payload.len().min(4096);
     let window = &payload[..search_end];
 
@@ -150,14 +188,20 @@ mod tests {
         assert_eq!(result.method.as_deref(), Some("GET"));
         assert_eq!(result.uri_or_status, "/index.html");
         assert_eq!(result.host.as_deref(), Some("example.com"));
+        assert_eq!(result.version, "HTTP/1.1");
+        assert_eq!(result.status_code, None);
     }
 
     #[test]
     fn http_response_detected() {
-        let payload = b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n";
+        let payload = b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 0\r\n\r\n";
         let result = analyze_http(payload).expect("should detect HTTP response");
         assert!(result.method.is_none());
         assert!(result.uri_or_status.starts_with("HTTP/1.1 200"));
+        assert_eq!(result.version, "HTTP/1.1");
+        assert_eq!(result.status_code, Some(200));
+        assert_eq!(result.content_type.as_deref(), Some("text/html"));
+        assert_eq!(result.content_length, Some(0));
     }
 
     #[test]
@@ -185,6 +229,15 @@ mod tests {
     fn http_request_rejects_bad_version() {
         assert!(analyze_http(b"GET / NOTHTTP/1.1\r\nHost: example.com\r\n\r\n").is_none());
         assert!(analyze_http(b"GET / HTTP/1.\r\nHost: example.com\r\n\r\n").is_none());
+    }
+
+    #[test]
+    fn http_request_extracts_content_headers() {
+        let payload = b"POST /api HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/json\r\nContent-Length: 42\r\n\r\n";
+        let result = analyze_http(payload).expect("should detect HTTP request");
+
+        assert_eq!(result.content_type.as_deref(), Some("application/json"));
+        assert_eq!(result.content_length, Some(42));
     }
 
     #[test]

@@ -10,5 +10,8 @@ expression: line
   "dst": "93.184.216.34:80",
   "method": "GET",
   "path": "/api/data",
-  "host": "example.com"
+  "version": "HTTP/1.1",
+  "host": "example.com",
+  "content_type": "application/json",
+  "content_length": 42
 }
