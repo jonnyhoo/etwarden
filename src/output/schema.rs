@@ -7,217 +7,23 @@
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 250 / 340
+//! **Line budget**: 120 / 180
 
 mod convert;
+mod line;
 mod scope;
 
-use chrono::{DateTime, Utc};
 pub use convert::{event_to_line, event_to_line_enriched};
-use serde::{Deserialize, Serialize};
-
-use crate::parser::types::Protocol;
-
-/// A single NDJSON event line in the agent contract.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct EventLine {
-    /// ISO 8601 timestamp.
-    #[serde(rename = "t")]
-    pub timestamp: DateTime<Utc>,
-    /// Process ID that generated the event.
-    pub pid: u32,
-    /// Network protocol (`TCP` or `UDP`).
-    pub proto: Protocol,
-    /// Source address:port.
-    pub src: String,
-    /// Destination address:port.
-    pub dst: String,
-    /// Event type: `connect`, `disconnect`, `send`, `recv`.
-    pub event: String,
-    /// Bytes sent.
-    pub bytes_out: u64,
-    /// Bytes received.
-    pub bytes_in: u64,
-    /// IP scope of the remote address (e.g. `PUBLIC`, `PRIVATE`, `LOOPBACK`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub scope: Option<String>,
-    /// Resolved process name (e.g. `chrome.exe`).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub process_name: Option<String>,
-}
-
-/// A DNS event line in the agent contract.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct DnsEventLine {
-    /// ISO 8601 timestamp.
-    #[serde(rename = "t")]
-    pub timestamp: DateTime<Utc>,
-    /// Process ID that issued the DNS query.
-    pub pid: u32,
-    /// Event type: `dns_query` or `dns_response`.
-    pub event: String,
-    /// Queried domain name.
-    #[serde(alias = "domain")]
-    pub hostname: String,
-    /// Numeric DNS record type (e.g. 1 = A, 28 = AAAA).
-    pub query_type: u16,
-    /// Human-readable DNS record type name (e.g. "A", "AAAA").
-    pub query_type_name: String,
-    /// DNS status code (response only, 0 for queries).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status: Option<u32>,
-    /// Human-readable DNS status name (response only).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status_name: Option<String>,
-    /// Resolved IP addresses from the response (response only).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub result_ips: Vec<String>,
-    /// Whether the DNS response had the TC bit set.
-    #[serde(default, skip_serializing_if = "is_false")]
-    pub truncated: bool,
-    /// Resolved process name.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub process_name: Option<String>,
-}
-
-/// A plaintext HTTP DPI event line in the agent contract.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct HttpEventLine {
-    /// ISO 8601 timestamp.
-    #[serde(rename = "t")]
-    pub timestamp: DateTime<Utc>,
-    /// Process ID that owned the packet.
-    pub pid: u32,
-    /// Event type: `http_request` or `http_response`.
-    pub event: String,
-    /// Source address:port.
-    pub src: String,
-    /// Destination address:port.
-    pub dst: String,
-    /// HTTP request method.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub method: Option<String>,
-    /// HTTP request path/URI.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub path: Option<String>,
-    /// HTTP response status line.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status_line: Option<String>,
-    /// HTTP version token.
-    pub version: String,
-    /// HTTP response status code.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub status_code: Option<u16>,
-    /// HTTP Host header value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub host: Option<String>,
-    /// Content-Type header value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_type: Option<String>,
-    /// Content-Length header value.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub content_length: Option<u64>,
-    /// Resolved process name.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub process_name: Option<String>,
-}
-
-/// A TLS `ClientHello` DPI event line in the agent contract.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TlsEventLine {
-    /// ISO 8601 timestamp.
-    #[serde(rename = "t")]
-    pub timestamp: DateTime<Utc>,
-    /// Process ID that owned the packet.
-    pub pid: u32,
-    /// Event type: `tls_hello`.
-    pub event: String,
-    /// Source address:port.
-    pub src: String,
-    /// Destination address:port.
-    pub dst: String,
-    /// Server Name Indication hostname.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sni: Option<String>,
-    /// TLS version string.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tls_version: Option<String>,
-    /// ALPN protocol list.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub alpn: Vec<String>,
-    /// Number of cipher suites in the `ClientHello`.
-    pub cipher_count: usize,
-    /// Number of extensions in the `ClientHello`.
-    pub extension_count: usize,
-    /// Resolved process name.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub process_name: Option<String>,
-}
-
-#[expect(
-    clippy::trivially_copy_pass_by_ref,
-    reason = "serde skip_serializing_if predicates receive field references"
-)]
-const fn is_false(value: &bool) -> bool {
-    !*value
-}
-
-/// The final summary line written on capture exit.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct SummaryLine {
-    /// Discriminator: always `"summary"`.
-    #[serde(rename = "type")]
-    pub kind: String,
-    /// Monitored process ID.
-    pub pid: u32,
-    /// Capture duration in milliseconds.
-    pub duration_ms: u64,
-    /// Total connections observed.
-    pub connections_total: u64,
-    /// Total bytes sent.
-    pub bytes_out_total: u64,
-    /// Total bytes received.
-    pub bytes_in_total: u64,
-    /// Whether a pcapng file was written.
-    pub pcap_written: bool,
-}
-
-/// A terminal error line written to stdout before returning an error.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct ErrorLine {
-    /// Discriminator: always `"error"`.
-    #[serde(rename = "type")]
-    pub kind: String,
-    /// Human-readable error message.
-    pub message: String,
-}
-
-impl ErrorLine {
-    /// Creates an error line with the stable `type` discriminator.
-    #[must_use]
-    pub fn new(message: impl Into<String>) -> Self {
-        Self {
-            kind: "error".into(),
-            message: message.into(),
-        }
-    }
-}
-
-/// Top-level output line — event, DNS event, final summary, or terminal error.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum OutputLine {
-    Event(EventLine),
-    DnsEvent(DnsEventLine),
-    HttpEvent(HttpEventLine),
-    TlsEvent(TlsEventLine),
-    Summary(SummaryLine),
-    Error(ErrorLine),
-}
+pub use line::{
+    DnsEventLine, ErrorLine, EventLine, HttpEventLine, OutputLine, SummaryLine, TlsEventLine,
+};
 
 #[cfg(test)]
 mod tests {
+    use chrono::{DateTime, Utc};
+
     use super::*;
+    use crate::parser::types::Protocol;
 
     fn test_timestamp() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2025-01-01T00:00:00Z")
