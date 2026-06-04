@@ -9,6 +9,7 @@
 
 mod events;
 mod fields;
+mod layout;
 
 use windows::core::GUID;
 

@@ -11,7 +11,7 @@ use chrono::{DateTime, Utc};
 
 use crate::parser::{
     tcpip::{
-        fields::{event_pid, fmt_addr_port, fmt_ipv4, fmt_ipv6, read_u16, read_u32},
+        layout::{parse_v4_fields, parse_v6_fields},
         EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
         EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
         EVENT_ID_TCP_RETRANSMIT_IPV4, EVENT_ID_TCP_RETRANSMIT_IPV6, EVENT_ID_TCP_SEND_IPV4,
@@ -44,95 +44,56 @@ pub(super) fn parse_event(raw: &RawEvent) -> Option<NetEvent> {
 }
 
 fn parse_connect_v4(raw: &RawEvent) -> Option<NetEvent> {
-    let d = &raw.data;
-    if d.len() < 20 {
-        return None;
-    }
-    let pid = event_pid(d)?;
-    let _size = read_u32(d, 4)?;
-    let daddr = read_u32(d, 8)?;
-    let saddr = read_u32(d, 12)?;
-    let dport = read_u16(d, 16)?;
-    let sport = read_u16(d, 18)?;
+    let fields = parse_v4_fields(&raw.data)?;
 
     Some(NetEvent::Connect {
         timestamp: raw.timestamp,
-        pid,
+        pid: fields.pid,
         proto: Protocol::Tcp,
-        src: fmt_addr_port(&fmt_ipv4(saddr), sport),
-        dst: fmt_addr_port(&fmt_ipv4(daddr), dport),
+        src: fields.src,
+        dst: fields.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
 }
 
 fn parse_connect_v6(raw: &RawEvent) -> Option<NetEvent> {
-    let d = &raw.data;
-    // PID(4) + size(4) + daddr(16) + saddr(16) + dport(2) + sport(2) = 44.
-    if d.len() < 44 {
-        return None;
-    }
-    let pid = event_pid(d)?;
-    let daddr = d.get(8..24)?;
-    let saddr = d.get(24..40)?;
-    let dst_ip = fmt_ipv6(daddr)?;
-    let src_ip = fmt_ipv6(saddr)?;
-    let dport = read_u16(d, 40)?;
-    let sport = read_u16(d, 42)?;
+    let fields = parse_v6_fields(&raw.data)?;
 
     Some(NetEvent::Connect {
         timestamp: raw.timestamp,
-        pid,
+        pid: fields.pid,
         proto: Protocol::Tcp,
-        src: fmt_addr_port(&src_ip, sport),
-        dst: fmt_addr_port(&dst_ip, dport),
+        src: fields.src,
+        dst: fields.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
 }
 
 fn parse_disconnect_v4(raw: &RawEvent) -> Option<NetEvent> {
-    let d = &raw.data;
-    if d.len() < 20 {
-        return None;
-    }
-    let pid = event_pid(d)?;
-    let daddr = read_u32(d, 8)?;
-    let saddr = read_u32(d, 12)?;
-    let dport = read_u16(d, 16)?;
-    let sport = read_u16(d, 18)?;
+    let fields = parse_v4_fields(&raw.data)?;
 
     Some(NetEvent::Disconnect {
         timestamp: raw.timestamp,
-        pid,
+        pid: fields.pid,
         proto: Protocol::Tcp,
-        src: fmt_addr_port(&fmt_ipv4(saddr), sport),
-        dst: fmt_addr_port(&fmt_ipv4(daddr), dport),
+        src: fields.src,
+        dst: fields.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
 }
 
 fn parse_disconnect_v6(raw: &RawEvent) -> Option<NetEvent> {
-    let d = &raw.data;
-    // PID(4) + size(4) + daddr(16) + saddr(16) + dport(2) + sport(2) = 44
-    if d.len() < 44 {
-        return None;
-    }
-    let pid = event_pid(d)?;
-    let daddr = d.get(8..24)?;
-    let saddr = d.get(24..40)?;
-    let dst_ip = fmt_ipv6(daddr)?;
-    let src_ip = fmt_ipv6(saddr)?;
-    let dport = read_u16(d, 40)?;
-    let sport = read_u16(d, 42)?;
+    let fields = parse_v6_fields(&raw.data)?;
 
     Some(NetEvent::Disconnect {
         timestamp: raw.timestamp,
-        pid,
+        pid: fields.pid,
         proto: Protocol::Tcp,
-        src: fmt_addr_port(&src_ip, sport),
-        dst: fmt_addr_port(&dst_ip, dport),
+        src: fields.src,
+        dst: fields.dst,
         bytes_out: 0,
         bytes_in: 0,
     })
@@ -179,52 +140,30 @@ const fn make_send_recv(
 
 /// Send/Recv IPv4 share the same layout as connect but produce different variants.
 fn parse_send_recv_v4(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option<NetEvent> {
-    let d = &raw.data;
-    if d.len() < 20 {
-        return None;
-    }
-    let pid = event_pid(d)?;
-    let size = read_u32(d, 4)?;
-    let daddr = read_u32(d, 8)?;
-    let saddr = read_u32(d, 12)?;
-    let dport = read_u16(d, 16)?;
-    let sport = read_u16(d, 18)?;
-
-    let (bytes_out, bytes_in) = bytes_for_direction(kind, size);
+    let fields = parse_v4_fields(&raw.data)?;
+    let (bytes_out, bytes_in) = bytes_for_direction(kind, fields.size);
     Some(make_send_recv(
         kind,
         raw.timestamp,
-        pid,
+        fields.pid,
         proto,
-        fmt_addr_port(&fmt_ipv4(saddr), sport),
-        fmt_addr_port(&fmt_ipv4(daddr), dport),
+        fields.src,
+        fields.dst,
         bytes_out,
         bytes_in,
     ))
 }
 
 fn parse_send_recv_v6(raw: &RawEvent, kind: SendRecv, proto: Protocol) -> Option<NetEvent> {
-    let d = &raw.data;
-    if d.len() < 44 {
-        return None;
-    }
-    let pid = event_pid(d)?;
-    let size = read_u32(d, 4)?;
-    let daddr = d.get(8..24)?;
-    let saddr = d.get(24..40)?;
-    let dst_ip = fmt_ipv6(daddr)?;
-    let src_ip = fmt_ipv6(saddr)?;
-    let dport = read_u16(d, 40)?;
-    let sport = read_u16(d, 42)?;
-
-    let (bytes_out, bytes_in) = bytes_for_direction(kind, size);
+    let fields = parse_v6_fields(&raw.data)?;
+    let (bytes_out, bytes_in) = bytes_for_direction(kind, fields.size);
     Some(make_send_recv(
         kind,
         raw.timestamp,
-        pid,
+        fields.pid,
         proto,
-        fmt_addr_port(&src_ip, sport),
-        fmt_addr_port(&dst_ip, dport),
+        fields.src,
+        fields.dst,
         bytes_out,
         bytes_in,
     ))
