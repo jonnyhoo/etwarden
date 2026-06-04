@@ -131,6 +131,13 @@ pub struct TlsEventLine {
     /// TLS version string.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_version: Option<String>,
+    /// ALPN protocol list.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub alpn: Vec<String>,
+    /// Number of cipher suites in the `ClientHello`.
+    pub cipher_count: usize,
+    /// Number of extensions in the `ClientHello`.
+    pub extension_count: usize,
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,

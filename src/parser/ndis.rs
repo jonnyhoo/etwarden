@@ -162,6 +162,9 @@ pub(crate) fn parse_dpi_event(
             dst,
             sni: info.sni,
             version: info.version,
+            alpn: info.alpn,
+            cipher_count: info.cipher_count,
+            extension_count: info.extension_count,
         }),
         DpiResult::Dns(_) => None,
     }
@@ -409,7 +412,7 @@ mod tests {
         };
         assert_eq!(pid, 42);
         assert_eq!(sni.as_deref(), Some("example.com"));
-        assert_eq!(version.as_deref(), Some("TLS 1.2/1.3"));
+        assert_eq!(version.as_deref(), Some("TLS 1.2"));
     }
 
     #[test]

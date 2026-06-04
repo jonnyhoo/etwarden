@@ -111,7 +111,10 @@ fn tls_hello_event() -> NetEvent {
         src: "10.0.0.1:49152".into(),
         dst: "93.184.216.34:443".into(),
         sni: Some("example.com".into()),
-        version: Some("TLS 1.2/1.3".into()),
+        version: Some("TLS 1.3".into()),
+        alpn: vec!["h2".into(), "http/1.1".into()],
+        cipher_count: 15,
+        extension_count: 6,
     }
 }
 

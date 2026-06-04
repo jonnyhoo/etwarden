@@ -127,6 +127,9 @@ pub enum NetEvent {
         dst: String,
         sni: Option<String>,
         version: Option<String>,
+        alpn: Vec<String>,
+        cipher_count: usize,
+        extension_count: usize,
     },
 }
 

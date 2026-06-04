@@ -69,6 +69,9 @@ pub(super) fn tls_hello_line(
     dst: &str,
     sni: Option<&str>,
     version: Option<&str>,
+    alpn: &[String],
+    cipher_count: usize,
+    extension_count: usize,
     process_name: Option<String>,
 ) -> OutputLine {
     OutputLine::TlsEvent(TlsEventLine {
@@ -79,6 +82,9 @@ pub(super) fn tls_hello_line(
         dst: dst.to_owned(),
         sni: sni.map(str::to_owned),
         tls_version: version.map(str::to_owned),
+        alpn: alpn.to_vec(),
+        cipher_count,
+        extension_count,
         process_name,
     })
 }

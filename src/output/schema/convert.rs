@@ -211,6 +211,9 @@ pub fn event_to_line_enriched(
             ref dst,
             ref sni,
             ref version,
+            ref alpn,
+            cipher_count,
+            extension_count,
         } => tls_hello_line(
             timestamp,
             pid,
@@ -218,6 +221,9 @@ pub fn event_to_line_enriched(
             dst,
             sni.as_deref(),
             version.as_deref(),
+            alpn,
+            cipher_count,
+            extension_count,
             process_name,
         ),
     }
@@ -422,6 +428,9 @@ mod tests {
             dst: "93.184.216.34:443".into(),
             sni: Some("example.com".into()),
             version: Some("TLS 1.2/1.3".into()),
+            alpn: vec!["h2".into()],
+            cipher_count: 15,
+            extension_count: 7,
         };
         let line = event_to_line(&event);
         let OutputLine::TlsEvent(line) = line else {
@@ -430,5 +439,8 @@ mod tests {
         assert_eq!(line.event, "tls_hello");
         assert_eq!(line.sni.as_deref(), Some("example.com"));
         assert_eq!(line.tls_version.as_deref(), Some("TLS 1.2/1.3"));
+        assert_eq!(line.alpn, vec!["h2"]);
+        assert_eq!(line.cipher_count, 15);
+        assert_eq!(line.extension_count, 7);
     }
 }

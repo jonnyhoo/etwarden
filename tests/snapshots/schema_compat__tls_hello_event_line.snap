@@ -9,5 +9,11 @@ expression: line
   "src": "10.0.0.1:49152",
   "dst": "93.184.216.34:443",
   "sni": "example.com",
-  "tls_version": "TLS 1.2/1.3"
+  "tls_version": "TLS 1.3",
+  "alpn": [
+    "h2",
+    "http/1.1"
+  ],
+  "cipher_count": 15,
+  "extension_count": 6
 }
