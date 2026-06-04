@@ -5,11 +5,14 @@
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 242 / 260
+//! **Line budget**: 240 / 260
+
+mod tuple;
 
 use std::{collections::HashMap, sync::Mutex};
 
-use crate::parser::types::{FiveTuple, NetEvent, Protocol};
+use self::tuple::{event_tuple_parts, parse_tuple_from_event, reverse_tuple};
+use crate::parser::types::{FiveTuple, NetEvent};
 
 const DEFAULT_MAX_MAPPINGS: usize = 20_000;
 
@@ -99,36 +102,6 @@ impl Correlator {
     }
 }
 
-fn event_tuple_parts(event: &NetEvent) -> Option<(u32, Protocol, &str, &str)> {
-    match event {
-        NetEvent::Connect {
-            pid,
-            proto,
-            src,
-            dst,
-            ..
-        }
-        | NetEvent::Send {
-            pid,
-            proto,
-            src,
-            dst,
-            ..
-        }
-        | NetEvent::Recv {
-            pid,
-            proto,
-            src,
-            dst,
-            ..
-        } => Some((*pid, *proto, src, dst)),
-        NetEvent::Disconnect { .. }
-        | NetEvent::RawCapture { .. }
-        | NetEvent::DnsQuery { .. }
-        | NetEvent::DnsResponse { .. } => None,
-    }
-}
-
 fn evict_until(
     map: &mut HashMap<FiveTuple, u32>,
     target_len: usize,
@@ -143,51 +116,6 @@ fn evict_until(
         map.remove(&key);
         map.remove(&reverse);
     }
-}
-
-fn reverse_tuple(tuple: &FiveTuple) -> FiveTuple {
-    FiveTuple {
-        src_ip: tuple.dst_ip.clone(),
-        src_port: tuple.dst_port,
-        dst_ip: tuple.src_ip.clone(),
-        dst_port: tuple.src_port,
-        protocol: tuple.protocol,
-    }
-}
-
-fn parse_tuple_from_event(src: &str, dst: &str, proto: Protocol) -> Option<FiveTuple> {
-    let (src_ip, src_port) = parse_addr_port(src)?;
-    let (dst_ip, dst_port) = parse_addr_port(dst)?;
-    Some(FiveTuple {
-        src_ip,
-        src_port,
-        dst_ip,
-        dst_port,
-        protocol: proto,
-    })
-}
-
-fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
-    if addr.starts_with('[') {
-        let close = addr.find(']')?;
-        if addr.get(close + 1..close + 2)? != ":" {
-            return None;
-        }
-        let ip: std::net::IpAddr = addr[1..close].parse().ok()?;
-        let port = addr.get(close + 2..)?.parse().ok()?;
-        return Some((ip.to_string(), port));
-    }
-    if addr.contains('[') || addr.contains(']') {
-        return None;
-    }
-
-    let colon = addr.rfind(':')?;
-    if addr[..colon].contains(':') {
-        return None;
-    }
-    let ip: std::net::IpAddr = addr[..colon].parse().ok()?;
-    let port = addr[colon + 1..].parse().ok()?;
-    Some((ip.to_string(), port))
 }
 
 impl Default for Correlator {
@@ -277,15 +205,6 @@ mod tests {
         let corr = Correlator::new();
         let t = tuple("10.0.0.1", 1234, "10.0.0.2", 80);
         assert_eq!(corr.resolve_pid(&t), None);
-    }
-
-    #[test]
-    fn parse_addr_port_rejects_malformed_ipv6_brackets() {
-        assert!(parse_addr_port("[::1]").is_none());
-        assert!(parse_addr_port("x]::1:443").is_none());
-        assert!(parse_addr_port("::1:443").is_none());
-        assert!(parse_addr_port("not-ip:443").is_none());
-        assert!(parse_addr_port("[not-ip]:443").is_none());
     }
 
     #[test]
