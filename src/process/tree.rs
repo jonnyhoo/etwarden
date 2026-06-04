@@ -5,7 +5,7 @@
 //! **Dependencies**: `sysinfo`, `output::diagnostic`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 165 / 220
+//! **Line budget**: 261 / 280
 
 use std::{
     collections::{HashMap, HashSet},
@@ -85,6 +85,44 @@ impl ProcessTreeCache {
         process_info(pid, &guard.entries)
     }
 
+    /// Returns all known descendants of `root_pid`, including `root_pid`.
+    #[must_use]
+    pub fn descendants_or_self(&self, root_pid: u32) -> HashSet<u32> {
+        let Ok(mut guard) = self.inner.lock() else {
+            diagnostic::warn(format_args!(
+                "skipped process descendants lookup: process tree cache lock poisoned"
+            ));
+            return HashSet::from([root_pid]);
+        };
+
+        if guard.last_refresh.elapsed() > REFRESH_INTERVAL || !guard.entries.contains_key(&root_pid)
+        {
+            Self::do_refresh(&mut guard);
+        }
+
+        descendants_or_self(root_pid, &guard.entries)
+    }
+
+    /// Returns whether `pid` is `root_pid` or a descendant of it.
+    #[must_use]
+    pub fn is_descendant_or_self(&self, pid: u32, root_pid: u32) -> bool {
+        if pid == root_pid {
+            return true;
+        }
+        let Ok(mut guard) = self.inner.lock() else {
+            diagnostic::warn(format_args!(
+                "skipped process ancestry lookup: process tree cache lock poisoned"
+            ));
+            return false;
+        };
+
+        if guard.last_refresh.elapsed() > REFRESH_INTERVAL || !guard.entries.contains_key(&pid) {
+            Self::do_refresh(&mut guard);
+        }
+
+        is_descendant_or_self(pid, root_pid, &guard.entries)
+    }
+
     /// Force a refresh regardless of staleness.
     pub fn force_refresh(&self) {
         let Ok(mut guard) = self.inner.lock() else {
@@ -133,6 +171,37 @@ fn process_info(pid: u32, entries: &HashMap<u32, ProcessSnapshot>) -> Option<Pro
         command_line: snapshot.command_line.clone(),
         tree_path: tree_path(pid, entries),
     })
+}
+
+fn descendants_or_self(root_pid: u32, entries: &HashMap<u32, ProcessSnapshot>) -> HashSet<u32> {
+    let mut descendants = HashSet::from([root_pid]);
+    descendants.extend(
+        entries
+            .keys()
+            .copied()
+            .filter(|pid| is_descendant_or_self(*pid, root_pid, entries)),
+    );
+    descendants
+}
+
+fn is_descendant_or_self(pid: u32, root_pid: u32, entries: &HashMap<u32, ProcessSnapshot>) -> bool {
+    let mut seen = HashSet::new();
+    let mut current = Some(pid);
+
+    for _ in 0..TREE_DEPTH_LIMIT {
+        let Some(current_pid) = current else {
+            return false;
+        };
+        if current_pid == root_pid {
+            return true;
+        }
+        if !seen.insert(current_pid) {
+            return false;
+        }
+        current = entries.get(&current_pid).and_then(|snapshot| snapshot.ppid);
+    }
+
+    false
 }
 
 fn tree_path(pid: u32, entries: &HashMap<u32, ProcessSnapshot>) -> String {

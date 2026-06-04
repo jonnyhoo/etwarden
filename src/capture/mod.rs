@@ -5,14 +5,17 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 93 / 120
+//! **Line budget**: 161 / 180
 
 pub mod event_loop;
 pub mod provider;
 pub mod session;
 mod timestamp;
 
-use std::sync::{atomic::AtomicBool, Arc};
+use std::{
+    collections::HashSet,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use crate::{
     capture::{
@@ -33,6 +36,8 @@ use crate::{
 pub struct CaptureConfig {
     /// The process ID being monitored.
     pub target_pid: u32,
+    /// Process IDs used for startup TCP bootstrap.
+    pub capture_pids: HashSet<u32>,
     /// Maximum capture duration. `None` = run until Ctrl+C.
     pub duration: Option<std::time::Duration>,
     /// Filters to apply before emitting events.
@@ -61,7 +66,9 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
     let emit_raw_capture = config.pcap_sink.is_some();
     let correlator = Arc::new(Correlator::new());
-    bootstrap_existing_tcp_connections(config.target_pid, correlator.as_ref());
+    for pid in bootstrap_pids(config.target_pid, &config.capture_pids) {
+        bootstrap_existing_tcp_connections(pid, correlator.as_ref());
+    }
     let provider = build_tcpip_provider(Arc::clone(&registry), Some(Arc::clone(&correlator)));
     let ndis_provider = build_ndis_provider(
         Arc::clone(&registry),
@@ -124,5 +131,31 @@ fn bootstrap_existing_tcp_connections(pid: u32, correlator: &Correlator) {
     };
     for tuple in tuples {
         correlator.register_connection(pid, tuple);
+    }
+}
+
+fn bootstrap_pids(target_pid: u32, capture_pids: &HashSet<u32>) -> HashSet<u32> {
+    if capture_pids.is_empty() {
+        HashSet::from([target_pid])
+    } else {
+        capture_pids.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bootstrap_pids_falls_back_to_target_pid() {
+        assert_eq!(bootstrap_pids(42, &HashSet::new()), HashSet::from([42]));
+    }
+
+    #[test]
+    fn bootstrap_pids_uses_capture_pid_set() {
+        assert_eq!(
+            bootstrap_pids(42, &HashSet::from([42, 99])),
+            HashSet::from([42, 99])
+        );
     }
 }

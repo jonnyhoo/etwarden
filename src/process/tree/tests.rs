@@ -66,6 +66,32 @@ fn tree_path_stops_on_parent_cycles() {
 }
 
 #[test]
+fn descendants_or_self_returns_full_subtree() {
+    let entries = HashMap::from([
+        (10, snapshot("cmd.exe", None, None)),
+        (20, snapshot("claude.exe", Some(10), None)),
+        (30, snapshot("helper.exe", Some(20), None)),
+        (40, snapshot("other.exe", None, None)),
+    ]);
+
+    let descendants = descendants_or_self(10, &entries);
+
+    assert_eq!(descendants, HashSet::from([10, 20, 30]));
+}
+
+#[test]
+fn is_descendant_or_self_handles_cycles() {
+    let entries = HashMap::from([
+        (10, snapshot("a.exe", Some(20), None)),
+        (20, snapshot("b.exe", Some(10), None)),
+    ]);
+
+    assert!(is_descendant_or_self(10, 10, &entries));
+    assert!(is_descendant_or_self(20, 10, &entries));
+    assert!(!is_descendant_or_self(30, 10, &entries));
+}
+
+#[test]
 fn command_line_joins_arguments() {
     let parts = [OsString::from("tool.exe"), OsString::from("--flag")];
     assert_eq!(command_line(&parts).as_deref(), Some("tool.exe --flag"));

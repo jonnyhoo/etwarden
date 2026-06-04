@@ -1,13 +1,18 @@
 //! # `process::network`
 //!
 //! **Purpose**: Current OS socket inventory for startup flow attribution.
-//! **Public API**: `fn current_tcp_connections_for_pid`
+//! **Public API**: `struct TcpOwnerConnections`, `fn current_tcp_connections_for_pid`,
+//!   `fn current_tcp_owners_with_connections`
 //! **Dependencies**: `netstat2`, `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 150 / 220
+//! **Line budget**: 232 / 240
 
-use std::net::IpAddr;
+use std::{
+    collections::{BTreeMap, HashSet},
+    hash::BuildHasher,
+    net::IpAddr,
+};
 
 use netstat2::{
     get_sockets_info, AddressFamilyFlags, ProtocolFlags, ProtocolSocketInfo, SocketInfo,
@@ -19,20 +24,65 @@ use crate::{
     parser::types::{FiveTuple, Protocol},
 };
 
+/// Process ID with active TCP tuples from the current OS socket table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TcpOwnerConnections {
+    pub pid: u32,
+    pub connections: Vec<FiveTuple>,
+}
+
 /// Returns active TCP 5-tuples currently owned by `pid`.
 ///
 /// # Errors
-/// Returns [`EtwardenError::ProcessSpawn`] if the OS socket table cannot be read.
+/// Returns [`EtwardenError::NetworkInventory`] if the OS socket table cannot be read.
 pub fn current_tcp_connections_for_pid(pid: u32) -> Result<Vec<FiveTuple>, EtwardenError> {
-    let sockets = get_sockets_info(
+    let sockets = current_tcp_sockets()?;
+
+    Ok(tcp_connections_for_pid(pid, sockets.iter()))
+}
+
+/// Returns active TCP owners whose PID is in `candidate_pids`.
+///
+/// # Errors
+/// Returns [`EtwardenError::NetworkInventory`] if the OS socket table cannot be read.
+pub fn current_tcp_owners_with_connections<S: BuildHasher>(
+    candidate_pids: &HashSet<u32, S>,
+) -> Result<Vec<TcpOwnerConnections>, EtwardenError> {
+    let sockets = current_tcp_sockets()?;
+    Ok(tcp_owners_with_connections(candidate_pids, sockets.iter()))
+}
+
+fn current_tcp_sockets() -> Result<Vec<SocketInfo>, EtwardenError> {
+    get_sockets_info(
         AddressFamilyFlags::IPV4 | AddressFamilyFlags::IPV6,
         ProtocolFlags::TCP,
     )
-    .map_err(|err| {
-        EtwardenError::NetworkInventory(format!("failed to read socket table: {err}"))
-    })?;
+    .map_err(|err| EtwardenError::NetworkInventory(format!("failed to read socket table: {err}")))
+}
 
-    Ok(tcp_connections_for_pid(pid, sockets.iter()))
+fn tcp_owners_with_connections<'a, S: BuildHasher>(
+    candidate_pids: &HashSet<u32, S>,
+    sockets: impl IntoIterator<Item = &'a SocketInfo>,
+) -> Vec<TcpOwnerConnections> {
+    let mut by_pid: BTreeMap<u32, Vec<FiveTuple>> = BTreeMap::new();
+    for socket in sockets {
+        let Some(tuple) = (match &socket.protocol_socket_info {
+            ProtocolSocketInfo::Tcp(tcp) => tcp_socket_to_tuple(tcp),
+            ProtocolSocketInfo::Udp(_) => None,
+        }) else {
+            continue;
+        };
+        for pid in &socket.associated_pids {
+            if candidate_pids.contains(pid) {
+                by_pid.entry(*pid).or_default().push(tuple.clone());
+            }
+        }
+    }
+
+    by_pid
+        .into_iter()
+        .map(|(pid, connections)| TcpOwnerConnections { pid, connections })
+        .collect()
 }
 
 fn tcp_connections_for_pid<'a>(
@@ -78,7 +128,7 @@ const fn is_unspecified(addr: IpAddr) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::net::Ipv4Addr;
+    use std::{collections::HashSet, net::Ipv4Addr};
 
     use super::*;
 
@@ -151,5 +201,32 @@ mod tests {
         assert_eq!(tuples.len(), 1);
         assert_eq!(tuples[0].src_port, 28_934);
         assert_eq!(tuples[0].dst_port, 16_669);
+    }
+
+    #[test]
+    fn owners_with_connections_groups_candidate_pid_tuples() {
+        let sockets = [
+            socket(
+                vec![10],
+                ProtocolSocketInfo::Tcp(tcp_socket(TcpState::Established, 28_934, 16_669)),
+            ),
+            socket(
+                vec![20],
+                ProtocolSocketInfo::Tcp(tcp_socket(TcpState::Established, 40_000, 443)),
+            ),
+            socket(
+                vec![30],
+                ProtocolSocketInfo::Tcp(tcp_socket(TcpState::Established, 50_000, 443)),
+            ),
+        ];
+        let candidate_pids = HashSet::from([10, 20]);
+
+        let owners = tcp_owners_with_connections(&candidate_pids, sockets.iter());
+
+        assert_eq!(owners.len(), 2);
+        assert_eq!(owners[0].pid, 10);
+        assert_eq!(owners[0].connections[0].src_port, 28_934);
+        assert_eq!(owners[1].pid, 20);
+        assert_eq!(owners[1].connections[0].src_port, 40_000);
     }
 }

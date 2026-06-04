@@ -5,7 +5,7 @@
 //! **Dependencies**: `target`, `cli`, `capture`, `filter`, `output`, `pcap`, `process`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 103 / 120
+//! **Line budget**: 146 / 160
 
 use std::{io::Write, sync::Arc};
 
@@ -15,7 +15,6 @@ use clap::{error::ErrorKind, Parser};
 use etwarden::{
     capture::{self, CaptureConfig},
     cli::Cli,
-    filter::pid::PidFilter,
     mitm::{CertificateAuthorityConfig, MitmCaptureConfig},
     output::{
         diagnostic,
@@ -44,17 +43,18 @@ fn main() -> anyhow::Result<()> {
 fn run() -> anyhow::Result<()> {
     let cli = parse_cli()?;
 
-    let target = target::resolve(&cli)?;
     let process_cache = Arc::new(ProcessTreeCache::new());
+    let target = target::resolve(&cli, process_cache.as_ref())?;
 
     let mut config = CaptureConfig {
         target_pid: target.pid,
+        capture_pids: target.capture_pids.clone(),
         duration: if cli.duration > 0 {
             Some(std::time::Duration::from_secs(cli.duration))
         } else {
             None
         },
-        filters: vec![Box::new(PidFilter::single(target.pid))],
+        filters: target::filters(&target, Arc::clone(&process_cache)),
         emitter: Box::new(JsonEmitter::new(std::io::stdout()).with_process_cache(process_cache)),
         pcap_sink: cli
             .pcap_out
