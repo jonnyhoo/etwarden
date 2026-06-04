@@ -5,19 +5,22 @@
 //! **Dependencies**: `capture::session`, `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 240 / 260
+//! **Line budget**: 205 / 240
+
+mod drain;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
+use self::drain::{drain_events, LoopStats};
 use crate::{
     capture::session::RunningSession,
     error::Result,
     filter::Filter,
     output::{schema::SummaryLine, Emitter},
-    parser::{types::NetEvent, ParserRegistry},
+    parser::ParserRegistry,
     pcap::{correlator::Correlator, PcapSink},
 };
 
@@ -52,18 +55,12 @@ pub fn run_event_loop(
     duration: Option<Duration>,
     stop_signal: Option<&AtomicBool>,
 ) -> Result<SummaryLine> {
-    let mut connections_total: u64 = 0;
-    let mut bytes_out_total: u64 = 0;
-    let mut bytes_in_total: u64 = 0;
-    let mut pcap_written = false;
+    let mut totals = LoopStats::default();
     let started = Instant::now();
 
     loop {
         let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
-        connections_total = connections_total.saturating_add(stats.connections_total);
-        bytes_out_total = bytes_out_total.saturating_add(stats.bytes_out_total);
-        bytes_in_total = bytes_in_total.saturating_add(stats.bytes_in_total);
-        pcap_written |= stats.pcap_written;
+        totals.merge(stats);
 
         if should_stop(started, duration, stop_signal) {
             break;
@@ -74,10 +71,7 @@ pub fn run_event_loop(
     let stop_result = session.stop();
 
     let stats = drain_events(registry, filters, emitter, &mut pcap_sink, correlator)?;
-    connections_total = connections_total.saturating_add(stats.connections_total);
-    bytes_out_total = bytes_out_total.saturating_add(stats.bytes_out_total);
-    bytes_in_total = bytes_in_total.saturating_add(stats.bytes_in_total);
-    pcap_written |= stats.pcap_written;
+    totals.merge(stats);
     emitter.flush()?;
     stop_result?;
 
@@ -85,62 +79,11 @@ pub fn run_event_loop(
         kind: "summary".into(),
         pid: 0, // Filled by caller.
         duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        connections_total,
-        bytes_out_total,
-        bytes_in_total,
-        pcap_written,
+        connections_total: totals.connections_total,
+        bytes_out_total: totals.bytes_out_total,
+        bytes_in_total: totals.bytes_in_total,
+        pcap_written: totals.pcap_written,
     })
-}
-
-struct LoopStats {
-    connections_total: u64,
-    bytes_out_total: u64,
-    bytes_in_total: u64,
-    pcap_written: bool,
-}
-
-fn drain_events(
-    registry: &ParserRegistry,
-    filters: &[Box<dyn Filter>],
-    emitter: &mut dyn Emitter,
-    pcap_sink: &mut Option<&mut Box<dyn PcapSink>>,
-    correlator: Option<&Correlator>,
-) -> Result<LoopStats> {
-    let mut stats = LoopStats {
-        connections_total: 0,
-        bytes_out_total: 0,
-        bytes_in_total: 0,
-        pcap_written: false,
-    };
-    let events = registry.drain();
-    for event in &events {
-        // Apply all filters before any output. RawCapture must not bypass the target PID filter.
-        let passes = filters.iter().all(|f| f.allow(event));
-        if !passes {
-            continue;
-        }
-
-        // Route RawCapture to pcap sink, not emitter.
-        if let NetEvent::RawCapture { frame, pid } = event {
-            if let Some(sink) = pcap_sink.as_mut() {
-                sink.write_frame(frame, *pid)?;
-                stats.pcap_written = true;
-            }
-            continue;
-        }
-
-        if let Some(corr) = correlator {
-            corr.register_event(event);
-        }
-
-        emitter.emit(event)?;
-        if matches!(event, NetEvent::Connect { .. }) {
-            stats.connections_total = stats.connections_total.saturating_add(1);
-        }
-        stats.bytes_out_total = stats.bytes_out_total.saturating_add(event.bytes_out());
-        stats.bytes_in_total = stats.bytes_in_total.saturating_add(event.bytes_in());
-    }
-    Ok(stats)
 }
 
 fn should_stop(
@@ -162,7 +105,7 @@ mod tests {
     use crate::{
         error::EtwardenError,
         filter::pid::PidFilter,
-        parser::types::{Protocol, RawFrame},
+        parser::types::{NetEvent, Protocol, RawFrame},
     };
 
     #[derive(Default)]
