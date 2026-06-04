@@ -99,7 +99,7 @@ fn read_u32(buf: &[u8], offset: usize) -> Option<u32> {
 
 fn read_u16(buf: &[u8], offset: usize) -> Option<u16> {
     buf.get(offset..offset + 2)
-        .map(|b| u16::from_ne_bytes([b[0], b[1]]))
+        .map(|b| u16::from_be_bytes([b[0], b[1]]))
 }
 
 fn fmt_ipv4(raw: u32) -> String {
@@ -344,8 +344,8 @@ mod tests {
         data.extend_from_slice(&0x0100_007fu32.to_ne_bytes());
         // saddr = 192.168.1.1 (network bytes c0 a8 01 01, LE u32 = 0x0101a8c0)
         data.extend_from_slice(&0x0101_a8c0u32.to_ne_bytes());
-        data.extend_from_slice(&443u16.to_ne_bytes()); // offset 16: dport = 443
-        data.extend_from_slice(&4802u16.to_ne_bytes()); // offset 18: sport = 4802
+        data.extend_from_slice(&443u16.to_be_bytes()); // offset 16: dport = 443
+        data.extend_from_slice(&4802u16.to_be_bytes()); // offset 18: sport = 4802
         data.extend_from_slice(extra);
         RawEvent {
             event_id,
@@ -363,8 +363,8 @@ mod tests {
         data.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
         // offset 24-39: saddr (fe80::1)
         data.extend_from_slice(&[0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
-        data.extend_from_slice(&443u16.to_ne_bytes()); // offset 40: dport = 443
-        data.extend_from_slice(&4802u16.to_ne_bytes()); // offset 42: sport = 4802
+        data.extend_from_slice(&443u16.to_be_bytes()); // offset 40: dport = 443
+        data.extend_from_slice(&4802u16.to_be_bytes()); // offset 42: sport = 4802
         data.extend_from_slice(&0u64.to_ne_bytes()); // offset 44: conn_id
         RawEvent {
             event_id,

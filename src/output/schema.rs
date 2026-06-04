@@ -248,7 +248,7 @@ pub fn event_to_line_enriched(
             bytes_out,
             bytes_in,
         } => {
-            let scope = scope_override.or_else(|| scope_from_addr(src));
+            let scope = scope_override.or_else(|| scope_from_addr(dst));
             OutputLine::Event(EventLine {
                 timestamp,
                 pid,
@@ -580,13 +580,13 @@ mod tests {
     }
 
     #[test]
-    fn recv_scope_uses_remote_source() {
+    fn recv_scope_uses_remote_destination() {
         let event = NetEvent::Recv {
             timestamp: test_timestamp(),
             pid: 1234,
             proto: Protocol::Udp,
-            src: "8.8.8.8:53".into(),
-            dst: "10.0.0.2:54321".into(),
+            src: "10.0.0.2:54321".into(),
+            dst: "8.8.8.8:53".into(),
             bytes_out: 0,
             bytes_in: 128,
         };

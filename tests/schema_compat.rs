@@ -61,8 +61,8 @@ fn recv_event() -> NetEvent {
         timestamp: ts(),
         pid: 5678,
         proto: Protocol::Udp,
-        src: "8.8.8.8:53".into(),
-        dst: "10.0.0.2:54321".into(),
+        src: "10.0.0.2:54321".into(),
+        dst: "8.8.8.8:53".into(),
         bytes_out: 0,
         bytes_in: 128,
     }

@@ -5,7 +5,7 @@
 //! **Dependencies**: `ferrisetw`, `capture::timestamp`, `parser::*`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 356 / 500
+//! **Line budget**: 392 / 500
 
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 use crate::{
     capture::timestamp,
     parser::{
-        ndis::{NdisParser, PROVIDER_NDIS},
+        ndis::{normalize_frame, NdisParser, PROVIDER_NDIS},
         tcpip::{
             EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,
             EVENT_ID_TCP_DISCONNECT_IPV6, EVENT_ID_TCP_RECV_IPV4, EVENT_ID_TCP_RECV_IPV6,
@@ -27,6 +27,9 @@ use crate::{
     },
     pcap::correlator::Correlator,
 };
+
+const NDIS_PACKET_FRAGMENT_EVENT_IDS: [u16; 2] = [1001, 1003];
+const NDIS_PACKET_KEYWORDS: u64 = u64::MAX;
 
 // ---------------------------------------------------------------------------
 // build_tcpip_provider
@@ -115,8 +118,8 @@ fn parse_connect_v4(
 ) -> Option<NetEvent> {
     let daddr: u32 = parser.try_parse("daddr").ok()?;
     let saddr: u32 = parser.try_parse("saddr").ok()?;
-    let dport: u16 = parser.try_parse("dport").ok()?;
-    let sport: u16 = parser.try_parse("sport").ok()?;
+    let dport = parse_network_port(parser, "dport")?;
+    let sport = parse_network_port(parser, "sport")?;
     Some(NetEvent::Connect {
         timestamp: ts,
         pid,
@@ -135,8 +138,8 @@ fn parse_connect_v6(
 ) -> Option<NetEvent> {
     let daddr: std::net::IpAddr = parser.try_parse("daddr").ok()?;
     let saddr: std::net::IpAddr = parser.try_parse("saddr").ok()?;
-    let dport: u16 = parser.try_parse("dport").ok()?;
-    let sport: u16 = parser.try_parse("sport").ok()?;
+    let dport = parse_network_port(parser, "dport")?;
+    let sport = parse_network_port(parser, "sport")?;
     Some(NetEvent::Connect {
         timestamp: ts,
         pid,
@@ -155,8 +158,8 @@ fn parse_disconnect_v4(
 ) -> Option<NetEvent> {
     let daddr: u32 = parser.try_parse("daddr").ok()?;
     let saddr: u32 = parser.try_parse("saddr").ok()?;
-    let dport: u16 = parser.try_parse("dport").ok()?;
-    let sport: u16 = parser.try_parse("sport").ok()?;
+    let dport = parse_network_port(parser, "dport")?;
+    let sport = parse_network_port(parser, "sport")?;
     Some(NetEvent::Disconnect {
         timestamp: ts,
         pid,
@@ -175,8 +178,8 @@ fn parse_disconnect_v6(
 ) -> Option<NetEvent> {
     let daddr: std::net::IpAddr = parser.try_parse("daddr").ok()?;
     let saddr: std::net::IpAddr = parser.try_parse("saddr").ok()?;
-    let dport: u16 = parser.try_parse("dport").ok()?;
-    let sport: u16 = parser.try_parse("sport").ok()?;
+    let dport = parse_network_port(parser, "dport")?;
+    let sport = parse_network_port(parser, "sport")?;
     Some(NetEvent::Disconnect {
         timestamp: ts,
         pid,
@@ -220,8 +223,8 @@ fn parse_send_recv_v4(
     let size: u32 = parser.try_parse("size").ok()?;
     let daddr: u32 = parser.try_parse("daddr").ok()?;
     let saddr: u32 = parser.try_parse("saddr").ok()?;
-    let dport: u16 = parser.try_parse("dport").ok()?;
-    let sport: u16 = parser.try_parse("sport").ok()?;
+    let dport = parse_network_port(parser, "dport")?;
+    let sport = parse_network_port(parser, "sport")?;
     Some(make_send_recv_event(
         ts,
         pid,
@@ -243,8 +246,8 @@ fn parse_send_recv_v6(
     let size: u32 = parser.try_parse("size").ok()?;
     let daddr: std::net::IpAddr = parser.try_parse("daddr").ok()?;
     let saddr: std::net::IpAddr = parser.try_parse("saddr").ok()?;
-    let dport: u16 = parser.try_parse("dport").ok()?;
-    let sport: u16 = parser.try_parse("sport").ok()?;
+    let dport = parse_network_port(parser, "dport")?;
+    let sport = parse_network_port(parser, "sport")?;
     Some(make_send_recv_event(
         ts,
         pid,
@@ -303,11 +306,34 @@ fn format_ip_addr_port(ip: &std::net::IpAddr, port: u16) -> String {
     }
 }
 
+fn parse_network_port(parser: &Parser<'_, '_>, name: &str) -> Option<u16> {
+    parser.try_parse::<u16>(name).ok().map(network_port)
+}
+
+const fn network_port(raw: u16) -> u16 {
+    u16::from_be(raw)
+}
+
 fn parse_ndis_frame_buffer(record: &EventRecord, locator: &SchemaLocator) -> Option<Vec<u8>> {
+    if !is_ndis_packet_fragment_event(record.event_id()) {
+        return None;
+    }
+
     let schema = locator.event_schema(record).ok()?;
     let parser = Parser::create(record, &schema);
-    let data = parser.try_parse::<Vec<u8>>("FrameBuffer").ok()?;
+    let data = parse_packet_bytes(&parser)?;
     (!data.is_empty()).then_some(data)
+}
+
+fn parse_packet_bytes(parser: &Parser<'_, '_>) -> Option<Vec<u8>> {
+    parser
+        .try_parse::<Vec<u8>>("FrameBuffer")
+        .or_else(|_| parser.try_parse::<Vec<u8>>("Fragment"))
+        .ok()
+}
+
+fn is_ndis_packet_fragment_event(event_id: u16) -> bool {
+    NDIS_PACKET_FRAGMENT_EVENT_IDS.contains(&event_id)
 }
 
 // ---------------------------------------------------------------------------
@@ -325,13 +351,21 @@ pub fn build_ndis_provider(
 ) -> Provider {
     let parser = NdisParser::new(correlator);
     Provider::by_guid(PROVIDER_NDIS)
+        .any(NDIS_PACKET_KEYWORDS)
         .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
             let Some(timestamp) = record_timestamp(record) else {
                 return;
             };
 
+            if !is_ndis_packet_fragment_event(record.event_id()) {
+                return;
+            }
+
             let Some(data) = parse_ndis_frame_buffer(record, locator) else {
-                eprintln!("[etwarden] dropped NDIS packet: missing or empty FrameBuffer");
+                eprintln!("[etwarden] dropped NDIS packet: missing or empty packet fragment");
+                return;
+            };
+            let Some(data) = normalize_frame(data) else {
                 return;
             };
 
@@ -367,5 +401,18 @@ mod tests {
     fn format_ip_addr_port_brackets_ipv6() {
         let ip = std::net::IpAddr::V6(std::net::Ipv6Addr::LOCALHOST);
         assert_eq!(format_ip_addr_port(&ip, 443), "[::1]:443");
+    }
+
+    #[test]
+    fn network_port_decodes_wire_order() {
+        let raw = u16::from_ne_bytes(443u16.to_be_bytes());
+        assert_eq!(network_port(raw), 443);
+    }
+
+    #[test]
+    fn ndis_packet_fragment_events_include_vmswitch_packet() {
+        assert!(is_ndis_packet_fragment_event(1001));
+        assert!(is_ndis_packet_fragment_event(1003));
+        assert!(!is_ndis_packet_fragment_event(1002));
     }
 }

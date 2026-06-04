@@ -73,10 +73,7 @@ pub(crate) fn parse_dns_event(
         return None;
     }
 
-    let Some(pid) = correlator.resolve_pid(&packet.tuple) else {
-        eprintln!("[etwarden] dropped DNS packet: missing PID correlation");
-        return None;
-    };
+    let pid = correlator.resolve_pid(&packet.tuple)?;
     let DpiResult::Dns(info) =
         dpi::analyze_udp_payload(packet.payload, packet.tuple.src_port, packet.tuple.dst_port)?
     else {
@@ -122,10 +119,7 @@ impl EventParser for NdisParser {
 
     fn parse(&self, raw: &RawEvent) -> Option<NetEvent> {
         let packet = extract_packet(&raw.data)?;
-        let Some(pid) = self.correlator.resolve_pid(&packet.tuple) else {
-            eprintln!("[etwarden] dropped raw packet: missing PID correlation");
-            return None;
-        };
+        let pid = self.correlator.resolve_pid(&packet.tuple)?;
         let frame = RawFrame {
             timestamp: raw.timestamp,
             data: raw.data.clone(),
@@ -170,6 +164,75 @@ pub(crate) fn extract_packet(frame: &[u8]) -> Option<ParsedPacket<'_>> {
     } else {
         None
     }
+}
+
+/// Normalizes NDIS link-layer fragments into Ethernet frames for parsing/pcapng.
+pub(crate) fn normalize_frame(frame: Vec<u8>) -> Option<Vec<u8>> {
+    if is_supported_ethernet_frame(&frame) {
+        return Some(frame);
+    }
+    ieee80211_snap_to_ethernet(&frame)
+}
+
+fn is_supported_ethernet_frame(frame: &[u8]) -> bool {
+    frame.len() >= ETH_HDR_LEN + 20
+        && frame
+            .get(12..14)
+            .is_some_and(|eth_type| eth_type == ETHERTYPE_IPV4 || eth_type == ETHERTYPE_IPV6)
+}
+
+fn ieee80211_snap_to_ethernet(frame: &[u8]) -> Option<Vec<u8>> {
+    let frame_control = read_frame_control(frame)?;
+    if (frame_control >> 2) & 0b11 != 0b10 {
+        return None;
+    }
+
+    let to_ds = frame_control & 0x0100 != 0;
+    let from_ds = frame_control & 0x0200 != 0;
+    let addr1 = frame.get(4..10)?;
+    let addr2 = frame.get(10..16)?;
+    let addr3 = frame.get(16..22)?;
+    let mut snap_offset = 24usize;
+
+    let (dst, src) = match (to_ds, from_ds) {
+        (false, false) => (addr1, addr2),
+        (true, false) => (addr3, addr2),
+        (false, true) => (addr1, addr3),
+        (true, true) => {
+            let addr4 = frame.get(24..30)?;
+            snap_offset = 30;
+            (addr3, addr4)
+        }
+    };
+
+    let subtype = (frame_control >> 4) & 0x0F;
+    if subtype & 0x08 != 0 {
+        snap_offset = snap_offset.checked_add(2)?;
+    }
+    if frame_control & 0x8000 != 0 {
+        snap_offset = snap_offset.checked_add(4)?;
+    }
+
+    let snap = frame.get(snap_offset..snap_offset.checked_add(8)?)?;
+    if snap.get(..6)? != [0xAA, 0xAA, 0x03, 0x00, 0x00, 0x00] {
+        return None;
+    }
+    let eth_type = snap.get(6..8)?;
+    if eth_type != ETHERTYPE_IPV4 && eth_type != ETHERTYPE_IPV6 {
+        return None;
+    }
+
+    let payload = frame.get(snap_offset + 8..)?;
+    let mut ethernet = Vec::with_capacity(ETH_HDR_LEN + payload.len());
+    ethernet.extend_from_slice(dst);
+    ethernet.extend_from_slice(src);
+    ethernet.extend_from_slice(eth_type);
+    ethernet.extend_from_slice(payload);
+    Some(ethernet)
+}
+
+fn read_frame_control(frame: &[u8]) -> Option<u16> {
+    Some(u16::from_le_bytes([*frame.first()?, *frame.get(1)?]))
 }
 
 /// Parses IPv4 + TCP/UDP headers to extract packet metadata.
@@ -402,6 +465,20 @@ mod tests {
         frame
     }
 
+    fn build_ieee80211_snap_from_ethernet(ethernet: &[u8]) -> Vec<u8> {
+        let mut frame = Vec::new();
+        frame.extend_from_slice(&[0x08, 0x01]); // data frame, ToDS
+        frame.extend_from_slice(&[0x00, 0x00]); // duration
+        frame.extend_from_slice(&[0x78, 0x60, 0x5b, 0x18, 0xb1, 0x14]); // BSSID
+        frame.extend_from_slice(&ethernet[6..12]); // source
+        frame.extend_from_slice(&ethernet[0..6]); // destination
+        frame.extend_from_slice(&[0x00, 0x00]); // sequence
+        frame.extend_from_slice(&[0xAA, 0xAA, 0x03, 0x00, 0x00, 0x00]);
+        frame.extend_from_slice(&ethernet[12..14]);
+        frame.extend_from_slice(&ethernet[14..]);
+        frame
+    }
+
     fn build_ethernet_ipv4_udp(payload: &[u8], src_port: u16, dst_port: u16) -> Vec<u8> {
         build_ethernet_ipv4_udp_with_ips(payload, [10, 0, 0, 1], [8, 8, 8, 8], src_port, dst_port)
     }
@@ -523,6 +600,16 @@ mod tests {
             }
             _ => unreachable!("expected RawCapture"),
         }
+    }
+
+    #[test]
+    fn normalize_ieee80211_snap_ipv4_frame() {
+        let ethernet = build_ethernet_ipv4_tcp(10);
+        let wifi = build_ieee80211_snap_from_ethernet(&ethernet);
+
+        let normalized = normalize_frame(wifi).expect("normalized frame");
+
+        assert_eq!(normalized, ethernet);
     }
 
     #[test]
