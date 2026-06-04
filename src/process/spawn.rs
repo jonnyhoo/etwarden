@@ -7,6 +7,8 @@
 //! **Privilege**: `none`
 //! **Line budget**: 165 / 180
 
+use std::process::{Command, Stdio};
+
 use crate::error::EtwardenError;
 
 /// Result of spawning a child process via `--spawn` mode.
@@ -37,8 +39,11 @@ pub fn spawn_and_get_pid(cmd: &str) -> Result<SpawnResult, EtwardenError> {
             "spawn command must not be empty".into(),
         ));
     }
-    let child = std::process::Command::new(program)
+    let child = Command::new(program)
         .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit())
         .spawn()
         .map_err(|e| EtwardenError::ProcessSpawn(format!("failed to spawn '{cmd}': {e}")))?;
 

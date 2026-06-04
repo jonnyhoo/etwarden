@@ -9,10 +9,12 @@
 
 pub mod lookup;
 pub mod monitor;
+pub mod network;
 pub mod spawn;
 pub mod tree;
 
 pub use lookup::ProcessNameCache;
 pub use monitor::ProcessMonitor;
+pub use network::current_tcp_connections_for_pid;
 pub use spawn::{spawn_and_get_pid, SpawnResult};
 pub use tree::{ProcessInfo, ProcessTreeCache};

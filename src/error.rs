@@ -22,6 +22,10 @@ pub enum EtwardenError {
     #[error("process spawn error: {0}")]
     ProcessSpawn(String),
 
+    /// OS socket inventory read failure.
+    #[error("network inventory error: {0}")]
+    NetworkInventory(String),
+
     /// pcapng file write failure.
     #[error("pcap write error: {0}")]
     PcapWrite(String),
@@ -78,6 +82,13 @@ mod tests {
         let err = EtwardenError::ProcessSpawn("not found".into());
         let msg = err.to_string();
         assert!(msg.contains("process spawn error"), "actual: {msg}");
+    }
+
+    #[test]
+    fn network_inventory_variant_displays_message() {
+        let err = EtwardenError::NetworkInventory("socket table unavailable".into());
+        let msg = err.to_string();
+        assert!(msg.contains("network inventory error"), "actual: {msg}");
     }
 
     #[test]

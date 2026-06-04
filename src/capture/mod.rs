@@ -23,9 +23,10 @@ use crate::{
     error::Result,
     filter::Filter,
     mitm::{start_mitm_proxy, MitmCaptureConfig, MitmProxyConfig},
-    output::{schema::SummaryLine, Emitter},
+    output::{diagnostic, schema::SummaryLine, Emitter},
     parser::ParserRegistry,
     pcap::{correlator::Correlator, PcapSink},
+    process::current_tcp_connections_for_pid,
 };
 
 /// Configuration for a capture session.
@@ -60,6 +61,7 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
     let emit_raw_capture = config.pcap_sink.is_some();
     let correlator = Arc::new(Correlator::new());
+    bootstrap_existing_tcp_connections(config.target_pid, correlator.as_ref());
     let provider = build_tcpip_provider(Arc::clone(&registry), Some(Arc::clone(&correlator)));
     let ndis_provider = build_ndis_provider(
         Arc::clone(&registry),
@@ -108,4 +110,19 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
         bytes_in_total: summary.bytes_in_total,
         pcap_written: summary.pcap_written,
     })
+}
+
+fn bootstrap_existing_tcp_connections(pid: u32, correlator: &Correlator) {
+    let tuples = match current_tcp_connections_for_pid(pid) {
+        Ok(tuples) => tuples,
+        Err(err) => {
+            diagnostic::warn(format_args!(
+                "skipped existing TCP bootstrap for PID {pid}: {err}"
+            ));
+            return;
+        }
+    };
+    for tuple in tuples {
+        correlator.register_connection(pid, tuple);
+    }
 }

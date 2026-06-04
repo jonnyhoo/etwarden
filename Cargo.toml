@@ -46,6 +46,9 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 # ETW consumer (high-level safe abstraction over Windows ETW APIs)
 ferrisetw   = "1.2"
 
+# Network socket inventory for startup flow attribution
+netstat2    = "0.11"
+
 # Windows API bindings (ETW, process, networking)
 windows     = { version = "0.58", features = [
     "Win32_System_Diagnostics_Etw",
