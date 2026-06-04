@@ -1,0 +1,87 @@
+//! # `output::schema::convert::event::dpi`
+//!
+//! **Purpose**: Routes application-layer DPI events to HTTP/TLS schema projection.
+//! **Public API**: module-private DPI event router
+//! **Dependencies**: `output::schema::convert::dpi`, `parser::types`
+//! **Platform**: `windows-only`
+//! **Privilege**: `none`
+//! **Line budget**: 90 / 140
+
+use super::super::dpi::{http_request_line, http_response_line, tls_hello_line};
+use crate::{output::schema::OutputLine, parser::types::NetEvent};
+
+pub(super) fn line(event: &NetEvent, process_name: Option<String>) -> OutputLine {
+    match *event {
+        NetEvent::HttpRequest {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref method,
+            ref path,
+            ref host,
+            ref version,
+            ref content_type,
+            content_length,
+        } => http_request_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            method,
+            path,
+            version,
+            host.as_deref(),
+            content_type.as_deref(),
+            content_length,
+            process_name,
+        ),
+        NetEvent::HttpResponse {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref status_line,
+            ref host,
+            ref version,
+            status_code,
+            ref content_type,
+            content_length,
+        } => http_response_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            status_line,
+            version,
+            status_code,
+            host.as_deref(),
+            content_type.as_deref(),
+            content_length,
+            process_name,
+        ),
+        NetEvent::TlsHello {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref sni,
+            ref version,
+            ref alpn,
+            cipher_count,
+            extension_count,
+        } => tls_hello_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            sni.as_deref(),
+            version.as_deref(),
+            alpn,
+            cipher_count,
+            extension_count,
+            process_name,
+        ),
+        _ => super::unsupported_event_line(),
+    }
+}
