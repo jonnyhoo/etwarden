@@ -7,9 +7,9 @@
 //! **Privilege**: `none`
 //! **Line budget**: 60 / 100
 
-use crate::{
-    parser::types::{FiveTuple, NetEvent, Protocol},
-    tracker::endpoint::parse_tuple_from_addrs,
+use crate::parser::{
+    endpoint::parse_tuple_from_addrs,
+    types::{FiveTuple, NetEvent, Protocol},
 };
 
 pub(super) struct TrackableEvent {

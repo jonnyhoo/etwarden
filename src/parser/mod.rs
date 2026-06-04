@@ -10,6 +10,7 @@
 pub mod dns;
 pub mod dns_codes;
 pub mod dpi;
+pub(crate) mod endpoint;
 pub mod ndis;
 pub mod tcp_state;
 pub mod tcpip;
