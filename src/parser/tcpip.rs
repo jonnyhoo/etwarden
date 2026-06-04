@@ -5,14 +5,15 @@
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 487 / 540
+//! **Line budget**: 445 / 500
 
-use std::net::{Ipv4Addr, Ipv6Addr};
+mod fields;
 
 use chrono::{DateTime, Utc};
 use windows::core::GUID;
 
 use crate::parser::{
+    tcpip::fields::{event_pid, fmt_addr_port, fmt_ipv4, fmt_ipv6, read_u16, read_u32},
     types::{NetEvent, Protocol, RawEvent},
     EventParser,
 };
@@ -79,48 +80,6 @@ impl EventParser for TcpIpParser {
             _ => None,
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// IPv4 helpers
-// ---------------------------------------------------------------------------
-
-/// Common Kernel-Network TCP IPv4 layout prefix:
-///   offset 0:  PID       (u32)
-///   offset 4:  size      (u32)
-///   offset 8:  daddr     (u32)
-///   offset 12: saddr     (u32)
-///   offset 16: dport     (u16)
-///   offset 18: sport     (u16)
-fn read_u32(buf: &[u8], offset: usize) -> Option<u32> {
-    buf.get(offset..offset + 4)
-        .map(|b| u32::from_ne_bytes([b[0], b[1], b[2], b[3]]))
-}
-
-fn read_u16(buf: &[u8], offset: usize) -> Option<u16> {
-    buf.get(offset..offset + 2)
-        .map(|b| u16::from_be_bytes([b[0], b[1]]))
-}
-
-fn fmt_ipv4(raw: u32) -> String {
-    Ipv4Addr::from(raw.to_be()).to_string()
-}
-
-fn fmt_ipv6(buf: &[u8]) -> Option<String> {
-    let octets: [u8; 16] = buf.try_into().ok()?;
-    Some(Ipv6Addr::from(octets).to_string())
-}
-
-fn fmt_addr_port(ip: &str, port: u16) -> String {
-    if ip.contains(':') {
-        format!("[{ip}]:{port}")
-    } else {
-        format!("{ip}:{port}")
-    }
-}
-
-fn event_pid(d: &[u8]) -> Option<u32> {
-    read_u32(d, 0)
 }
 
 // ---------------------------------------------------------------------------
