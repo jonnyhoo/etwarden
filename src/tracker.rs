@@ -21,6 +21,7 @@ use std::{
 pub use connection::TrackedConnection;
 
 use crate::{
+    output::diagnostic,
     parser::{
         dpi,
         tcp_state::TcpState,
@@ -77,7 +78,9 @@ impl ConnectionTracker {
 
         let now = SystemTime::now();
         let Ok(mut inner) = self.inner.lock() else {
-            eprintln!("[etwarden] dropped tracker ingest: tracker lock poisoned");
+            diagnostic::warn(format_args!(
+                "dropped tracker ingest: tracker lock poisoned"
+            ));
             return None;
         };
 
@@ -128,7 +131,9 @@ impl ConnectionTracker {
 
         if let Some(dpi_result) = result {
             let Ok(mut inner) = self.inner.lock() else {
-                eprintln!("[etwarden] dropped DPI enrichment: tracker lock poisoned");
+                diagnostic::warn(format_args!(
+                    "dropped DPI enrichment: tracker lock poisoned"
+                ));
                 return;
             };
             if let Some(conn) = inner.connections.get_mut(tuple) {
@@ -140,7 +145,9 @@ impl ConnectionTracker {
     /// Removes stale connections and returns them.
     pub fn cleanup(&self) -> Vec<TrackedConnection> {
         let Ok(mut inner) = self.inner.lock() else {
-            eprintln!("[etwarden] skipped tracker cleanup: tracker lock poisoned");
+            diagnostic::warn(format_args!(
+                "skipped tracker cleanup: tracker lock poisoned"
+            ));
             return Vec::new();
         };
         let now = SystemTime::now();
@@ -165,7 +172,9 @@ impl ConnectionTracker {
     /// Returns a snapshot of all active connections.
     pub fn snapshot(&self) -> Vec<TrackedConnection> {
         let Ok(inner) = self.inner.lock() else {
-            eprintln!("[etwarden] skipped tracker snapshot: tracker lock poisoned");
+            diagnostic::warn(format_args!(
+                "skipped tracker snapshot: tracker lock poisoned"
+            ));
             return Vec::new();
         };
         inner.connections.values().cloned().collect()
@@ -174,7 +183,7 @@ impl ConnectionTracker {
     /// Returns the number of tracked connections.
     pub fn len(&self) -> usize {
         let Ok(inner) = self.inner.lock() else {
-            eprintln!("[etwarden] skipped tracker len: tracker lock poisoned");
+            diagnostic::warn(format_args!("skipped tracker len: tracker lock poisoned"));
             return 0;
         };
         inner.connections.len()
@@ -188,7 +197,7 @@ impl ConnectionTracker {
     /// Clears all tracked connections.
     pub fn clear(&self) {
         let Ok(mut inner) = self.inner.lock() else {
-            eprintln!("[etwarden] skipped tracker clear: tracker lock poisoned");
+            diagnostic::warn(format_args!("skipped tracker clear: tracker lock poisoned"));
             return;
         };
         inner.connections.clear();

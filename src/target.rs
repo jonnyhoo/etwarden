@@ -14,6 +14,7 @@ use std::sync::{
 
 use etwarden::{
     cli::{Cli, TargetMode},
+    output::diagnostic,
     process::{spawn_and_get_pid, ProcessMonitor},
 };
 
@@ -74,7 +75,7 @@ fn spawn_target(cmd: &str, stop_signal: &Arc<AtomicBool>) -> anyhow::Result<u32>
     let result = spawn_and_get_pid(cmd).map_err(|e| anyhow::anyhow!("{e}"))?;
     let monitor = ProcessMonitor::new(result.child);
     let pid = monitor.pid();
-    eprintln!("[etwarden] spawned PID {pid}");
+    diagnostic::warn(format_args!("spawned PID {pid}"));
     spawn_wait_thread(monitor, stop_signal);
     Ok(pid)
 }
@@ -84,8 +85,8 @@ fn spawn_wait_thread(mut monitor: ProcessMonitor, stop_signal: &Arc<AtomicBool>)
     std::thread::spawn(move || {
         let pid = monitor.pid();
         match monitor.wait_exit() {
-            Ok(code) => eprintln!("[etwarden] child PID {pid} exited with code {code}"),
-            Err(err) => eprintln!("[etwarden] child monitor error: {err}"),
+            Ok(code) => diagnostic::warn(format_args!("child PID {pid} exited with code {code}")),
+            Err(err) => diagnostic::warn(format_args!("child monitor error: {err}")),
         }
         thread_signal.store(true, Ordering::SeqCst);
     });

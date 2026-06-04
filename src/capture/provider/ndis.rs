@@ -2,7 +2,7 @@
 //!
 //! **Purpose**: Builds Microsoft-Windows-NDIS-PacketCapture provider callbacks.
 //! **Public API**: `build_ndis_provider`
-//! **Dependencies**: `ferrisetw`, `parser::ndis`, `pcap::correlator`
+//! **Dependencies**: `ferrisetw`, `parser::ndis`, `pcap::correlator`, `output::diagnostic`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
 //! **Line budget**: 105 / 160
@@ -13,6 +13,7 @@ use ferrisetw::{parser::Parser, provider::Provider, EventRecord, SchemaLocator};
 
 use crate::{
     capture::provider::common::record_timestamp,
+    output::diagnostic,
     parser::{
         ndis::{normalize_frame, NdisParser, PROVIDER_NDIS},
         types::RawEvent,
@@ -74,7 +75,9 @@ fn parse_raw_ndis_event(record: &EventRecord, locator: &SchemaLocator) -> Option
 
 fn parse_ndis_frame(record: &EventRecord, locator: &SchemaLocator) -> Option<Vec<u8>> {
     let data = parse_ndis_frame_buffer(record, locator).or_else(|| {
-        eprintln!("[etwarden] dropped NDIS packet: missing or empty packet fragment");
+        diagnostic::warn(format_args!(
+            "dropped NDIS packet: missing or empty packet fragment"
+        ));
         None
     })?;
     normalize_frame(data)

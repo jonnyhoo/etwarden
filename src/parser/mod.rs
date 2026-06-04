@@ -2,7 +2,7 @@
 //!
 //! **Purpose**: `EventParser` trait + type definitions for ETW event parsing.
 //! **Public API**: `trait EventParser`, `struct ParserRegistry`, `mod types`
-//! **Dependencies**: (none)
+//! **Dependencies**: `output::diagnostic`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
 //! **Line budget**: 38 / 80
@@ -20,7 +20,10 @@ use std::sync::Mutex;
 
 use windows::core::GUID;
 
-use crate::parser::types::{NetEvent, RawEvent};
+use crate::{
+    output::diagnostic,
+    parser::types::{NetEvent, RawEvent},
+};
 
 /// Parses `RawEvent` records from a specific ETW provider into `NetEvent`.
 pub trait EventParser: Send + Sync {
@@ -75,7 +78,9 @@ impl ParserRegistry {
     /// Pushes a parsed event into the shared buffer.
     pub fn push_event(&self, event: NetEvent) -> bool {
         let Ok(mut events) = self.events.lock() else {
-            eprintln!("[etwarden] dropped parsed event: parser registry buffer lock poisoned");
+            diagnostic::warn(format_args!(
+                "dropped parsed event: parser registry buffer lock poisoned"
+            ));
             return false;
         };
         events.push(event);
@@ -85,7 +90,9 @@ impl ParserRegistry {
     /// Drains all buffered events.
     pub fn drain(&self) -> Vec<NetEvent> {
         let Ok(mut events) = self.events.lock() else {
-            eprintln!("[etwarden] dropped buffered events: parser registry buffer lock poisoned");
+            diagnostic::warn(format_args!(
+                "dropped buffered events: parser registry buffer lock poisoned"
+            ));
             return Vec::new();
         };
         events.drain(..).collect()

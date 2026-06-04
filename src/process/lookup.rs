@@ -2,7 +2,7 @@
 //!
 //! **Purpose**: Safe PID→process-name resolution via `sysinfo`.
 //! **Public API**: `struct ProcessNameCache`, `fn get_name(pid) -> Option<String>`
-//! **Dependencies**: `sysinfo`
+//! **Dependencies**: `sysinfo`, `output::diagnostic`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
 //! **Line budget**: 80 / 150
@@ -14,6 +14,8 @@ use std::{
 };
 
 use sysinfo::ProcessesToUpdate;
+
+use crate::output::diagnostic;
 
 /// Refresh interval for the process name cache.
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
@@ -55,7 +57,9 @@ impl ProcessNameCache {
     /// Triggers a background refresh if the cache is stale.
     pub fn get_name(&self, pid: u32) -> Option<String> {
         let Ok(mut guard) = self.inner.lock() else {
-            eprintln!("[etwarden] skipped process name lookup: process cache lock poisoned");
+            diagnostic::warn(format_args!(
+                "skipped process name lookup: process cache lock poisoned"
+            ));
             return None;
         };
 
@@ -70,7 +74,9 @@ impl ProcessNameCache {
     /// Force a refresh regardless of staleness.
     pub fn force_refresh(&self) {
         let Ok(mut guard) = self.inner.lock() else {
-            eprintln!("[etwarden] skipped process cache refresh: process cache lock poisoned");
+            diagnostic::warn(format_args!(
+                "skipped process cache refresh: process cache lock poisoned"
+            ));
             return;
         };
         Self::do_refresh(&mut guard);

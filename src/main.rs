@@ -17,6 +17,7 @@ use etwarden::{
     cli::Cli,
     filter::pid::PidFilter,
     output::{
+        diagnostic,
         json::JsonEmitter,
         schema::{ErrorLine, OutputLine},
     },
@@ -30,7 +31,9 @@ fn main() -> anyhow::Result<()> {
         Err(err) => {
             let error_line = OutputLine::Error(ErrorLine::new(err.to_string()));
             if let Err(write_err) = write_output_line(&error_line) {
-                eprintln!("[etwarden] failed to write NDJSON error line: {write_err}");
+                diagnostic::warn(format_args!(
+                    "failed to write NDJSON error line: {write_err}"
+                ));
             }
             Err(err)
         }
@@ -92,9 +95,8 @@ fn cli_error_message(err: &clap::Error) -> String {
 }
 
 fn write_cli_diagnostic(err: &clap::Error) {
-    let mut stderr = std::io::stderr().lock();
-    if let Err(write_err) = stderr.write_all(err.to_string().as_bytes()) {
-        eprintln!("[etwarden] failed to write CLI diagnostic: {write_err}");
+    if let Err(write_err) = diagnostic::write(format_args!("{err}")) {
+        diagnostic::warn(format_args!("failed to write CLI diagnostic: {write_err}"));
     }
 }
 

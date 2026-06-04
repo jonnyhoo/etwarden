@@ -2,7 +2,7 @@
 //!
 //! **Purpose**: Maps `FiveTuple` → PID for correlating NDIS frames with TCPIP events.
 //! **Public API**: `struct Correlator`
-//! **Dependencies**: `parser::types`
+//! **Dependencies**: `parser::types`, `output::diagnostic`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
 //! **Line budget**: 240 / 260
@@ -12,7 +12,10 @@ mod tuple;
 use std::{collections::HashMap, sync::Mutex};
 
 use self::tuple::{event_tuple_parts, parse_tuple_from_event, reverse_tuple};
-use crate::parser::types::{FiveTuple, NetEvent};
+use crate::{
+    output::diagnostic,
+    parser::types::{FiveTuple, NetEvent},
+};
 
 const DEFAULT_MAX_MAPPINGS: usize = 20_000;
 
@@ -51,7 +54,9 @@ impl Correlator {
             return;
         }
         let Ok(mut map) = self.map.lock() else {
-            eprintln!("[etwarden] dropped correlator mapping: correlator lock poisoned");
+            diagnostic::warn(format_args!(
+                "dropped correlator mapping: correlator lock poisoned"
+            ));
             return;
         };
         let reverse = reverse_tuple(&tuple);
@@ -81,7 +86,9 @@ impl Correlator {
     /// Resolves the PID for a given five-tuple.
     pub fn resolve_pid(&self, tuple: &FiveTuple) -> Option<u32> {
         let Ok(map) = self.map.lock() else {
-            eprintln!("[etwarden] failed correlator lookup: correlator lock poisoned");
+            diagnostic::warn(format_args!(
+                "failed correlator lookup: correlator lock poisoned"
+            ));
             return None;
         };
         map.get(tuple).copied()
@@ -90,7 +97,9 @@ impl Correlator {
     /// Returns the number of registered tuple mappings.
     pub fn len(&self) -> usize {
         let Ok(map) = self.map.lock() else {
-            eprintln!("[etwarden] skipped correlator len: correlator lock poisoned");
+            diagnostic::warn(format_args!(
+                "skipped correlator len: correlator lock poisoned"
+            ));
             return 0;
         };
         map.len()
