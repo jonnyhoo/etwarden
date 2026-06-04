@@ -7,6 +7,9 @@
 //! **Privilege**: `none`
 //! **Line budget**: 250 / 360
 
+mod extensions;
+
+use extensions::parse_extensions;
 use serde::Serialize;
 
 /// TLS `ClientHello` information.
@@ -87,49 +90,17 @@ pub(super) fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
     ]));
     let extensions_end = checked_end(extensions_start + 2, extensions_len, handshake_end)?;
 
-    let mut offset = extensions_start + 2;
-    let mut extension_count = 0;
-    let mut sni = None;
-    let mut alpn = Vec::new();
-    let mut supported_versions = Vec::new();
-
-    while offset + 4 <= extensions_end {
-        let ext_type = u16::from_be_bytes([payload[offset], payload[offset + 1]]);
-        let ext_len = usize::from(u16::from_be_bytes([
-            payload[offset + 2],
-            payload[offset + 3],
-        ]));
-        let ext_data_start = offset + 4;
-        let ext_data_end = checked_end(ext_data_start, ext_len, extensions_end)?;
-        let ext_data = &payload[ext_data_start..ext_data_end];
-        extension_count += 1;
-
-        match ext_type {
-            0x0000 => sni = extract_sni_from_extension(ext_data),
-            0x0010 => alpn = extract_alpn_from_extension(ext_data).unwrap_or_default(),
-            0x002b => {
-                supported_versions =
-                    extract_supported_versions_from_extension(ext_data).unwrap_or_default();
-            }
-            _ => {}
-        }
-
-        offset = ext_data_end;
-    }
-
-    if offset != extensions_end {
-        return None;
-    }
+    let extensions = parse_extensions(&payload[extensions_start + 2..extensions_end])?;
 
     Some(TlsInfo {
-        sni,
-        alpn,
+        sni: extensions.sni,
+        alpn: extensions.alpn,
         version: Some(tls_version_string(highest_tls_version(
             legacy_version,
-            &supported_versions,
+            &extensions.supported_versions,
         ))),
         cipher_count,
-        extension_count,
+        extension_count: extensions.count,
     })
 }
 
@@ -142,79 +113,6 @@ const fn checked_end(start: usize, len: usize, limit: usize) -> Option<usize> {
     } else {
         None
     }
-}
-
-fn extract_sni_from_extension(data: &[u8]) -> Option<String> {
-    let list_len_end = checked_end(0, 2, data.len())?;
-    let list_len = usize::from(u16::from_be_bytes([data[0], data[1]]));
-    let list_end = checked_end(list_len_end, list_len, data.len())?;
-    if list_end != data.len() {
-        return None;
-    }
-
-    let entry_start = list_len_end;
-    checked_end(entry_start, 3, list_end)?;
-    if data[entry_start] != 0 {
-        return None;
-    }
-
-    let entry_len = usize::from(u16::from_be_bytes([
-        data[entry_start + 1],
-        data[entry_start + 2],
-    ]));
-    let hostname_start = entry_start + 3;
-    let hostname_end = checked_end(hostname_start, entry_len, list_end)?;
-    let hostname = data.get(hostname_start..hostname_end)?;
-    if hostname.is_empty() {
-        return None;
-    }
-
-    visible_utf8(hostname)
-}
-
-fn extract_alpn_from_extension(data: &[u8]) -> Option<Vec<String>> {
-    let list_len_end = checked_end(0, 2, data.len())?;
-    let list_len = usize::from(u16::from_be_bytes([data[0], data[1]]));
-    let list_end = checked_end(list_len_end, list_len, data.len())?;
-    if list_end != data.len() {
-        return None;
-    }
-
-    let mut protocols = Vec::new();
-    let mut offset = list_len_end;
-    while offset < list_end {
-        let len = usize::from(*data.get(offset)?);
-        offset += 1;
-        let protocol_end = checked_end(offset, len, list_end)?;
-        let protocol = data.get(offset..protocol_end)?;
-        if protocol.is_empty() {
-            return None;
-        }
-        protocols.push(visible_utf8(protocol)?);
-        offset = protocol_end;
-    }
-    Some(protocols)
-}
-
-fn extract_supported_versions_from_extension(data: &[u8]) -> Option<Vec<u16>> {
-    let list_len = usize::from(*data.first()?);
-    let list_end = checked_end(1, list_len, data.len())?;
-    if list_end != data.len() || list_len % 2 != 0 {
-        return None;
-    }
-
-    let mut versions = Vec::with_capacity(list_len / 2);
-    let mut offset = 1;
-    while offset < list_end {
-        versions.push(u16::from_be_bytes([data[offset], data[offset + 1]]));
-        offset += 2;
-    }
-    Some(versions)
-}
-
-fn visible_utf8(value: &[u8]) -> Option<String> {
-    let text = std::str::from_utf8(value).ok()?;
-    (!text.bytes().any(|byte| byte.is_ascii_control())).then(|| text.to_string())
 }
 
 fn highest_tls_version(legacy_version: u16, supported_versions: &[u16]) -> u16 {
