@@ -10,10 +10,18 @@ expression: line
   "dst": "93.184.216.34:443",
   "sni": "example.com",
   "tls_version": "TLS 1.3",
+  "ja3": "771,4865,0-16-43,,",
+  "ja3_hash": "9cd3a3df22ead6ac1977bf836d6ea964",
+  "ja3n": "771,4865,0-16-43,,",
+  "ja3n_hash": "9cd3a3df22ead6ac1977bf836d6ea964",
+  "ja4": "t13d0103h2_0f2cb44170f4_4835ae301cc7",
+  "ja4o": "t13d0103h2_0f2cb44170f4_4835ae301cc7",
+  "ja4r": "t13d0103h2_1301_00000010002b_",
+  "ja4ro": "t13d0103h2_1301_00000010002b_",
   "alpn": [
     "h2",
     "http/1.1"
   ],
-  "cipher_count": 15,
-  "extension_count": 6
+  "cipher_count": 1,
+  "extension_count": 3
 }

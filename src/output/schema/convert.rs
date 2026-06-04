@@ -275,6 +275,14 @@ mod tests {
             dst: "93.184.216.34:443".into(),
             sni: Some("example.com".into()),
             version: Some("TLS 1.2/1.3".into()),
+            ja3: "771,4865,0,,".into(),
+            ja3_hash: "hash-ja3".into(),
+            ja3n: "771,4865,0,,".into(),
+            ja3n_hash: "hash-ja3n".into(),
+            ja4: "t13d010100_hash_hash".into(),
+            ja4o: "t13d010100_hash_hash".into(),
+            ja4r: "t13d010100_1301_0000_".into(),
+            ja4ro: "t13d010100_1301_0000_".into(),
             alpn: vec!["h2".into()],
             cipher_count: 15,
             extension_count: 7,
@@ -286,6 +294,8 @@ mod tests {
         assert_eq!(line.event, "tls_hello");
         assert_eq!(line.sni.as_deref(), Some("example.com"));
         assert_eq!(line.tls_version.as_deref(), Some("TLS 1.2/1.3"));
+        assert_eq!(line.ja3, "771,4865,0,,");
+        assert_eq!(line.ja4, "t13d010100_hash_hash");
         assert_eq!(line.alpn, vec!["h2"]);
         assert_eq!(line.cipher_count, 15);
         assert_eq!(line.extension_count, 7);

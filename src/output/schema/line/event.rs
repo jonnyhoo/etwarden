@@ -136,6 +136,22 @@ pub struct TlsEventLine {
     /// TLS version string.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tls_version: Option<String>,
+    /// JA3 text fingerprint.
+    pub ja3: String,
+    /// JA3 MD5 hex digest.
+    pub ja3_hash: String,
+    /// JA3N text fingerprint with sorted extensions.
+    pub ja3n: String,
+    /// JA3N MD5 hex digest.
+    pub ja3n_hash: String,
+    /// JA4 fingerprint with sorted ciphers/extensions.
+    pub ja4: String,
+    /// JA4 original-order fingerprint.
+    pub ja4o: String,
+    /// JA4 raw sorted fingerprint.
+    pub ja4r: String,
+    /// JA4 raw original-order fingerprint.
+    pub ja4ro: String,
     /// ALPN protocol list.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub alpn: Vec<String>,

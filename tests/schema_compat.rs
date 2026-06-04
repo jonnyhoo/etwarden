@@ -130,9 +130,17 @@ fn tls_hello_event() -> NetEvent {
         dst: "93.184.216.34:443".into(),
         sni: Some("example.com".into()),
         version: Some("TLS 1.3".into()),
+        ja3: "771,4865,0-16-43,,".into(),
+        ja3_hash: "9cd3a3df22ead6ac1977bf836d6ea964".into(),
+        ja3n: "771,4865,0-16-43,,".into(),
+        ja3n_hash: "9cd3a3df22ead6ac1977bf836d6ea964".into(),
+        ja4: "t13d0103h2_0f2cb44170f4_4835ae301cc7".into(),
+        ja4o: "t13d0103h2_0f2cb44170f4_4835ae301cc7".into(),
+        ja4r: "t13d0103h2_1301_00000010002b_".into(),
+        ja4ro: "t13d0103h2_1301_00000010002b_".into(),
         alpn: vec!["h2".into(), "http/1.1".into()],
-        cipher_count: 15,
-        extension_count: 6,
+        cipher_count: 1,
+        extension_count: 3,
     }
 }
 

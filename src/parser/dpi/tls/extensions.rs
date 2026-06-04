@@ -1,16 +1,20 @@
 //! # `parser::dpi::tls::extensions`
 //!
-//! **Purpose**: Parses TLS `ClientHello` extension metadata.
+//! **Purpose**: Parses TLS `ClientHello` extension metadata for passive fingerprints.
 //! **Public API**: module-private extension parser
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 95 / 140
+//! **Line budget**: 140 / 180
 
 #[derive(Default)]
 pub(super) struct ParsedExtensions {
     pub(super) sni: Option<String>,
     pub(super) alpn: Vec<String>,
+    pub(super) extension_ids: Vec<u16>,
+    pub(super) supported_groups: Vec<u16>,
+    pub(super) ec_point_formats: Vec<u8>,
+    pub(super) signature_algorithms: Vec<u16>,
     pub(super) supported_versions: Vec<u16>,
     pub(super) count: usize,
 }
@@ -26,9 +30,15 @@ pub(super) fn parse_extensions(data: &[u8]) -> Option<ParsedExtensions> {
         let ext_data_end = checked_end(ext_data_start, ext_len, data.len())?;
         let ext_data = &data[ext_data_start..ext_data_end];
         parsed.count += 1;
+        parsed.extension_ids.push(ext_type);
 
         match ext_type {
             0x0000 => parsed.sni = extract_sni(ext_data),
+            0x000a => parsed.supported_groups = extract_u16_list(ext_data).unwrap_or_default(),
+            0x000b => parsed.ec_point_formats = extract_u8_list(ext_data).unwrap_or_default(),
+            0x000d => {
+                parsed.signature_algorithms = extract_u16_list(ext_data).unwrap_or_default();
+            }
             0x0010 => parsed.alpn = extract_alpn(ext_data).unwrap_or_default(),
             0x002b => {
                 parsed.supported_versions =
@@ -52,6 +62,29 @@ const fn checked_end(start: usize, len: usize, limit: usize) -> Option<usize> {
     } else {
         None
     }
+}
+
+fn extract_u16_list(data: &[u8]) -> Option<Vec<u16>> {
+    let list_len_end = checked_end(0, 2, data.len())?;
+    let list_len = usize::from(u16::from_be_bytes([data[0], data[1]]));
+    let list_end = checked_end(list_len_end, list_len, data.len())?;
+    if list_end != data.len() || list_len % 2 != 0 {
+        return None;
+    }
+
+    let mut values = Vec::with_capacity(list_len / 2);
+    let mut offset = list_len_end;
+    while offset < list_end {
+        values.push(u16::from_be_bytes([data[offset], data[offset + 1]]));
+        offset += 2;
+    }
+    Some(values)
+}
+
+fn extract_u8_list(data: &[u8]) -> Option<Vec<u8>> {
+    let list_len = usize::from(*data.first()?);
+    let list_end = checked_end(1, list_len, data.len())?;
+    (list_end == data.len()).then(|| data[1..list_end].to_vec())
 }
 
 fn extract_sni(data: &[u8]) -> Option<String> {

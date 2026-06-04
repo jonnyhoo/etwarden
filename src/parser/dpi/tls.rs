@@ -8,8 +8,10 @@
 //! **Line budget**: 250 / 360
 
 mod extensions;
+mod fingerprint;
 
 use extensions::parse_extensions;
+use fingerprint::{build_fingerprint, FingerprintInput};
 use serde::Serialize;
 
 /// TLS `ClientHello` information.
@@ -21,9 +23,25 @@ pub struct TlsInfo {
     pub alpn: Vec<String>,
     /// TLS version string (e.g. "TLS 1.3").
     pub version: Option<String>,
-    /// Number of cipher suites after GREASE filtering is intentionally not applied.
+    /// JA3 text fingerprint.
+    pub ja3: String,
+    /// JA3 MD5 hex digest.
+    pub ja3_hash: String,
+    /// JA3N text fingerprint with sorted extensions.
+    pub ja3n: String,
+    /// JA3N MD5 hex digest.
+    pub ja3n_hash: String,
+    /// JA4 fingerprint with sorted ciphers/extensions.
+    pub ja4: String,
+    /// JA4 original-order fingerprint.
+    pub ja4o: String,
+    /// JA4 raw sorted fingerprint.
+    pub ja4r: String,
+    /// JA4 raw original-order fingerprint.
+    pub ja4ro: String,
+    /// Number of cipher suites after GREASE filtering.
     pub cipher_count: usize,
-    /// Number of extensions present in the `ClientHello`.
+    /// Number of extensions present in the `ClientHello` after GREASE filtering.
     pub extension_count: usize,
 }
 
@@ -71,7 +89,7 @@ pub(super) fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
     if cipher_suites_len % 2 != 0 {
         return None;
     }
-    let cipher_count = cipher_suites_len / 2;
+    let cipher_suites = parse_u16_values(&payload[cipher_suites_start + 2..][..cipher_suites_len]);
 
     let compression_start = cipher_suites_start + 2 + cipher_suites_len;
     if handshake_end <= compression_start + 1 {
@@ -91,17 +109,47 @@ pub(super) fn analyze_tls_hello(payload: &[u8]) -> Option<TlsInfo> {
     let extensions_end = checked_end(extensions_start + 2, extensions_len, handshake_end)?;
 
     let extensions = parse_extensions(&payload[extensions_start + 2..extensions_end])?;
+    let highest_version = highest_tls_version(legacy_version, &extensions.supported_versions);
+    let fingerprint = build_fingerprint(FingerprintInput {
+        legacy_version,
+        highest_version,
+        cipher_suites: &cipher_suites,
+        extensions: &extensions.extension_ids,
+        supported_groups: &extensions.supported_groups,
+        ec_point_formats: &extensions.ec_point_formats,
+        signature_algorithms: &extensions.signature_algorithms,
+        sni: extensions.sni.as_deref(),
+        alpn: &extensions.alpn,
+    });
 
     Some(TlsInfo {
         sni: extensions.sni,
         alpn: extensions.alpn,
-        version: Some(tls_version_string(highest_tls_version(
-            legacy_version,
-            &extensions.supported_versions,
-        ))),
-        cipher_count,
-        extension_count: extensions.count,
+        version: Some(tls_version_string(highest_version)),
+        ja3: fingerprint.ja3,
+        ja3_hash: fingerprint.ja3_hash,
+        ja3n: fingerprint.ja3n,
+        ja3n_hash: fingerprint.ja3n_hash,
+        ja4: fingerprint.ja4,
+        ja4o: fingerprint.ja4o,
+        ja4r: fingerprint.ja4r,
+        ja4ro: fingerprint.ja4ro,
+        cipher_count: cipher_suites
+            .iter()
+            .filter(|value| !is_grease_u16(**value))
+            .count(),
+        extension_count: extensions
+            .extension_ids
+            .iter()
+            .filter(|value| !is_grease_u16(**value))
+            .count(),
     })
+}
+
+fn parse_u16_values(data: &[u8]) -> Vec<u16> {
+    data.chunks_exact(2)
+        .map(|chunk| u16::from_be_bytes([chunk[0], chunk[1]]))
+        .collect()
 }
 
 const fn checked_end(start: usize, len: usize, limit: usize) -> Option<usize> {
@@ -169,6 +217,14 @@ mod tests {
 
         assert_eq!(result.sni.as_deref(), Some("example.com"));
         assert_eq!(result.version.as_deref(), Some("TLS 1.3"));
+        assert_eq!(result.ja3, "771,4865,0-16-43,,");
+        assert_eq!(result.ja3_hash, "9cd3a3df22ead6ac1977bf836d6ea964");
+        assert_eq!(result.ja3n, "771,4865,0-16-43,,");
+        assert_eq!(result.ja3n_hash, "9cd3a3df22ead6ac1977bf836d6ea964");
+        assert_eq!(result.ja4, "t13d0103h2_0f2cb44170f4_4835ae301cc7");
+        assert_eq!(result.ja4o, "t13d0103h2_0f2cb44170f4_4835ae301cc7");
+        assert_eq!(result.ja4r, "t13d0103h2_1301_00000010002b_");
+        assert_eq!(result.ja4ro, "t13d0103h2_1301_00000010002b_");
         assert_eq!(result.alpn, vec!["h2", "http/1.1"]);
         assert_eq!(result.cipher_count, 1);
         assert_eq!(result.extension_count, 3);
