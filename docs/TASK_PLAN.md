@@ -318,11 +318,14 @@ T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T10 → 
 
 | Phase | Tasks | Status |
 |-------|-------|--------|
-| 0 — Scaffold | T01 | `[ ]` |
-| 1 — Types & Errors | T02–T04 | `[ ]` |
-| 2 — Traits | T05–T10 | `[ ]` |
-| 3 — CLI & Entry | T11–T12 | `[ ]` |
-| 4 — Phase 1 Impl | T13–T20 | `[ ]` |
-| 5 — Phase 2 NDIS+pcap | T21–T28 | `[ ]` |
-| 6 — Phase 3 spawn | T29–T32 | `[ ]` |
-| 7 — Tests & Bench | T33–T34 | `[ ]` |
+| 0 — Scaffold | T01 | `[x]` |
+| 1 — Types & Errors | T02–T04 | `[x]` |
+| 2 — Traits | T05–T10 | `[x]` |
+| 3 — CLI & Entry | T11–T12 | `[x]` |
+| 4 — Phase 1 Impl | T13–T20 | `[x]` |
+| 5 — Phase 2 NDIS+pcap | T21–T28 | `[x]` |
+| 6 — Phase 3 spawn | T29–T32 | `[x]` |
+| 7 — Tests & Bench | T33–T34 | `[x]` |
+
+Historical atomic plan is complete. Current roadmap status: Phases 1–5 shipped;
+Phase 6 traffic control and Phase 7 advanced outputs/search/scripting remain planned.

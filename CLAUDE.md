@@ -9,11 +9,13 @@ Read this file first. No exceptions.
 
 `etwarden` — A Windows-only CLI tool that captures per-process network activity
 via ETW (Event Tracing for Windows) and outputs structured NDJSON to stdout.
+Provides connection tracking, DNS monitoring, raw packet capture with DPI,
+IP classification, TCP state machine, and flow-level aggregation.
 Designed as a machine-readable tool for agent runtimes.
 
 Platform: **Windows only** (x86_64-pc-windows-msvc)
 Privilege: **Administrator required** at runtime
-Language: **Rust (stable ≥ 1.75)**
+Language: **Rust (stable ≥ 1.75, edition 2021)**
 
 ---
 
@@ -25,6 +27,7 @@ Read in this order:
 2. `ARCHITECTURE.md` — module layout, data flow, seam design, phase roadmap
 3. `CONTEXT.md` — domain glossary, provider GUIDs, canonical terms
 4. `docs/DEV_STANDARDS.md` — toolchain, CI gate, lint policy, file rules, LLM conventions
+5. `docs/ROADMAP.md` — full research + implementation plan for all future phases
 
 ---
 
@@ -37,6 +40,8 @@ Read in this order:
 | `ARCHITECTURE.md` | Full system architecture: modules, data flow, seams, JSON contract. |
 | `CONTEXT.md` | Domain glossary. Canonical term definitions. Provider GUIDs. |
 | `docs/DEV_STANDARDS.md` | Dev standards: toolchain, CI, lint, naming, file budget, unsafe policy. |
+| `docs/ROADMAP.md` | Full research: competitor analysis, 4-phase plan, algorithms, data structures. |
+| `docs/TASK_PLAN.md` | Task tracking. |
 | `Cargo.toml` | Dependencies, lints, features, release profile. |
 | `rustfmt.toml` | Code format config. |
 | `deny.toml` | Supply chain audit config. |
@@ -57,8 +62,9 @@ Read in this order:
 | What lint rules apply? | `docs/DEV_STANDARDS.md` → Clippy / Lint Policy |
 | What goes in each file header? | `docs/DEV_STANDARDS.md` → File Header |
 | How do I handle errors? | `docs/DEV_STANDARDS.md` → Error Handling |
-| What are the line budgets? | `docs/DEV_STANDARDS.md` → Module Line Budgets |
+| What are the line budgets? | `ARCHITECTURE.md` → Module Line Budgets |
 | What are the naming rules? | `docs/DEV_STANDARDS.md` → Naming Conventions |
+| What is the implementation plan? | `docs/ROADMAP.md` |
 
 ---
 
@@ -117,13 +123,19 @@ manually copy from `.githooks/` to `.git/hooks/`.
 
 ## Phase Roadmap
 
-All phases are canonical. There are no optional phases.
+All phases are canonical. See `docs/ROADMAP.md` for full detail.
 
-| Phase | Deliverable |
-|-------|-------------|
-| 1 | TCPIP provider → connection-level NDJSON |
-| 2 | NDIS provider + correlator → .pcapng output |
-| 3 | `--spawn` mode: launch child process + track PID |
+| Phase | Deliverable | Status |
+|-------|-------------|--------|
+| 1 | TCPIP provider → connection-level NDJSON | ✅ Done |
+| 2 | NDIS provider + correlator → .pcapng output | ✅ Done |
+| 3 | `--spawn` mode: launch child process + track PID | ✅ Done |
+| 3.5 | DNS Client ETW → DnsQuery/DnsResponse NDJSON | ✅ Done |
+| 3.6 | DPI, TCP state machine, connection tracker, IP classification | ✅ Done |
+| 4 | TLS SNI/JA3/JA4 fingerprinting, HTTP DPI, process name enrichment | ✅ Done |
+| 5 | HTTPS decryption (rustls-mitm) | ✅ Done |
+| 6 | Traffic control (rule engine, WinDivert) | Planned |
+| 7 | Advanced (Protobuf output, search, scripting) | Planned |
 
 ---
 
@@ -136,6 +148,9 @@ All phases are canonical. There are no optional phases.
 5. Every file respects its line budget. Exceed budget → split, not expand.
 6. `output/schema.rs` types are the stable agent contract. No breaking changes.
 7. `--no-verify` is banned on all git operations.
+8. Edition 2021 — no `let chains`.
+9. No `#[allow(...)]` in source — use `Cargo.toml` `[lints.clippy]` instead.
+10. `panic = "deny"`, `unsafe_code = "forbid"` in `Cargo.toml`.
 
 ---
 
@@ -143,12 +158,14 @@ All phases are canonical. There are no optional phases.
 
 | Module | Responsibility |
 |--------|---------------|
-| `capture/` | ETW session lifecycle, provider enable, event loop |
-| `parser/` | Convert RawEvent → NetEvent per provider |
+| `capture/` | ETW session lifecycle, provider enable (TCPIP + NDIS + Correlation + DNS Client), event loop |
+| `parser/` | Convert RawEvent → NetEvent per provider; DNS wire parsing, DPI, TCP state machine |
 | `filter/` | Drop events not belonging to TargetPid |
 | `pcap/` | Correlate RawFrame to TargetPid, write .pcapng |
-| `process/` | Spawn child process, monitor lifecycle |
-| `output/` | Serialize NetEvent to NDJSON stdout |
+| `process/` | Spawn child process, monitor lifecycle, PID → process name lookup |
+| `output/` | Serialize NetEvent to NDJSON stdout (EventLine + DnsEventLine + SummaryLine) |
+| `tracker.rs` | Connection flow tracker: DashMap<FiveTuple, TrackedConnection>, byte counters, DPI, idle cleanup |
+| `classify.rs` | IP scope classification: Public/Private/LinkLocal/Loopback/Multicast/etc |
 | `cli.rs` | clap argument definitions |
 | `error.rs` | Unified error types |
 | `main.rs` | Assemble modules, run capture loop |

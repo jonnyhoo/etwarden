@@ -86,7 +86,16 @@ No blanket `#[allow(clippy::all)]`.
 targets = [{ triple = "x86_64-pc-windows-msvc" }]
 
 [licenses]
-allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "Unicode-DFS-2016"]
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "Unicode-3.0",
+]
 confidence-threshold = 0.8
 
 [bans]
