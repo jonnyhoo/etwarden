@@ -7,6 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 45 / 100
 
+mod connection;
 mod endpoint;
 mod event;
 

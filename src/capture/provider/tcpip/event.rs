@@ -10,7 +10,10 @@
 use chrono::{DateTime, Utc};
 use ferrisetw::{parser::Parser, EventRecord, SchemaLocator};
 
-use super::endpoint::{parse_endpoints_v4, parse_endpoints_v6, parse_size};
+use super::{
+    connection::{parse_connect_v4, parse_connect_v6, parse_disconnect_v4, parse_disconnect_v6},
+    endpoint::{parse_endpoints_v4, parse_endpoints_v6, parse_size},
+};
 use crate::{
     capture::provider::common::record_timestamp,
     parser::{
@@ -67,58 +70,6 @@ pub(super) fn parse_tcpip_event(record: &EventRecord, locator: &SchemaLocator) -
 
 fn parse_kernel_network_pid(parser: &Parser<'_, '_>) -> Option<u32> {
     parser.try_parse("PID").ok()
-}
-
-fn parse_connect_v4(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let endpoints = parse_endpoints_v4(parser)?;
-    Some(NetEvent::Connect {
-        timestamp: ts,
-        pid,
-        proto: Protocol::Tcp,
-        src: endpoints.src,
-        dst: endpoints.dst,
-        bytes_out: 0,
-        bytes_in: 0,
-    })
-}
-
-fn parse_connect_v6(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let endpoints = parse_endpoints_v6(parser)?;
-    Some(NetEvent::Connect {
-        timestamp: ts,
-        pid,
-        proto: Protocol::Tcp,
-        src: endpoints.src,
-        dst: endpoints.dst,
-        bytes_out: 0,
-        bytes_in: 0,
-    })
-}
-
-fn parse_disconnect_v4(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let endpoints = parse_endpoints_v4(parser)?;
-    Some(NetEvent::Disconnect {
-        timestamp: ts,
-        pid,
-        proto: Protocol::Tcp,
-        src: endpoints.src,
-        dst: endpoints.dst,
-        bytes_out: 0,
-        bytes_in: 0,
-    })
-}
-
-fn parse_disconnect_v6(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
-    let endpoints = parse_endpoints_v6(parser)?;
-    Some(NetEvent::Disconnect {
-        timestamp: ts,
-        pid,
-        proto: Protocol::Tcp,
-        src: endpoints.src,
-        dst: endpoints.dst,
-        bytes_out: 0,
-        bytes_in: 0,
-    })
 }
 
 fn parse_send_v4(parser: &Parser<'_, '_>, pid: u32, ts: DateTime<Utc>) -> Option<NetEvent> {
