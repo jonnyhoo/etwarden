@@ -6,7 +6,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 277 / 300
+//! **Line budget**: 340 / 400
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -97,6 +97,37 @@ pub enum NetEvent {
         result_ips: Vec<String>,
         truncated: bool,
     },
+    /// Plaintext HTTP request observed from an attributed TCP packet.
+    HttpRequest {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        src: String,
+        dst: String,
+        method: String,
+        path: String,
+        host: Option<String>,
+    },
+    /// Plaintext HTTP response observed from an attributed TCP packet.
+    HttpResponse {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        src: String,
+        dst: String,
+        status_line: String,
+        host: Option<String>,
+    },
+    /// TLS `ClientHello` metadata observed from an attributed TCP packet.
+    TlsHello {
+        #[serde(rename = "t")]
+        timestamp: DateTime<Utc>,
+        pid: u32,
+        src: String,
+        dst: String,
+        sni: Option<String>,
+        version: Option<String>,
+    },
 }
 
 impl NetEvent {
@@ -108,7 +139,12 @@ impl NetEvent {
             | Self::Disconnect { bytes_out, .. }
             | Self::Send { bytes_out, .. }
             | Self::Recv { bytes_out, .. } => *bytes_out,
-            Self::RawCapture { .. } | Self::DnsQuery { .. } | Self::DnsResponse { .. } => 0,
+            Self::RawCapture { .. }
+            | Self::DnsQuery { .. }
+            | Self::DnsResponse { .. }
+            | Self::HttpRequest { .. }
+            | Self::HttpResponse { .. }
+            | Self::TlsHello { .. } => 0,
         }
     }
 
@@ -122,7 +158,10 @@ impl NetEvent {
             | Self::Recv { pid, .. }
             | Self::RawCapture { pid, .. }
             | Self::DnsQuery { pid, .. }
-            | Self::DnsResponse { pid, .. } => *pid,
+            | Self::DnsResponse { pid, .. }
+            | Self::HttpRequest { pid, .. }
+            | Self::HttpResponse { pid, .. }
+            | Self::TlsHello { pid, .. } => *pid,
         }
     }
 
@@ -134,7 +173,12 @@ impl NetEvent {
             | Self::Disconnect { bytes_in, .. }
             | Self::Send { bytes_in, .. }
             | Self::Recv { bytes_in, .. } => *bytes_in,
-            Self::RawCapture { .. } | Self::DnsQuery { .. } | Self::DnsResponse { .. } => 0,
+            Self::RawCapture { .. }
+            | Self::DnsQuery { .. }
+            | Self::DnsResponse { .. }
+            | Self::HttpRequest { .. }
+            | Self::HttpResponse { .. }
+            | Self::TlsHello { .. } => 0,
         }
     }
 }

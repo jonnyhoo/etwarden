@@ -21,7 +21,8 @@ pub struct HttpInfo {
 }
 
 const HTTP_METHODS: &[&[u8]] = &[
-    b"GET", b"POST", b"PUT", b"DELETE", b"HEAD", b"OPTIONS", b"PATCH", b"HTTP/",
+    b"GET", b"POST", b"PUT", b"DELETE", b"HEAD", b"OPTIONS", b"PATCH", b"CONNECT", b"TRACE",
+    b"HTTP/",
 ];
 
 /// Detect plaintext HTTP in a TCP payload.

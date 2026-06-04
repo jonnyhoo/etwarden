@@ -6,7 +6,7 @@
 //! **Dependencies**: `etwarden`, `insta`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 157 / 180
+//! **Line budget**: 205 / 240
 
 use chrono::{TimeZone, Utc};
 use etwarden::{
@@ -92,6 +92,29 @@ fn dns_response_event() -> NetEvent {
     }
 }
 
+fn http_request_event() -> NetEvent {
+    NetEvent::HttpRequest {
+        timestamp: ts(),
+        pid: 1234,
+        src: "10.0.0.1:49152".into(),
+        dst: "93.184.216.34:80".into(),
+        method: "GET".into(),
+        path: "/api/data".into(),
+        host: Some("example.com".into()),
+    }
+}
+
+fn tls_hello_event() -> NetEvent {
+    NetEvent::TlsHello {
+        timestamp: ts(),
+        pid: 1234,
+        src: "10.0.0.1:49152".into(),
+        dst: "93.184.216.34:443".into(),
+        sni: Some("example.com".into()),
+        version: Some("TLS 1.2/1.3".into()),
+    }
+}
+
 #[test]
 fn snapshot_connect_event_line() {
     let line = event_to_line(&connect_event());
@@ -126,6 +149,18 @@ fn snapshot_dns_query_event_line() {
 fn snapshot_dns_response_event_line() {
     let line = event_to_line(&dns_response_event());
     insta::assert_json_snapshot!("dns_response_event_line", line);
+}
+
+#[test]
+fn snapshot_http_request_event_line() {
+    let line = event_to_line(&http_request_event());
+    insta::assert_json_snapshot!("http_request_event_line", line);
+}
+
+#[test]
+fn snapshot_tls_hello_event_line() {
+    let line = event_to_line(&tls_hello_event());
+    insta::assert_json_snapshot!("tls_hello_event_line", line);
 }
 
 #[test]

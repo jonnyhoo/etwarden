@@ -54,7 +54,10 @@ const fn extract_pid(event: &NetEvent) -> u32 {
         | NetEvent::Recv { pid, .. }
         | NetEvent::RawCapture { pid, .. }
         | NetEvent::DnsQuery { pid, .. }
-        | NetEvent::DnsResponse { pid, .. } => *pid,
+        | NetEvent::DnsResponse { pid, .. }
+        | NetEvent::HttpRequest { pid, .. }
+        | NetEvent::HttpResponse { pid, .. }
+        | NetEvent::TlsHello { pid, .. } => *pid,
     }
 }
 

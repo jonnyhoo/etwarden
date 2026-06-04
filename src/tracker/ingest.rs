@@ -62,7 +62,10 @@ impl TrackableEvent {
             } => (*pid, *proto, src, dst, *bytes_out, *bytes_in, true),
             NetEvent::RawCapture { .. }
             | NetEvent::DnsQuery { .. }
-            | NetEvent::DnsResponse { .. } => return None,
+            | NetEvent::DnsResponse { .. }
+            | NetEvent::HttpRequest { .. }
+            | NetEvent::HttpResponse { .. }
+            | NetEvent::TlsHello { .. } => return None,
         };
 
         Some(Self {

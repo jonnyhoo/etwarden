@@ -24,6 +24,16 @@ pub fn parse_tuple_from_addrs(src: &str, dst: &str, proto: Protocol) -> Option<F
     })
 }
 
+/// Format an IP and port using the same endpoint syntax emitted by TCPIP ETW parsers.
+#[must_use]
+pub fn format_addr_port(ip: &str, port: u16) -> String {
+    if ip.contains(':') {
+        format!("[{ip}]:{port}")
+    } else {
+        format!("{ip}:{port}")
+    }
+}
+
 /// Split `ip:port` into (`ip_string`, `port_u16`).
 fn parse_addr_port(addr: &str) -> Option<(String, u16)> {
     if addr.starts_with('[') {
@@ -77,5 +87,11 @@ mod tests {
         assert!(parse_addr_port("x]::1:443").is_none());
         assert!(parse_addr_port("::1:443").is_none());
         assert!(parse_addr_port("[not-ip]:443").is_none());
+    }
+
+    #[test]
+    fn format_addr_port_brackets_ipv6_only() {
+        assert_eq!(format_addr_port("192.168.1.1", 443), "192.168.1.1:443");
+        assert_eq!(format_addr_port("::1", 443), "[::1]:443");
     }
 }

@@ -8,10 +8,12 @@
 //! **Line budget**: 185 / 240
 
 mod dns;
+mod dpi;
 mod network;
 
 use self::{
     dns::{dns_query_line, dns_response_line},
+    dpi::{http_request_line, http_response_line, tls_hello_line},
     network::network_event_line,
 };
 use crate::{
@@ -166,6 +168,56 @@ pub fn event_to_line_enriched(
             status_name,
             result_ips,
             truncated,
+            process_name,
+        ),
+        NetEvent::HttpRequest {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref method,
+            ref path,
+            ref host,
+        } => http_request_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            method,
+            path,
+            host.as_deref(),
+            process_name,
+        ),
+        NetEvent::HttpResponse {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref status_line,
+            ref host,
+        } => http_response_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            status_line,
+            host.as_deref(),
+            process_name,
+        ),
+        NetEvent::TlsHello {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref sni,
+            ref version,
+        } => tls_hello_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            sni.as_deref(),
+            version.as_deref(),
             process_name,
         ),
     }
@@ -338,5 +390,45 @@ mod tests {
             unreachable!()
         };
         assert!(line.truncated);
+    }
+
+    #[test]
+    fn http_request_line_keeps_method_path_and_host() {
+        let event = NetEvent::HttpRequest {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            src: "10.0.0.1:51000".into(),
+            dst: "93.184.216.34:80".into(),
+            method: "GET".into(),
+            path: "/index.html".into(),
+            host: Some("example.com".into()),
+        };
+        let line = event_to_line(&event);
+        let OutputLine::HttpEvent(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.event, "http_request");
+        assert_eq!(line.method.as_deref(), Some("GET"));
+        assert_eq!(line.path.as_deref(), Some("/index.html"));
+        assert_eq!(line.host.as_deref(), Some("example.com"));
+    }
+
+    #[test]
+    fn tls_hello_line_keeps_sni_and_version() {
+        let event = NetEvent::TlsHello {
+            timestamp: test_timestamp(),
+            pid: 1234,
+            src: "10.0.0.1:51000".into(),
+            dst: "93.184.216.34:443".into(),
+            sni: Some("example.com".into()),
+            version: Some("TLS 1.2/1.3".into()),
+        };
+        let line = event_to_line(&event);
+        let OutputLine::TlsEvent(line) = line else {
+            unreachable!()
+        };
+        assert_eq!(line.event, "tls_hello");
+        assert_eq!(line.sni.as_deref(), Some("example.com"));
+        assert_eq!(line.tls_version.as_deref(), Some("TLS 1.2/1.3"));
     }
 }

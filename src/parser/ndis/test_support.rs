@@ -32,13 +32,22 @@ pub(super) fn raw_ndis(data: Vec<u8>) -> RawEvent {
 }
 
 pub(super) fn build_ethernet_ipv4_tcp(payload_len: usize) -> Vec<u8> {
+    let payload = vec![0xDD; payload_len];
+    build_ethernet_ipv4_tcp_payload(&payload, 1234, 80)
+}
+
+pub(super) fn build_ethernet_ipv4_tcp_payload(
+    payload: &[u8],
+    src_port: u16,
+    dst_port: u16,
+) -> Vec<u8> {
     let mut frame = Vec::new();
     frame.extend_from_slice(&[0xFF; 6]);
     frame.extend_from_slice(&[0xAA; 6]);
     frame.extend_from_slice(&ETHERTYPE_IPV4);
     frame.push(0x45);
     frame.push(0x00);
-    let total_len = u16::try_from(20 + 20 + payload_len).expect("fits in u16");
+    let total_len = u16::try_from(20 + 20 + payload.len()).expect("fits in u16");
     frame.extend_from_slice(&total_len.to_be_bytes());
     frame.extend_from_slice(&[0x00, 0x00]);
     frame.extend_from_slice(&[0x40, 0x00]);
@@ -47,12 +56,12 @@ pub(super) fn build_ethernet_ipv4_tcp(payload_len: usize) -> Vec<u8> {
     frame.extend_from_slice(&[0x00, 0x00]);
     frame.extend_from_slice(&[10, 0, 0, 1]);
     frame.extend_from_slice(&[10, 0, 0, 2]);
-    frame.extend_from_slice(&1234u16.to_be_bytes());
-    frame.extend_from_slice(&80u16.to_be_bytes());
+    frame.extend_from_slice(&src_port.to_be_bytes());
+    frame.extend_from_slice(&dst_port.to_be_bytes());
     frame.extend_from_slice(&[0u8; 8]);
     frame.push(0x50);
     frame.extend_from_slice(&[0u8; 7]);
-    frame.extend_from_slice(&vec![0xDD; payload_len]);
+    frame.extend_from_slice(payload);
     frame
 }
 

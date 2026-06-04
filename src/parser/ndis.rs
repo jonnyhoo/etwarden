@@ -23,6 +23,7 @@ use crate::{
     parser::{
         dns_codes::{dns_status_name, dns_type_name},
         dpi::{self, DpiResult},
+        endpoint::format_addr_port,
         types::{NetEvent, Protocol, RawEvent, RawFrame},
         EventParser,
     },
@@ -52,6 +53,12 @@ impl NdisParser {
     #[must_use]
     pub fn parse_dns_event(&self, raw: &RawEvent) -> Option<NetEvent> {
         parse_dns_event(&raw.data, raw.timestamp, &self.correlator)
+    }
+
+    /// Parses attributed application-layer DPI events from the raw frame payload.
+    #[must_use]
+    pub fn parse_dpi_event(&self, raw: &RawEvent) -> Option<NetEvent> {
+        parse_dpi_event(&raw.data, raw.timestamp, &self.correlator)
     }
 }
 
@@ -105,6 +112,61 @@ pub(crate) fn parse_dns_event(
     }
 }
 
+/// Builds a per-process HTTP/TLS event from a captured TCP frame.
+pub(crate) fn parse_dpi_event(
+    frame: &[u8],
+    timestamp: DateTime<Utc>,
+    correlator: &Correlator,
+) -> Option<NetEvent> {
+    let packet = extract_packet(frame)?;
+    if packet.tuple.protocol != Protocol::Tcp {
+        return None;
+    }
+
+    let pid = correlator.resolve_pid(&packet.tuple)?;
+    let src = format_addr_port(&packet.tuple.src_ip, packet.tuple.src_port);
+    let dst = format_addr_port(&packet.tuple.dst_ip, packet.tuple.dst_port);
+
+    match dpi::analyze_tcp_payload(packet.payload, packet.tuple.src_port, packet.tuple.dst_port)? {
+        DpiResult::Http(info) => {
+            let dpi::HttpInfo {
+                method,
+                uri_or_status,
+                host,
+            } = info;
+            if let Some(method) = method {
+                Some(NetEvent::HttpRequest {
+                    timestamp,
+                    pid,
+                    src,
+                    dst,
+                    method,
+                    path: uri_or_status,
+                    host,
+                })
+            } else {
+                Some(NetEvent::HttpResponse {
+                    timestamp,
+                    pid,
+                    src,
+                    dst,
+                    status_line: uri_or_status,
+                    host,
+                })
+            }
+        }
+        DpiResult::Tls(info) => Some(NetEvent::TlsHello {
+            timestamp,
+            pid,
+            src,
+            dst,
+            sni: info.sni,
+            version: info.version,
+        }),
+        DpiResult::Dns(_) => None,
+    }
+}
+
 impl EventParser for NdisParser {
     fn provider_guid(&self) -> GUID {
         GUID::from(PROVIDER_NDIS)
@@ -128,8 +190,8 @@ mod tests {
     use crate::parser::{
         ndis::test_support::{
             build_dns_query, build_dns_response_a, build_ethernet_ipv4_tcp,
-            build_ethernet_ipv4_udp, build_ethernet_ipv4_udp_with_ips, build_ethernet_ipv6_udp,
-            raw_ndis, ts,
+            build_ethernet_ipv4_tcp_payload, build_ethernet_ipv4_udp,
+            build_ethernet_ipv4_udp_with_ips, build_ethernet_ipv6_udp, raw_ndis, ts,
         },
         types::FiveTuple,
     };
@@ -279,6 +341,88 @@ mod tests {
     }
 
     #[test]
+    fn parse_http_request_from_tcp_frame() {
+        let corr = Arc::new(Correlator::new());
+        corr.register_connection(
+            42,
+            FiveTuple {
+                src_ip: "10.0.0.1".into(),
+                src_port: 51000,
+                dst_ip: "10.0.0.2".into(),
+                dst_port: 80,
+                protocol: Protocol::Tcp,
+            },
+        );
+        let parser = NdisParser::new(corr);
+        let frame = build_ethernet_ipv4_tcp_payload(
+            b"GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n",
+            51000,
+            80,
+        );
+        let raw = raw_ndis(frame);
+
+        let event = parser.parse_dpi_event(&raw).expect("http event");
+        let NetEvent::HttpRequest {
+            pid,
+            method,
+            path,
+            host,
+            src,
+            dst,
+            ..
+        } = event
+        else {
+            unreachable!("expected HTTP request")
+        };
+        assert_eq!(pid, 42);
+        assert_eq!(method, "GET");
+        assert_eq!(path, "/index.html");
+        assert_eq!(host.as_deref(), Some("example.com"));
+        assert_eq!(src, "10.0.0.1:51000");
+        assert_eq!(dst, "10.0.0.2:80");
+    }
+
+    #[test]
+    fn parse_tls_hello_from_tcp_frame() {
+        let corr = Arc::new(Correlator::new());
+        corr.register_connection(
+            42,
+            FiveTuple {
+                src_ip: "10.0.0.1".into(),
+                src_port: 51000,
+                dst_ip: "10.0.0.2".into(),
+                dst_port: 443,
+                protocol: Protocol::Tcp,
+            },
+        );
+        let parser = NdisParser::new(corr);
+        let frame =
+            build_ethernet_ipv4_tcp_payload(&build_tls_client_hello("example.com"), 51000, 443);
+        let raw = raw_ndis(frame);
+
+        let event = parser.parse_dpi_event(&raw).expect("tls event");
+        let NetEvent::TlsHello {
+            pid, sni, version, ..
+        } = event
+        else {
+            unreachable!("expected TLS hello")
+        };
+        assert_eq!(pid, 42);
+        assert_eq!(sni.as_deref(), Some("example.com"));
+        assert_eq!(version.as_deref(), Some("TLS 1.2/1.3"));
+    }
+
+    #[test]
+    fn parse_dpi_requires_pid_correlation() {
+        let corr = Arc::new(Correlator::new());
+        let parser = NdisParser::new(corr);
+        let frame = build_ethernet_ipv4_tcp_payload(b"GET / HTTP/1.1\r\n\r\n", 51000, 80);
+        let raw = raw_ndis(frame);
+
+        assert!(parser.parse_dpi_event(&raw).is_none());
+    }
+
+    #[test]
     fn unknown_correlation_is_not_emitted() {
         let corr = Arc::new(Correlator::new());
         let parser = NdisParser::new(corr);
@@ -295,5 +439,58 @@ mod tests {
         let raw = raw_ndis(vec![0x00; 5]);
 
         assert!(parser.parse(&raw).is_none());
+    }
+
+    fn build_tls_client_hello(host: &str) -> Vec<u8> {
+        let mut sni = Vec::new();
+        sni.extend_from_slice(&[0x00, 0x00]);
+        sni.push(0x00);
+        sni.extend_from_slice(
+            &u16::try_from(host.len())
+                .expect("host length fits")
+                .to_be_bytes(),
+        );
+        sni.extend_from_slice(host.as_bytes());
+        let list_len = u16::try_from(sni.len() - 2)
+            .expect("sni list length fits")
+            .to_be_bytes();
+        sni[0..2].copy_from_slice(&list_len);
+
+        let mut extensions = Vec::new();
+        extensions.extend_from_slice(&0u16.to_be_bytes());
+        extensions.extend_from_slice(
+            &u16::try_from(sni.len())
+                .expect("sni length fits")
+                .to_be_bytes(),
+        );
+        extensions.extend_from_slice(&sni);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&[0x03, 0x03]);
+        body.extend_from_slice(&[0u8; 32]);
+        body.push(0);
+        body.extend_from_slice(&2u16.to_be_bytes());
+        body.extend_from_slice(&[0x13, 0x01]);
+        body.push(1);
+        body.push(0);
+        body.extend_from_slice(
+            &u16::try_from(extensions.len())
+                .expect("extensions length fits")
+                .to_be_bytes(),
+        );
+        body.extend_from_slice(&extensions);
+
+        let mut payload = vec![0x16, 0x03, 0x03];
+        let record_len = 4 + body.len();
+        payload.extend_from_slice(
+            &u16::try_from(record_len)
+                .expect("record length fits")
+                .to_be_bytes(),
+        );
+        payload.push(0x01);
+        let handshake_len = u32::try_from(body.len()).expect("handshake length fits");
+        payload.extend_from_slice(&handshake_len.to_be_bytes()[1..4]);
+        payload.extend_from_slice(&body);
+        payload
     }
 }

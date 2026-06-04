@@ -44,6 +44,9 @@ pub fn build_ndis_provider(
             if let Some(event) = parser.parse_dns_event(&raw) {
                 registry.push_event(event);
             }
+            if let Some(event) = parser.parse_dpi_event(&raw) {
+                registry.push_event(event);
+            }
             if emit_raw_capture {
                 if let Some(event) = parser.parse(&raw) {
                     registry.push_event(event);

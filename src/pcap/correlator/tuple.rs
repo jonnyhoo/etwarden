@@ -35,6 +35,9 @@ pub(super) fn event_tuple_parts(event: &NetEvent) -> Option<(u32, Protocol, &str
             dst,
             ..
         } => Some((*pid, *proto, src, dst)),
+        NetEvent::HttpRequest { pid, src, dst, .. }
+        | NetEvent::HttpResponse { pid, src, dst, .. }
+        | NetEvent::TlsHello { pid, src, dst, .. } => Some((*pid, Protocol::Tcp, src, dst)),
         NetEvent::Disconnect { .. }
         | NetEvent::RawCapture { .. }
         | NetEvent::DnsQuery { .. }

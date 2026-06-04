@@ -1,13 +1,13 @@
 //! # `output::schema`
 //!
 //! **Purpose**: Stable agent-contract serde types for NDJSON output.
-//! **Public API**: `struct EventLine`, `struct DnsEventLine`, `struct SummaryLine`,
+//! **Public API**: `struct EventLine`, `struct DnsEventLine`, `struct HttpEventLine`, `struct TlsEventLine`, `struct SummaryLine`,
 //!                `struct ErrorLine`, `enum OutputLine`, `fn event_to_line`,
 //!                `fn event_to_line_enriched`
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 170 / 240
+//! **Line budget**: 250 / 340
 
 mod convert;
 mod scope;
@@ -80,6 +80,62 @@ pub struct DnsEventLine {
     pub process_name: Option<String>,
 }
 
+/// A plaintext HTTP DPI event line in the agent contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HttpEventLine {
+    /// ISO 8601 timestamp.
+    #[serde(rename = "t")]
+    pub timestamp: DateTime<Utc>,
+    /// Process ID that owned the packet.
+    pub pid: u32,
+    /// Event type: `http_request` or `http_response`.
+    pub event: String,
+    /// Source address:port.
+    pub src: String,
+    /// Destination address:port.
+    pub dst: String,
+    /// HTTP request method.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// HTTP request path/URI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    /// HTTP response status line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_line: Option<String>,
+    /// HTTP Host header value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    /// Resolved process name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_name: Option<String>,
+}
+
+/// A TLS `ClientHello` DPI event line in the agent contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TlsEventLine {
+    /// ISO 8601 timestamp.
+    #[serde(rename = "t")]
+    pub timestamp: DateTime<Utc>,
+    /// Process ID that owned the packet.
+    pub pid: u32,
+    /// Event type: `tls_hello`.
+    pub event: String,
+    /// Source address:port.
+    pub src: String,
+    /// Destination address:port.
+    pub dst: String,
+    /// Server Name Indication hostname.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sni: Option<String>,
+    /// TLS version string.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tls_version: Option<String>,
+    /// Resolved process name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_name: Option<String>,
+}
+
 #[expect(
     clippy::trivially_copy_pass_by_ref,
     reason = "serde skip_serializing_if predicates receive field references"
@@ -135,6 +191,8 @@ impl ErrorLine {
 pub enum OutputLine {
     Event(EventLine),
     DnsEvent(DnsEventLine),
+    HttpEvent(HttpEventLine),
+    TlsEvent(TlsEventLine),
     Summary(SummaryLine),
     Error(ErrorLine),
 }
