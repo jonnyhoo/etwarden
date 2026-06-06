@@ -16,6 +16,7 @@
 | cargo-deny | `cargo install cargo-deny` | License + supply chain |
 | cargo-audit | `cargo install cargo-audit` | CVE advisory scan |
 | cargo-machete | `cargo install cargo-machete` | Unused dependency cleanup |
+| cargo-coupling | `cargo install cargo-coupling` | Coupling health gate |
 | cargo-llvm-cov | `cargo install cargo-llvm-cov` | Coverage (Windows-friendly) |
 | cargo-criterion | `cargo install cargo-criterion` | Benchmarks |
 
@@ -29,6 +30,7 @@ cargo clippy --all-targets -- -D warnings
 cargo deny check
 cargo audit
 cargo machete
+cargo coupling --check --no-git --max-circular 8
 cargo test
 cargo test --features integration       # requires admin runner
 cargo llvm-cov --summary-only           # coverage report
@@ -41,6 +43,25 @@ No merge unless all pass.
 **Not in CI (run manually):**
 - `cargo mutants` — valuable but slow, run before releases
 - `cargo miri` — incompatible with windows-rs / ETW FFI
+- `cargo coupling --json -o logs/coupling.json` — full churn-aware report for refactor planning
+
+---
+
+## Coupling Baseline (cargo-coupling)
+
+CI uses a structural, deterministic gate:
+
+```
+cargo coupling --check --no-git --max-circular 8
+```
+
+Rationale:
+
+- `--no-git` avoids failing CI on short-term churn while the project is still evolving.
+- `--max-circular 8` records the current module-cycle budget; do not increase it.
+- Lower `--max-circular` only after an intentional refactor removes cycles.
+- Do not add facade traits only to satisfy the report; refactor only when the module boundary is real.
+- Full churn-aware reports are manual planning input, not a merge gate.
 
 ---
 

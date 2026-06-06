@@ -45,6 +45,7 @@ Read in this order:
 | `Cargo.toml` | Dependencies, lints, features, release profile. |
 | `rustfmt.toml` | Code format config. |
 | `deny.toml` | Supply chain audit config. |
+| `.coupling.toml` | cargo-coupling analysis thresholds. |
 
 ---
 
@@ -76,6 +77,7 @@ cargo clippy --all-targets -- -D warnings
 cargo deny check
 cargo audit
 cargo machete
+cargo coupling --check --no-git --max-circular 8
 cargo test
 cargo doc --no-deps
 ```
