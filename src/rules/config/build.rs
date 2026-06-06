@@ -2,10 +2,10 @@
 //!
 //! **Purpose**: Builders for top-level rules config collections.
 //! **Public API**: `RulesConfig` methods
-//! **Dependencies**: `rules::config`, `rules::{hosts, intercept, matcher}`
+//! **Dependencies**: `rules::config`, `rules::{hosts, intercept, matcher, replace}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 53 / 80
+//! **Line budget**: 66 / 80
 
 use super::{
     DecodedReplaceRuleConfig, HostsRuleConfig, InterceptRuleConfig, ReplaceRuleConfig,
@@ -15,6 +15,7 @@ use crate::rules::{
     hosts::{HostsRule, HostsRuleError},
     intercept::InterceptRule,
     matcher::MatchError,
+    replace::ReplaceRule,
 };
 
 impl RulesConfig {
@@ -29,6 +30,20 @@ impl RulesConfig {
         self.replace_rules
             .iter()
             .map(ReplaceRuleConfig::decode)
+            .collect()
+    }
+
+    /// Builds configured replacement rules.
+    ///
+    /// # Returns
+    /// Ordered executable replacement rules.
+    ///
+    /// # Errors
+    /// Returns `RuleConfigError` if any encoded `source` or `target` value is invalid.
+    pub fn build_replace_rules(&self) -> Result<Vec<ReplaceRule>, RuleConfigError> {
+        self.replace_rules
+            .iter()
+            .map(ReplaceRuleConfig::build)
             .collect()
     }
 

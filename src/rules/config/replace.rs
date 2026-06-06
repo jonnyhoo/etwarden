@@ -2,14 +2,18 @@
 //!
 //! **Purpose**: Replacement-rule config shapes and decoding.
 //! **Public API**: `ReplaceRuleConfig`, `DecodedReplaceRuleConfig`, `ReplacementRuleKind`
-//! **Dependencies**: `rules::config::value`, `serde`
+//! **Dependencies**: `rules::config::value`, `rules::replace`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 65 / 120
+//! **Line budget**: 86 / 120
+
+#[cfg(test)]
+mod tests;
 
 use serde::Deserialize;
 
 use super::value::{decode_value, RuleConfigError, RuleValueEncoding};
+use crate::rules::replace::ReplaceRule;
 
 /// Config shape for one replacement rule.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -61,5 +65,27 @@ impl ReplaceRuleConfig {
             source: decode_value(&self.source, self.encoding)?,
             target: decode_value(&self.target, self.encoding)?,
         })
+    }
+
+    /// Builds one executable replacement rule.
+    ///
+    /// # Returns
+    /// A replacement rule with decoded byte values.
+    ///
+    /// # Errors
+    /// Returns `RuleConfigError` when the configured value encoding is invalid.
+    pub fn build(&self) -> Result<ReplaceRule, RuleConfigError> {
+        Ok(self.decode()?.into_rule())
+    }
+}
+
+impl DecodedReplaceRuleConfig {
+    /// Converts decoded config into an executable replacement rule.
+    #[must_use]
+    pub fn into_rule(self) -> ReplaceRule {
+        match self.rule_type {
+            ReplacementRuleKind::Bytes => ReplaceRule::bytes(self.source, self.target),
+            ReplacementRuleKind::File => ReplaceRule::file(self.source, self.target),
+        }
     }
 }
