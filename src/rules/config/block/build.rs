@@ -1,11 +1,11 @@
 //! # `rules::config::block::build`
 //!
-//! **Purpose**: Builders for block-rule config collections.
-//! **Public API**: `RulesConfig` block build methods
+//! **Purpose**: Builders for HTTP/WebSocket block-rule config collections.
+//! **Public API**: `RulesConfig` HTTP/WebSocket block build methods
 //! **Dependencies**: `rules::config::block`, `rules::block`, `rules::matcher`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 55 / 80
+//! **Line budget**: 48 / 80
 
 use super::{HttpBlockRuleConfig, WebSocketBlockRuleConfig};
 use crate::rules::{

@@ -3,10 +3,10 @@
 //! **Purpose**: Pure TCP/UDP socket block-rule matching by protocol, address, and priority.
 //! **Public API**: `SocketBlockAction`, `SocketBlockContext`, `SocketBlockDecision`,
 //!   `SocketBlockRule`, `SocketProtocol`, `evaluate_socket_first`
-//! **Dependencies**: `rules::matcher`
+//! **Dependencies**: `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 155 / 170
+//! **Line budget**: 159 / 170
 
 #[cfg(test)]
 mod tests;
@@ -14,7 +14,8 @@ mod tests;
 use crate::rules::matcher::{MatchError, MatchOperator, TextMatcher};
 
 /// Socket transport protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum SocketProtocol {
     /// TCP socket traffic.
     Tcp,
@@ -23,7 +24,8 @@ pub enum SocketProtocol {
 }
 
 /// Action requested by a matching socket block rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum SocketBlockAction {
     /// Disconnect the matching socket flow.
     Disconnect,

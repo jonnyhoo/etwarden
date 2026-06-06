@@ -2,7 +2,7 @@
 //!
 //! **Purpose**: Typed traffic-control rules config module root.
 //! **Public API**: `RulesConfig`, `BlockRulesConfig`, `HostsRuleConfig`, `HttpBlockRuleConfig`,
-//!   `WebSocketBlockRuleConfig`, `InterceptRuleConfig`, `ReplaceRuleConfig`,
+//!   `SocketBlockRuleConfig`, `WebSocketBlockRuleConfig`, `InterceptRuleConfig`, `ReplaceRuleConfig`,
 //!   `DecodedReplaceRuleConfig`, `ReplacementRuleKind`, `RuleValueEncoding`, `RuleConfigError`
 //! **Dependencies**: `rules::config::{block, build, hosts, intercept, replace, value}`, `serde`
 //! **Platform**: `windows-only`
@@ -18,7 +18,9 @@ mod replace;
 mod tests;
 mod value;
 
-pub use block::{BlockRulesConfig, HttpBlockRuleConfig, WebSocketBlockRuleConfig};
+pub use block::{
+    BlockRulesConfig, HttpBlockRuleConfig, SocketBlockRuleConfig, WebSocketBlockRuleConfig,
+};
 pub use hosts::HostsRuleConfig;
 pub use intercept::InterceptRuleConfig;
 pub use replace::{DecodedReplaceRuleConfig, ReplaceRuleConfig, ReplacementRuleKind};
