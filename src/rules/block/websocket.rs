@@ -3,10 +3,10 @@
 //! **Purpose**: Pure WebSocket block-rule matching by method, URL, and priority.
 //! **Public API**: `WebSocketBlockAction`, `WebSocketBlockContext`, `WebSocketBlockDecision`,
 //!   `WebSocketBlockRule`, `evaluate_websocket_first`
-//! **Dependencies**: `rules::block`, `rules::matcher`
+//! **Dependencies**: `rules::block`, `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 147 / 170
+//! **Line budget**: 149 / 170
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +15,8 @@ use super::method_matches;
 use crate::rules::matcher::{MatchError, MatchOperator, TextMatcher};
 
 /// Action requested by a matching WebSocket block rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum WebSocketBlockAction {
     /// Close the WebSocket connection.
     CloseConnection,
