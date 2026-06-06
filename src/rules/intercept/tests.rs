@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::intercept`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 96 / 140
+//! **Line budget**: 146 / 200
 
 use super::*;
 use crate::rules::matcher::MatchOperator;
