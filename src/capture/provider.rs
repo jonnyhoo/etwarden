@@ -10,6 +10,7 @@
 mod common;
 mod ndis;
 mod tcpip;
+mod tcpip_endpoint;
 
 pub use ndis::build_ndis_provider;
 pub use tcpip::build_tcpip_provider;

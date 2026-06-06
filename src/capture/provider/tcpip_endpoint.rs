@@ -1,11 +1,11 @@
-//! # `capture::provider::tcpip::endpoint`
+//! # `capture::provider::tcpip_endpoint`
 //!
 //! **Purpose**: Formats Kernel-Network endpoint fields and decodes network-order ports.
 //! **Public API**: module-private endpoint helpers
 //! **Dependencies**: `ferrisetw`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 55 / 100
+//! **Line budget**: 86 / 100
 
 use std::net::{IpAddr, Ipv4Addr};
 

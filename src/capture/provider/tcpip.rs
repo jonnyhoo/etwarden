@@ -2,13 +2,12 @@
 //!
 //! **Purpose**: Builds and parses Microsoft-Windows-Kernel-Network provider events.
 //! **Public API**: `build_tcpip_provider`
-//! **Dependencies**: `ferrisetw`, `parser::tcpip`, `parser::types`, `pcap::correlator`
+//! **Dependencies**: `ferrisetw`, `parser::tcpip`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 45 / 100
+//! **Line budget**: 41 / 100
 
 mod connection;
-mod endpoint;
 mod event;
 
 use std::sync::Arc;

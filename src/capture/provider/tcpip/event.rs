@@ -2,20 +2,23 @@
 //!
 //! **Purpose**: Parses Kernel-Network TCP/IP ferrisetw records into `NetEvent` values.
 //! **Public API**: module-private event parser
-//! **Dependencies**: `ferrisetw`, `parser::tcpip`, `parser::types`
+//! **Dependencies**: `ferrisetw`, `capture::provider::tcpip_endpoint`, `parser::tcpip`,
+//!   `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 225 / 280
+//! **Line budget**: 161 / 280
 
 use chrono::{DateTime, Utc};
 use ferrisetw::{parser::Parser, EventRecord, SchemaLocator};
 
-use super::{
-    connection::{parse_connect_v4, parse_connect_v6, parse_disconnect_v4, parse_disconnect_v6},
-    endpoint::{parse_endpoints_v4, parse_endpoints_v6, parse_size},
+use super::connection::{
+    parse_connect_v4, parse_connect_v6, parse_disconnect_v4, parse_disconnect_v6,
 };
 use crate::{
-    capture::provider::common::record_timestamp,
+    capture::provider::{
+        common::record_timestamp,
+        tcpip_endpoint::{parse_endpoints_v4, parse_endpoints_v6, parse_size},
+    },
     parser::{
         tcpip::{
             EVENT_ID_TCP_CONNECT_IPV4, EVENT_ID_TCP_CONNECT_IPV6, EVENT_ID_TCP_DISCONNECT_IPV4,

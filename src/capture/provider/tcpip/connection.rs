@@ -2,16 +2,18 @@
 //!
 //! **Purpose**: Builds TCP connect/disconnect events from Kernel-Network endpoint fields.
 //! **Public API**: module-private connection event constructors
-//! **Dependencies**: `ferrisetw`, `parser::types`
+//! **Dependencies**: `ferrisetw`, `capture::provider::tcpip_endpoint`, `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 80 / 120
+//! **Line budget**: 72 / 120
 
 use chrono::{DateTime, Utc};
 use ferrisetw::parser::Parser;
 
-use super::endpoint::{parse_endpoints_v4, parse_endpoints_v6, Endpoints};
-use crate::parser::types::{NetEvent, Protocol};
+use crate::{
+    capture::provider::tcpip_endpoint::{parse_endpoints_v4, parse_endpoints_v6, Endpoints},
+    parser::types::{NetEvent, Protocol},
+};
 
 pub(super) fn parse_connect_v4(
     parser: &Parser<'_, '_>,
