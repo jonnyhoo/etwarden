@@ -1,12 +1,12 @@
-//! # `rules::block::http`
+//! # `rules::block::websocket`
 //!
-//! **Purpose**: Pure HTTP block-rule matching by method, URL, and priority.
-//! **Public API**: `HttpBlockAction`, `HttpBlockContext`, `HttpBlockDecision`,
-//!   `HttpBlockRule`, `evaluate_http_first`
-//! **Dependencies**: `rules::matcher`
+//! **Purpose**: Pure WebSocket block-rule matching by method, URL, and priority.
+//! **Public API**: `WebSocketBlockAction`, `WebSocketBlockContext`, `WebSocketBlockDecision`,
+//!   `WebSocketBlockRule`, `evaluate_websocket_first`
+//! **Dependencies**: `rules::block`, `rules::matcher`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 145 / 160
+//! **Line budget**: 147 / 170
 
 #[cfg(test)]
 mod tests;
@@ -14,45 +14,47 @@ mod tests;
 use super::method_matches;
 use crate::rules::matcher::{MatchError, MatchOperator, TextMatcher};
 
-/// Action requested by a matching HTTP block rule.
+/// Action requested by a matching WebSocket block rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HttpBlockAction {
-    /// Close the request before forwarding upstream.
-    CloseRequest,
-    /// Close the response before forwarding downstream.
-    CloseResponse,
+pub enum WebSocketBlockAction {
+    /// Close the WebSocket connection.
+    CloseConnection,
+    /// Drop a client-to-server frame.
+    DropUpstreamFrame,
+    /// Drop a server-to-client frame.
+    DropDownstreamFrame,
 }
 
-/// Runtime HTTP fields used by block-rule evaluation.
+/// Runtime WebSocket fields used by block-rule evaluation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HttpBlockContext<'a> {
-    /// HTTP method, for example `GET` or `POST`.
+pub struct WebSocketBlockContext<'a> {
+    /// HTTP upgrade method, normally `GET`.
     pub method: &'a str,
     /// Full request URL or URL-like target.
     pub url: &'a str,
 }
 
-/// Ordered HTTP block rule with a precompiled URL matcher.
+/// Ordered WebSocket block rule with a precompiled URL matcher.
 #[derive(Debug, Clone)]
-pub struct HttpBlockRule {
+pub struct WebSocketBlockRule {
     /// Whether this rule participates in evaluation.
     pub enable: bool,
     /// Lower values win when multiple rules match.
     pub priority: u32,
-    /// HTTP method to match, or `*` for any method.
+    /// HTTP upgrade method to match, or `*` for any method.
     pub method: String,
     /// URL matching operation.
     pub url_operator: MatchOperator,
     /// URL pattern used by `url_operator`.
     pub url_pattern: String,
     /// Action emitted on match.
-    pub action: HttpBlockAction,
+    pub action: WebSocketBlockAction,
     url_matcher: TextMatcher,
 }
 
-/// Result of evaluating HTTP block rules.
+/// Result of evaluating WebSocket block rules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HttpBlockDecision {
+pub enum WebSocketBlockDecision {
     /// No rule matched.
     Allow,
     /// A rule matched and requested a block action.
@@ -62,17 +64,17 @@ pub enum HttpBlockDecision {
         /// Priority of the selected rule.
         priority: u32,
         /// Requested block action.
-        action: HttpBlockAction,
+        action: WebSocketBlockAction,
     },
 }
 
-impl HttpBlockRule {
-    /// Builds an HTTP block rule and precompiles its URL matcher.
+impl WebSocketBlockRule {
+    /// Builds a WebSocket block rule and precompiles its URL matcher.
     ///
     /// # Arguments
     /// * `enable` — Whether this rule participates in evaluation.
     /// * `priority` — Lower values win when multiple rules match.
-    /// * `method` — HTTP method to match, or `*` for any method.
+    /// * `method` — HTTP upgrade method to match, or `*` for any method.
     /// * `url_operator` — URL matching operation.
     /// * `url_pattern` — URL pattern used by `url_operator`.
     /// * `action` — Action emitted on match.
@@ -88,7 +90,7 @@ impl HttpBlockRule {
         method: impl Into<String>,
         url_operator: MatchOperator,
         url_pattern: impl Into<String>,
-        action: HttpBlockAction,
+        action: WebSocketBlockAction,
     ) -> Result<Self, MatchError> {
         let url_pattern = url_pattern.into();
         Ok(Self {
@@ -102,41 +104,41 @@ impl HttpBlockRule {
         })
     }
 
-    /// Checks whether this rule matches the supplied HTTP context.
+    /// Checks whether this rule matches the supplied WebSocket context.
     ///
     /// # Arguments
-    /// * `context` — HTTP method and URL fields.
+    /// * `context` — HTTP upgrade method and URL fields.
     ///
     /// # Returns
     /// `true` when the rule is enabled and method and URL both match.
     #[must_use]
-    pub fn matches(&self, context: &HttpBlockContext<'_>) -> bool {
+    pub fn matches(&self, context: &WebSocketBlockContext<'_>) -> bool {
         self.enable
             && method_matches(&self.method, context.method)
             && self.url_matcher.matches(context.url)
     }
 }
 
-/// Evaluates rules and returns the highest-priority HTTP block decision.
+/// Evaluates rules and returns the highest-priority WebSocket block decision.
 ///
 /// # Arguments
-/// * `context` — HTTP method and URL fields.
-/// * `rules` — HTTP block rules. Lower `priority` wins; ties keep earlier rule order.
+/// * `context` — HTTP upgrade method and URL fields.
+/// * `rules` — WebSocket block rules. Lower `priority` wins; ties keep earlier rule order.
 ///
 /// # Returns
-/// `HttpBlockDecision::Block` for the selected matching rule; otherwise `Allow`.
+/// `WebSocketBlockDecision::Block` for the selected matching rule; otherwise `Allow`.
 #[must_use]
-pub fn evaluate_http_first(
-    context: &HttpBlockContext<'_>,
-    rules: &[HttpBlockRule],
-) -> HttpBlockDecision {
+pub fn evaluate_websocket_first(
+    context: &WebSocketBlockContext<'_>,
+    rules: &[WebSocketBlockRule],
+) -> WebSocketBlockDecision {
     rules
         .iter()
         .enumerate()
         .filter(|(_, rule)| rule.matches(context))
         .min_by_key(|(rule_index, rule)| (rule.priority, *rule_index))
-        .map_or(HttpBlockDecision::Allow, |(rule_index, rule)| {
-            HttpBlockDecision::Block {
+        .map_or(WebSocketBlockDecision::Allow, |(rule_index, rule)| {
+            WebSocketBlockDecision::Block {
                 rule_index,
                 priority: rule.priority,
                 action: rule.action,
