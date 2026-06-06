@@ -2,10 +2,10 @@
 //!
 //! **Purpose**: Reusable text matcher for traffic-control rule targets.
 //! **Public API**: `MatchOperator`, `TextMatcher`, `MatchError`
-//! **Dependencies**: `regex`, `thiserror`
+//! **Dependencies**: `regex`, `serde`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 85 / 160
+//! **Line budget**: 86 / 160
 
 #[cfg(test)]
 mod tests;
@@ -13,7 +13,8 @@ mod tests;
 use regex::{Regex, RegexBuilder};
 
 /// Text match operation used by traffic-control rules.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum MatchOperator {
     /// ASCII-case-insensitive equality.
     Equals,

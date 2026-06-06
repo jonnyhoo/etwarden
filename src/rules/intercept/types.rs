@@ -3,13 +3,14 @@
 //! **Purpose**: Public data types for intercept-rule evaluation.
 //! **Public API**: `InterceptAction`, `InterceptContext`, `InterceptDecision`,
 //!   `InterceptDirection`, `InterceptTarget`
-//! **Dependencies**: (none)
+//! **Dependencies**: `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 95 / 120
+//! **Line budget**: 99 / 120
 
 /// Flow direction for intercept rule matching.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum InterceptDirection {
     /// Client-to-server traffic.
     Upstream,
@@ -21,22 +22,26 @@ pub enum InterceptDirection {
 }
 
 /// Text source used by an intercept rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum InterceptTarget {
     /// Full request URL.
+    #[serde(alias = "URL")]
     Url,
     /// Concatenated request or response headers.
     Header,
     /// Text request or response body.
     Body,
     /// Process identifier rendered as decimal text.
+    #[serde(alias = "PID")]
     Pid,
     /// Process executable name.
     ProcessName,
 }
 
 /// Action requested by a matching intercept rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum InterceptAction {
     /// Drop the matching payload or frame.
     Drop,
