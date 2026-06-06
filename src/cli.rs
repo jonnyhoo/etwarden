@@ -5,7 +5,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 72 / 110
+//! **Line budget**: 78 / 110
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -70,6 +70,10 @@ pub struct Cli {
     /// Opt in to global OS proxy mutation while MITM is running.
     #[arg(long)]
     pub mitm_system_proxy: bool,
+
+    /// Path to a JSON rules file (replace/intercept/hosts/block rules).
+    #[arg(long)]
+    pub rules: Option<PathBuf>,
 }
 
 /// How to target the process to monitor.

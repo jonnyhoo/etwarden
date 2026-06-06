@@ -67,7 +67,8 @@ impl TrackableEvent {
             | NetEvent::DecryptedHttpRequest { .. }
             | NetEvent::HttpResponse { .. }
             | NetEvent::DecryptedHttpResponse { .. }
-            | NetEvent::TlsHello { .. } => return None,
+            | NetEvent::TlsHello { .. }
+            | NetEvent::RuleHit { .. } => return None,
         };
 
         Some(Self {

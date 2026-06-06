@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::types::event`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 45 / 80
+//! **Line budget**: 52 / 80
 
 use super::NetEvent;
 
@@ -25,7 +25,8 @@ impl NetEvent {
             | Self::DecryptedHttpRequest { .. }
             | Self::HttpResponse { .. }
             | Self::DecryptedHttpResponse { .. }
-            | Self::TlsHello { .. } => 0,
+            | Self::TlsHello { .. }
+            | Self::RuleHit { .. } => 0,
         }
     }
 
@@ -45,6 +46,7 @@ impl NetEvent {
             | Self::HttpResponse { pid, .. }
             | Self::DecryptedHttpResponse { pid, .. }
             | Self::TlsHello { pid, .. } => *pid,
+            Self::RuleHit { data } => data.pid,
         }
     }
 
@@ -63,7 +65,8 @@ impl NetEvent {
             | Self::DecryptedHttpRequest { .. }
             | Self::HttpResponse { .. }
             | Self::DecryptedHttpResponse { .. }
-            | Self::TlsHello { .. } => 0,
+            | Self::TlsHello { .. }
+            | Self::RuleHit { .. } => 0,
         }
     }
 }

@@ -43,7 +43,8 @@ pub(super) fn event_tuple_parts(event: &NetEvent) -> Option<(u32, Protocol, &str
         NetEvent::Disconnect { .. }
         | NetEvent::RawCapture { .. }
         | NetEvent::DnsQuery { .. }
-        | NetEvent::DnsResponse { .. } => None,
+        | NetEvent::DnsResponse { .. }
+        | NetEvent::RuleHit { .. } => None,
     }
 }
 

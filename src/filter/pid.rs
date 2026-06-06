@@ -60,6 +60,7 @@ const fn extract_pid(event: &NetEvent) -> u32 {
         | NetEvent::HttpResponse { pid, .. }
         | NetEvent::DecryptedHttpResponse { pid, .. }
         | NetEvent::TlsHello { pid, .. } => *pid,
+        NetEvent::RuleHit { data } => data.pid,
     }
 }
 

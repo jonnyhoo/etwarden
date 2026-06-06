@@ -2,10 +2,10 @@
 //!
 //! **Purpose**: ETW session lifecycle — start, enable providers, consume events, stop.
 //! **Public API**: `struct CaptureConfig`, `fn run_capture`
-//! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`
+//! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 161 / 180
+//! **Line budget**: 170 / 200
 
 pub mod event_loop;
 pub mod provider;
@@ -30,6 +30,7 @@ use crate::{
     parser::ParserRegistry,
     pcap::{correlator::Correlator, PcapSink},
     process::current_tcp_connections_for_pid,
+    rules::ruleset::RuleSet,
 };
 
 /// Configuration for a capture session.
@@ -50,6 +51,8 @@ pub struct CaptureConfig {
     pub mitm: Option<MitmCaptureConfig>,
     /// Optional external stop signal, used by `--spawn` child exit handling.
     pub stop_signal: Option<Arc<AtomicBool>>,
+    /// Optional compiled traffic-control rules for the MITM proxy.
+    pub rule_set: Option<Arc<RuleSet>>,
 }
 
 /// Runs the capture loop with the given configuration.
@@ -91,6 +94,7 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
                 registry: Arc::clone(&registry),
                 correlator: Arc::clone(&correlator),
                 stop_signal: config.stop_signal.clone(),
+                rule_set: config.rule_set.clone(),
             })
         })
         .transpose()?;

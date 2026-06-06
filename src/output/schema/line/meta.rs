@@ -5,11 +5,11 @@
 //! **Dependencies**: `output::schema::line::event`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 55 / 90
+//! **Line budget**: 60 / 90
 
 use serde::{Deserialize, Serialize};
 
-use super::event::{DnsEventLine, EventLine, HttpEventLine, TlsEventLine};
+use super::event::{DnsEventLine, EventLine, HttpEventLine, RuleHitEventLine, TlsEventLine};
 
 /// The final summary line written on capture exit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -52,7 +52,7 @@ impl ErrorLine {
     }
 }
 
-/// Top-level output line — event, DNS event, final summary, or terminal error.
+/// Top-level output line — event, DNS event, HTTP, TLS, rule hit, final summary, or terminal error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum OutputLine {
@@ -60,6 +60,7 @@ pub enum OutputLine {
     DnsEvent(DnsEventLine),
     HttpEvent(HttpEventLine),
     TlsEvent(TlsEventLine),
+    RuleHit(RuleHitEventLine),
     Summary(SummaryLine),
     Error(ErrorLine),
 }

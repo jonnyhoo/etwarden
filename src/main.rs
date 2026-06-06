@@ -23,6 +23,7 @@ use etwarden::{
     },
     pcap::writer::PcapNgWriter,
     process::ProcessTreeCache,
+    rules::{config::RulesConfig, ruleset::RuleSet},
 };
 
 fn main() -> anyhow::Result<()> {
@@ -45,6 +46,8 @@ fn run() -> anyhow::Result<()> {
 
     let process_cache = Arc::new(ProcessTreeCache::new());
     let target = target::resolve(&cli, process_cache.as_ref())?;
+
+    let rule_set = load_rule_set(&cli)?;
 
     let mut config = CaptureConfig {
         target_pid: target.pid,
@@ -76,6 +79,7 @@ fn run() -> anyhow::Result<()> {
             enable_system_proxy: cli.mitm_system_proxy,
         }),
         stop_signal: Some(target.stop_signal),
+        rule_set,
     };
 
     let summary = capture::run_capture(&mut config).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -83,6 +87,27 @@ fn run() -> anyhow::Result<()> {
     write_output_line(&OutputLine::Summary(summary))?;
 
     Ok(())
+}
+
+fn load_rule_set(cli: &Cli) -> anyhow::Result<Option<std::sync::Arc<RuleSet>>> {
+    let Some(path) = cli.rules.as_deref() else {
+        return Ok(None);
+    };
+    let json = std::fs::read_to_string(path)
+        .map_err(|e| anyhow::anyhow!("failed to read rules file {}: {e}", path.display()))?;
+    let config: RulesConfig = serde_json::from_str(&json)
+        .map_err(|e| anyhow::anyhow!("failed to parse rules file {}: {e}", path.display()))?;
+    let rule_set =
+        RuleSet::build(&config).map_err(|e| anyhow::anyhow!("failed to build rules: {e}"))?;
+    diagnostic::warn(format_args!(
+        "rules loaded: {} replace, {} intercept, {} hosts, {} http_block, {} websocket_block",
+        rule_set.replace.len(),
+        rule_set.intercept.len(),
+        rule_set.hosts.len(),
+        rule_set.http_block.len(),
+        rule_set.websocket_block.len(),
+    ));
+    Ok(Some(std::sync::Arc::new(rule_set)))
 }
 
 fn parse_cli() -> anyhow::Result<Cli> {

@@ -1,13 +1,14 @@
 //! # `output::schema`
 //!
 //! **Purpose**: Stable agent-contract serde types for NDJSON output.
-//! **Public API**: `struct EventLine`, `struct DnsEventLine`, `struct HttpEventLine`, `struct TlsEventLine`, `struct SummaryLine`,
+//! **Public API**: `struct EventLine`, `struct DnsEventLine`, `struct HttpEventLine`, `struct TlsEventLine`,
+//!                `struct RuleHitEventLine`, `struct SummaryLine`,
 //!                `struct ErrorLine`, `enum OutputLine`, `fn event_to_line`,
 //!                `fn event_to_line_enriched`
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 120 / 180
+//! **Line budget**: 121 / 180
 
 mod convert;
 mod line;
@@ -15,7 +16,8 @@ mod scope;
 
 pub use convert::{event_to_line, event_to_line_enriched, event_to_line_with_process_info};
 pub use line::{
-    DnsEventLine, ErrorLine, EventLine, HttpEventLine, OutputLine, SummaryLine, TlsEventLine,
+    DnsEventLine, ErrorLine, EventLine, HttpEventLine, OutputLine, RuleHitEventLine, SummaryLine,
+    TlsEventLine,
 };
 
 #[cfg(test)]

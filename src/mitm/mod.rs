@@ -2,10 +2,10 @@
 //!
 //! **Purpose**: Active HTTPS MITM proxy that emits decrypted HTTP metadata into NDJSON flow.
 //! **Public API**: `MitmCaptureConfig`, `MitmProxyConfig`, `MitmProxyHandle`, `start_mitm_proxy`
-//! **Dependencies**: `http-mitm-proxy`, `tokio`, `rcgen`, `parser`, `pcap`
+//! **Dependencies**: `http-mitm-proxy`, `tokio`, `rcgen`, `parser`, `pcap`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `optional-user-proxy-write`
-//! **Line budget**: 300 / 340
+//! **Line budget**: 340 / 380
 
 mod body;
 mod ca;
@@ -46,8 +46,21 @@ use self::{
 use crate::{
     error::{EtwardenError, Result},
     output::diagnostic,
-    parser::{types::NetEvent, ParserRegistry},
+    parser::{
+        types::{NetEvent, RuleHitData},
+        ParserRegistry,
+    },
     pcap::correlator::Correlator,
+    rules::{
+        block::http::{evaluate_http_first, HttpBlockContext, HttpBlockDecision},
+        hosts::rewrite_first_url,
+        intercept::{
+            evaluate_first as evaluate_intercept_first, InterceptContext, InterceptDecision,
+            InterceptDirection,
+        },
+        replace::apply_all,
+        ruleset::RuleSet,
+    },
 };
 
 const CERT_CACHE_SIZE: u64 = 128;
@@ -72,6 +85,8 @@ pub struct MitmProxyConfig {
     pub registry: Arc<ParserRegistry>,
     pub correlator: Arc<Correlator>,
     pub stop_signal: Option<Arc<AtomicBool>>,
+    /// Optional compiled traffic-control rules applied to intercepted HTTP.
+    pub rule_set: Option<Arc<RuleSet>>,
 }
 
 /// Running MITM proxy thread handle.
@@ -154,6 +169,7 @@ struct ProxyState {
     client: DefaultClient,
     registry: Arc<ParserRegistry>,
     correlator: Arc<Correlator>,
+    rule_set: Option<Arc<RuleSet>>,
 }
 
 fn validate_config(config: &MitmCaptureConfig) -> Result<()> {
@@ -222,6 +238,7 @@ async fn run_proxy(
         client,
         registry: config.registry,
         correlator: config.correlator,
+        rule_set: config.rule_set,
     });
     let target_proxy = Arc::new(MitmProxy::new(
         Some(issuer),
@@ -342,19 +359,119 @@ async fn handle_request(
 
     let (client_request_parts, client_request_stream) = req.into_parts();
     let upstream_uri = client_request_parts.uri.clone();
+
+    // --- Hosts rewrite: mutate URI host before forwarding ---
+    let rewritten_uri = state
+        .rule_set
+        .as_deref()
+        .and_then(|rules| apply_hosts_rewrite(&upstream_uri, &rules.hosts, pid, &state.registry));
+    let effective_uri = rewritten_uri
+        .clone()
+        .unwrap_or_else(|| upstream_uri.clone());
+
+    // --- HTTP block check (upstream direction) ---
+    if let Some(rules) = state.rule_set.as_deref() {
+        let url_str = effective_uri.to_string();
+        let method = client_request_parts.method.as_str();
+        let ctx = HttpBlockContext {
+            method,
+            url: &url_str,
+        };
+        if let HttpBlockDecision::Block {
+            rule_index, action, ..
+        } = evaluate_http_first(&ctx, &rules.http_block)
+        {
+            if let Some(pid_val) = pid {
+                emit_rule_hit(
+                    &state.registry,
+                    pid_val,
+                    "http_block",
+                    rule_index,
+                    "upstream",
+                    &format!("{action:?}"),
+                    Some(url_str.clone()),
+                );
+            }
+            return Response::builder()
+                .status(403)
+                .body(Full::new(Bytes::new()))
+                .map_err(|e| EtwardenError::MitmProxy(format!("block response error: {e}")));
+        }
+    }
+
+    // --- Intercept check (upstream direction) ---
+    if let Some(rules) = state.rule_set.as_deref() {
+        let url_str = effective_uri.to_string();
+        let ctx = InterceptContext {
+            direction: InterceptDirection::Upstream,
+            url: Some(&url_str),
+            pid,
+            ..Default::default()
+        };
+        if let InterceptDecision::Intercept { rule_index, action } =
+            evaluate_intercept_first(&ctx, &rules.intercept)
+        {
+            if let Some(pid_val) = pid {
+                emit_rule_hit(
+                    &state.registry,
+                    pid_val,
+                    "intercept",
+                    rule_index,
+                    "upstream",
+                    &format!("{action:?}"),
+                    Some(url_str.clone()),
+                );
+            }
+            return Response::builder()
+                .status(502)
+                .body(Full::new(Bytes::new()))
+                .map_err(|e| EtwardenError::MitmProxy(format!("intercept response error: {e}")));
+        }
+    }
+
     let captured_request_body =
         collect_body(client_request_stream, state.max_body_bytes, "request").await?;
-    if let (Some(pid), Some(remote_addr)) = (pid, remote_addr) {
+
+    // --- Replace rules on request body ---
+    let effective_request_body = if let Some(rules) = state.rule_set.as_deref() {
+        let outcome = apply_all(&captured_request_body, &rules.replace);
+        if outcome.matched_rules > 0 {
+            if let Some(pid_val) = pid {
+                let url_str = effective_uri.to_string();
+                emit_rule_hit(
+                    &state.registry,
+                    pid_val,
+                    "replace",
+                    0,
+                    "upstream",
+                    "Replace",
+                    Some(url_str),
+                );
+            }
+            Bytes::from(outcome.payload)
+        } else {
+            captured_request_body
+        }
+    } else {
+        captured_request_body
+    };
+
+    if let (Some(pid_val), Some(remote_addr)) = (pid, remote_addr) {
         state.registry.push_event(request_event(
-            pid,
+            pid_val,
             remote_addr,
             &client_request_parts,
-            &captured_request_body,
+            &effective_request_body,
             state.body_limit,
         )?);
     }
 
-    let upstream_req = Request::from_parts(client_request_parts, Full::new(captured_request_body));
+    let mut upstream_req =
+        Request::from_parts(client_request_parts, Full::new(effective_request_body));
+    if rewritten_uri.is_some() {
+        *upstream_req.uri_mut() = effective_uri.clone();
+    }
+
     let (upstream_response, _upgrade) = state
         .client
         .send_request(upstream_req)
@@ -363,21 +480,94 @@ async fn handle_request(
     let (server_response_parts, server_response_stream) = upstream_response.into_parts();
     let captured_response_body =
         collect_body(server_response_stream, state.max_body_bytes, "response").await?;
-    if let (Some(pid), Some(remote_addr)) = (pid, remote_addr) {
+
+    // --- Replace rules on response body ---
+    let effective_response_body = if let Some(rules) = state.rule_set.as_deref() {
+        let outcome = apply_all(&captured_response_body, &rules.replace);
+        if outcome.matched_rules > 0 {
+            if let Some(pid_val) = pid {
+                let url_str = effective_uri.to_string();
+                emit_rule_hit(
+                    &state.registry,
+                    pid_val,
+                    "replace",
+                    0,
+                    "downstream",
+                    "Replace",
+                    Some(url_str),
+                );
+            }
+            Bytes::from(outcome.payload)
+        } else {
+            captured_response_body
+        }
+    } else {
+        captured_response_body
+    };
+
+    if let (Some(pid_val), Some(remote_addr)) = (pid, remote_addr) {
         state.registry.push_event(response_event(
-            pid,
+            pid_val,
             remote_addr,
-            &upstream_uri,
+            &effective_uri,
             &server_response_parts,
-            &captured_response_body,
+            &effective_response_body,
             state.body_limit,
         )?);
     }
 
     Ok(Response::from_parts(
         server_response_parts,
-        Full::new(captured_response_body),
+        Full::new(effective_response_body),
     ))
+}
+
+fn emit_rule_hit(
+    registry: &ParserRegistry,
+    pid: u32,
+    rule_type: &str,
+    rule_index: usize,
+    direction: &str,
+    action: &str,
+    url: Option<String>,
+) {
+    registry.push_event(NetEvent::RuleHit {
+        data: RuleHitData {
+            timestamp: chrono::Utc::now(),
+            pid,
+            rule_type: rule_type.to_owned(),
+            rule_index,
+            direction: direction.to_owned(),
+            action: action.to_owned(),
+            url,
+        },
+    });
+}
+
+fn apply_hosts_rewrite(
+    uri: &Uri,
+    hosts_rules: &[crate::rules::hosts::HostsRule],
+    pid: Option<u32>,
+    registry: &ParserRegistry,
+) -> Option<Uri> {
+    if hosts_rules.is_empty() {
+        return None;
+    }
+    let url_str = uri.to_string();
+    let rewrite = rewrite_first_url(&url_str, hosts_rules);
+    let rule_index = rewrite.matched_rule?;
+    if let Some(pid_val) = pid {
+        emit_rule_hit(
+            registry,
+            pid_val,
+            "hosts",
+            rule_index,
+            "upstream",
+            "Rewrite",
+            Some(url_str),
+        );
+    }
+    rewrite.url.parse().ok()
 }
 
 async fn collect_body<B>(body: B, limit: usize, label: &str) -> Result<Bytes>

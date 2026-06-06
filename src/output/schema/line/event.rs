@@ -1,11 +1,11 @@
 //! # `output::schema::line::event`
 //!
 //! **Purpose**: Stable event NDJSON line types.
-//! **Public API**: `EventLine`, `DnsEventLine`, `HttpEventLine`, `TlsEventLine`
+//! **Public API**: `EventLine`, `DnsEventLine`, `HttpEventLine`, `TlsEventLine`, `RuleHitEventLine`
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 140 / 180
+//! **Line budget**: 170 / 200
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -213,6 +213,58 @@ pub struct TlsEventLine {
     /// Parent→child process tree path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tree_path: Option<String>,
+}
+
+/// A traffic-control rule hit event line in the agent contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RuleHitEventLine {
+    /// Discriminator: always `"rule_hit"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// ISO 8601 timestamp.
+    #[serde(rename = "t")]
+    pub timestamp: DateTime<Utc>,
+    /// Process ID associated with the traffic item.
+    pub pid: u32,
+    /// Rule category: `"replace"`, `"intercept"`, `"hosts"`, `"http_block"`, `"websocket_block"`.
+    pub rule_type: String,
+    /// Index of the matching rule within its category slice.
+    pub rule_index: usize,
+    /// Traffic direction: `"upstream"` or `"downstream"`.
+    pub direction: String,
+    /// Action taken: e.g. `"Replace"`, `"Drop"`, `"Disconnect"`, `"CloseRequest"`.
+    pub action: String,
+    /// Full request URL when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    /// Resolved process name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_name: Option<String>,
+}
+
+impl RuleHitEventLine {
+    /// Creates a rule hit line with the stable `type` discriminator.
+    #[must_use]
+    pub fn new(
+        pid: u32,
+        rule_type: impl Into<String>,
+        rule_index: usize,
+        direction: impl Into<String>,
+        action: impl Into<String>,
+        url: Option<String>,
+    ) -> Self {
+        Self {
+            kind: "rule_hit".into(),
+            timestamp: chrono::Utc::now(),
+            pid,
+            rule_type: rule_type.into(),
+            rule_index,
+            direction: direction.into(),
+            action: action.into(),
+            url,
+            process_name: None,
+        }
+    }
 }
 
 #[expect(

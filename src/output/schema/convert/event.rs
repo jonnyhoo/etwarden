@@ -5,7 +5,7 @@
 //! **Dependencies**: `output::schema`, `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 140 / 200
+//! **Line budget**: 155 / 200
 
 mod dns;
 mod dpi;
@@ -13,7 +13,7 @@ mod network;
 
 use super::process::ProcessFields;
 use crate::{
-    output::schema::{ErrorLine, OutputLine},
+    output::schema::{ErrorLine, OutputLine, RuleHitEventLine},
     parser::types::NetEvent,
 };
 
@@ -44,5 +44,16 @@ pub(super) fn event_to_line_enriched(
         | NetEvent::HttpResponse { .. }
         | NetEvent::DecryptedHttpResponse { .. }
         | NetEvent::TlsHello { .. } => dpi::line(event, process_fields),
+        NetEvent::RuleHit { data } => OutputLine::RuleHit(RuleHitEventLine {
+            kind: "rule_hit".into(),
+            timestamp: data.timestamp,
+            pid: data.pid,
+            rule_type: data.rule_type.clone(),
+            rule_index: data.rule_index,
+            direction: data.direction.clone(),
+            action: data.action.clone(),
+            url: data.url.clone(),
+            process_name: process_fields.name,
+        }),
     }
 }

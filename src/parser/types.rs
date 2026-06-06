@@ -2,16 +2,16 @@
 //!
 //! **Purpose**: Core type definitions for ETW event parsing — pure types, no ETW imports.
 //! **Public API**: `enum Protocol`, `struct FiveTuple`, `enum NetEvent`, `struct RawEvent`,
-//!   `struct RawFrame`
+//!   `struct RawFrame`, `struct RuleHitData`
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 340 / 400
+//! **Line budget**: 341 / 400
 
 mod event;
 
 use chrono::{DateTime, Utc};
-pub use event::NetEvent;
+pub use event::{NetEvent, RuleHitData};
 use serde::{Deserialize, Serialize};
 
 /// Network protocol observed in a `NetEvent`.

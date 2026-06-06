@@ -10,5 +10,5 @@
 mod event;
 mod meta;
 
-pub use event::{DnsEventLine, EventLine, HttpEventLine, TlsEventLine};
+pub use event::{DnsEventLine, EventLine, HttpEventLine, RuleHitEventLine, TlsEventLine};
 pub use meta::{ErrorLine, OutputLine, SummaryLine};

@@ -1,11 +1,11 @@
 //! # `parser::types::event`
 //!
 //! **Purpose**: Defines parsed network event variants and common accessors.
-//! **Public API**: `NetEvent`
+//! **Public API**: `NetEvent`, `RuleHitData`
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 130 / 200
+//! **Line budget**: 145 / 200
 
 mod accessors;
 
@@ -13,6 +13,26 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::{Protocol, RawFrame};
+
+/// Lightweight rule-hit payload carried inside `NetEvent::RuleHit`.
+#[derive(Debug, Clone, Serialize)]
+pub struct RuleHitData {
+    /// ISO 8601 timestamp.
+    #[serde(rename = "t")]
+    pub timestamp: DateTime<Utc>,
+    /// Process ID associated with the traffic item.
+    pub pid: u32,
+    /// Rule category: `"replace"`, `"intercept"`, `"hosts"`, `"http_block"`, `"websocket_block"`.
+    pub rule_type: String,
+    /// Index of the matching rule within its category slice.
+    pub rule_index: usize,
+    /// Traffic direction: `"upstream"` or `"downstream"`.
+    pub direction: String,
+    /// Action taken.
+    pub action: String,
+    /// Full request URL when available.
+    pub url: Option<String>,
+}
 
 /// A single parsed network event produced by ETW providers.
 #[derive(Debug, Clone, Serialize)]
@@ -167,4 +187,6 @@ pub enum NetEvent {
         cipher_count: usize,
         extension_count: usize,
     },
+    /// Traffic-control rule matched and action was taken.
+    RuleHit { data: RuleHitData },
 }
