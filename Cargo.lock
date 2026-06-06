@@ -656,6 +656,7 @@ dependencies = [
  "netstat-esr",
  "pcap-file",
  "rcgen",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
