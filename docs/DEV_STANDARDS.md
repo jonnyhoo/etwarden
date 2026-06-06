@@ -24,21 +24,34 @@
 
 ## CI Gate (windows-latest, must all pass, in order)
 
+Use `&&` between commands so the gate stops on first failure. Do not use
+PowerShell `;` for gate chains; it can hide an earlier failure behind a later
+success.
+
+Focused gate for small slices:
 ```
-cargo +nightly fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo deny check
-cargo audit
-cargo machete
-cargo coupling --check --no-git --max-circular 5
-cargo test
+cargo +nightly fmt --check && cargo test -p etwarden <module-or-filter> && cargo clippy --all-targets -- -D warnings
+```
+
+Full static gate before commit:
+```
+cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit && cargo deny check && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo test && cargo doc --no-deps && git diff --check && git status --short
+```
+
+Admin/release gate:
+```
 cargo test --features integration       # requires admin runner
 cargo llvm-cov --summary-only           # coverage report
-cargo doc --no-deps                     # doc compile check
 cargo bench --no-run                    # bench compile check
 ```
 
-No merge unless all pass.
+No merge unless the relevant focused gate and full static gate pass. Admin/release
+gate is required before release or admin-runner integration changes.
+
+Duplicate policy:
+- Pre-commit hook repeats `cargo +nightly fmt --check` and `cargo clippy --all-targets -- -D warnings` as final guard.
+- That repeat is intentional. Do not add extra manual reruns unless files changed.
+- If a gate fails, fix root cause. Do not bypass or reorder checks to get green output.
 
 **Not in CI (run manually):**
 - `cargo mutants` — valuable but slow, run before releases

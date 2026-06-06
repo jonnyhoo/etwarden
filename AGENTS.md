@@ -71,18 +71,23 @@ Read in this order:
 
 ## CI Gate (run before every commit)
 
+Rules:
+- Use `&&` between gate commands. Never use PowerShell `;` for gates; it can hide earlier failures.
+- Stop at the first failing command. Fix root cause before continuing.
+- Run a focused gate after small edits, then one full static gate before commit.
+- Do not rerun an unchanged passing gate for reassurance; rerun only after edits or external changes.
+
+Focused gate for small slices:
 ```
-cargo +nightly fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo deny check
-cargo audit
-cargo machete
-cargo coupling --check --no-git --max-circular 5
-cargo test
-cargo doc --no-deps
+cargo +nightly fmt --check && cargo test -p etwarden <module-or-filter> && cargo clippy --all-targets -- -D warnings
 ```
 
-Full gate (requires admin runner):
+Full static gate before commit:
+```
+cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit && cargo deny check && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo test && cargo doc --no-deps && git diff --check && git status --short
+```
+
+Admin/release gate:
 ```
 cargo test --features integration
 cargo llvm-cov --summary-only
@@ -104,6 +109,8 @@ Rules:
 - Never suggest `--no-verify` as a workaround
 - If a hook fails: fix the underlying issue, do not bypass the hook
 - If a hook is broken: fix the hook, do not disable it
+- Expected duplicate: full static gate runs `fmt`/`clippy`; pre-commit repeats them as final guard.
+- This duplicate is intentional and bounded. Do not add ad hoc extra reruns unless files changed.
 
 Pre-commit hook must run at minimum:
 ```
