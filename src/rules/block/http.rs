@@ -3,10 +3,10 @@
 //! **Purpose**: Pure HTTP block-rule matching by method, URL, and priority.
 //! **Public API**: `HttpBlockAction`, `HttpBlockContext`, `HttpBlockDecision`,
 //!   `HttpBlockRule`, `evaluate_http_first`
-//! **Dependencies**: `rules::matcher`
+//! **Dependencies**: `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 145 / 160
+//! **Line budget**: 147 / 160
 
 #[cfg(test)]
 mod tests;
@@ -15,7 +15,8 @@ use super::method_matches;
 use crate::rules::matcher::{MatchError, MatchOperator, TextMatcher};
 
 /// Action requested by a matching HTTP block rule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, serde::Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub enum HttpBlockAction {
     /// Close the request before forwarding upstream.
     CloseRequest,

@@ -2,16 +2,17 @@
 //!
 //! **Purpose**: Builders for top-level rules config collections.
 //! **Public API**: `RulesConfig` methods
-//! **Dependencies**: `rules::config`, `rules::{hosts, intercept, matcher}`
+//! **Dependencies**: `rules::config`, `rules::{block, hosts, intercept, matcher}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 55 / 80
+//! **Line budget**: 69 / 80
 
 use super::{
-    DecodedReplaceRuleConfig, HostsRuleConfig, InterceptRuleConfig, ReplaceRuleConfig,
-    RuleConfigError, RulesConfig,
+    DecodedReplaceRuleConfig, HostsRuleConfig, HttpBlockRuleConfig, InterceptRuleConfig,
+    ReplaceRuleConfig, RuleConfigError, RulesConfig,
 };
 use crate::rules::{
+    block::http::HttpBlockRule,
     hosts::{HostsRule, HostsRuleError},
     intercept::InterceptRule,
     matcher::MatchError,
@@ -57,6 +58,21 @@ impl RulesConfig {
         self.hosts_rules
             .iter()
             .map(HostsRuleConfig::build)
+            .collect()
+    }
+
+    /// Builds configured HTTP block rules.
+    ///
+    /// # Returns
+    /// Ordered compiled HTTP block rules.
+    ///
+    /// # Errors
+    /// Returns `MatchError` if any configured URL matcher pattern is invalid.
+    pub fn build_http_block_rules(&self) -> Result<Vec<HttpBlockRule>, MatchError> {
+        self.block_rules
+            .http
+            .iter()
+            .map(HttpBlockRuleConfig::build)
             .collect()
     }
 }
