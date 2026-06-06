@@ -61,7 +61,7 @@ pub struct CaptureConfig {
 /// A `SummaryLine` with aggregate capture statistics.
 ///
 /// # Errors
-/// Returns [`EtwardenError`] if the ETW session fails.
+/// Returns [`crate::error::EtwardenError`] if the ETW session fails.
 pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
     let emit_raw_capture = config.pcap_sink.is_some();

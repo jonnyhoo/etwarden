@@ -1,7 +1,7 @@
 # cargo-coupling analysis config for etwarden.
 #
 # Quality gate baseline is documented in docs/DEV_STANDARDS.md:
-#   cargo coupling --check --no-git --max-circular 6
+#   cargo coupling --check --no-git --max-circular 5
 #
 # `max_circular` is CLI-only in cargo-coupling 0.3.3, so keep that budget in
 # the gate command. Do not raise it; lower it after intentional refactors.

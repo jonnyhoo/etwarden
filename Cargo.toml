@@ -47,7 +47,9 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 ferrisetw   = "1.2"
 
 # Network socket inventory for startup flow attribution
-netstat2    = "0.11"
+# Keep the dependency key `netstat2` so existing imports stay stable; package uses
+# maintained netstat-esr to avoid netstat2's transitive unmaintained `paste`.
+netstat2    = { package = "netstat-esr", version = "0.8" }
 
 # Windows API bindings (ETW, process, networking)
 windows     = { version = "0.58", features = [

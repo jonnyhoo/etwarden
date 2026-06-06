@@ -30,7 +30,7 @@ cargo clippy --all-targets -- -D warnings
 cargo deny check
 cargo audit
 cargo machete
-cargo coupling --check --no-git --max-circular 6
+cargo coupling --check --no-git --max-circular 5
 cargo test
 cargo test --features integration       # requires admin runner
 cargo llvm-cov --summary-only           # coverage report
@@ -52,13 +52,13 @@ No merge unless all pass.
 CI uses a structural, deterministic gate:
 
 ```
-cargo coupling --check --no-git --max-circular 6
+cargo coupling --check --no-git --max-circular 5
 ```
 
 Rationale:
 
 - `--no-git` avoids failing CI on short-term churn while the project is still evolving.
-- `--max-circular 6` records the current module-cycle budget; do not increase it.
+- `--max-circular 5` records the current module-cycle budget; do not increase it.
 - Lower `--max-circular` only after an intentional refactor removes cycles.
 - Do not add facade traits only to satisfy the report; refactor only when the module boundary is real.
 - Full churn-aware reports are manual planning input, not a merge gate.

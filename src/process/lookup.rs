@@ -24,7 +24,7 @@ const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 ///
 /// Uses `sysinfo::System` to enumerate running processes and extract
 /// their names. Refreshes automatically when the cache is older than
-/// [`REFRESH_INTERVAL`].
+/// `REFRESH_INTERVAL`.
 pub struct ProcessNameCache {
     inner: Mutex<CacheInner>,
 }
