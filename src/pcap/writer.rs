@@ -5,16 +5,20 @@
 //! **Dependencies**: `pcap-file`, `parser::types`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 215 / 240
-
-mod block;
+//! **Line budget**: 180 / 240
 
 use std::{fs::File, path::Path};
 
 use pcap_file::pcapng::{PcapNgBlock, PcapNgWriter as InnerWriter};
 
-use self::block::{enhanced_packet_block, interface_block};
-use crate::{error::EtwardenError, parser::types::RawFrame, pcap::PcapSink};
+use crate::{
+    error::EtwardenError,
+    parser::types::RawFrame,
+    pcap::{
+        writer_block::{enhanced_packet_block, interface_block},
+        PcapSink,
+    },
+};
 
 // ---------------------------------------------------------------------------
 // PcapNgWriter
@@ -80,7 +84,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::pcap::writer::block::PCAP_SNAPLEN;
+    use crate::pcap::writer_block::PCAP_SNAPLEN;
 
     fn test_frame(data: &[u8]) -> RawFrame {
         RawFrame {

@@ -77,7 +77,7 @@ cargo clippy --all-targets -- -D warnings
 cargo deny check
 cargo audit
 cargo machete
-cargo coupling --check --no-git --max-circular 8
+cargo coupling --check --no-git --max-circular 6
 cargo test
 cargo doc --no-deps
 ```

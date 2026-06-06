@@ -1,11 +1,11 @@
-//! # `pcap::writer::block`
+//! # `pcap::writer_block`
 //!
 //! **Purpose**: Builds pcapng blocks and validates packet timestamps/lengths.
 //! **Public API**: module-private pcapng block builders
 //! **Dependencies**: `pcap-file`, `parser::types`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 112 / 150
+//! **Line budget**: 113 / 150
 
 use std::{borrow::Cow, time::Duration};
 

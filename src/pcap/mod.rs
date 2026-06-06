@@ -5,10 +5,11 @@
 //! **Dependencies**: `parser`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 22 / 60
+//! **Line budget**: 25 / 60
 
 pub mod correlator;
 pub mod writer;
+mod writer_block;
 
 use crate::{error::EtwardenError, parser::types::RawFrame};
 
