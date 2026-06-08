@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 170 / 200
+//! **Line budget**: 185 / 200
 
 pub mod event_loop;
 pub mod provider;
@@ -21,13 +21,14 @@ use crate::{
     capture::{
         event_loop::run_event_loop,
         provider::{build_ndis_provider, build_tcpip_provider},
-        session::EtwSession,
+        session::{EtwKernelSession, EtwSession, RunningSession},
     },
+    divert::{start_divert, DivertConfig, RedirectMap},
     error::Result,
     filter::Filter,
     mitm::{start_mitm_proxy, MitmCaptureConfig, MitmProxyConfig},
     output::{diagnostic, schema::SummaryLine, Emitter},
-    parser::ParserRegistry,
+    parser::{types::FiveTuple, ParserRegistry},
     pcap::{correlator::Correlator, PcapSink},
     process::current_tcp_connections_for_pid,
     rules::ruleset::RuleSet,
@@ -53,6 +54,8 @@ pub struct CaptureConfig {
     pub stop_signal: Option<Arc<AtomicBool>>,
     /// Optional compiled traffic-control rules for the MITM proxy.
     pub rule_set: Option<Arc<RuleSet>>,
+    /// Enable `WinDivert` TCP redirect for hot-attach MITM (requires `--pid` + MITM).
+    pub enable_divert: bool,
 }
 
 /// Runs the capture loop with the given configuration.
@@ -69,21 +72,36 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     let registry = Arc::new(ParserRegistry::new());
     let emit_raw_capture = config.pcap_sink.is_some();
     let correlator = Arc::new(Correlator::new());
-    for pid in bootstrap_pids(config.target_pid, &config.capture_pids) {
-        bootstrap_existing_tcp_connections(pid, correlator.as_ref());
-    }
-    let provider = build_tcpip_provider(Arc::clone(&registry), Some(Arc::clone(&correlator)));
+    let target_pids = bootstrap_pids(config.target_pid, &config.capture_pids);
+    let existing_tcp_connections =
+        bootstrap_existing_tcp_connections(&target_pids, correlator.as_ref());
+
+    // Build TCPIP kernel provider — classic GUID with EnableFlags.
+    let tcpip_provider = build_tcpip_provider(Arc::clone(&registry), Some(Arc::clone(&correlator)));
+
+    // Build NDIS provider for user trace.
     let ndis_provider = build_ndis_provider(
         Arc::clone(&registry),
         Arc::clone(&correlator),
         emit_raw_capture,
     );
 
-    let mut session_builder = EtwSession::new();
-    session_builder.add_provider(provider);
-    session_builder.add_provider(ndis_provider);
+    // Kernel trace session — sets EVENT_TRACE_FLAG_NETWORK_TCPIP in EnableFlags.
+    let mut kernel_session = EtwKernelSession::new();
+    kernel_session.add_provider(tcpip_provider);
+    let mut kernel_running = kernel_session.start()?;
 
-    let running = session_builder.start()?;
+    // User trace session — uses EnableTraceEx2 for NDIS provider.
+    let mut user_session = EtwSession::new();
+    user_session.add_provider(ndis_provider);
+    let mut user_running = user_session.start()?;
+
+    // Combine both into a single RunningSession.
+    let (kernel_trace, _) = kernel_running.take_parts();
+    let (_, user_trace) = user_running.take_parts();
+    let running = RunningSession::new(kernel_trace, user_trace);
+
+    let redirect_map = config.enable_divert.then(|| Arc::new(RedirectMap::new()));
     let mitm_handle = config
         .mitm
         .clone()
@@ -95,9 +113,33 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
                 correlator: Arc::clone(&correlator),
                 stop_signal: config.stop_signal.clone(),
                 rule_set: config.rule_set.clone(),
+                redirect_map: redirect_map.clone(),
             })
         })
         .transpose()?;
+
+    // Start WinDivert redirect layer when MITM + divert enabled.
+    let divert_handle = redirect_map
+        .as_ref()
+        .and_then(|map| {
+            config.mitm.as_ref().map(|mitm| {
+                start_divert(DivertConfig {
+                    target_pids: target_pids.clone(),
+                    proxy_addr: mitm.listen_addr,
+                    redirect_map: Arc::clone(map),
+                    existing_flows: existing_tcp_connections.clone(),
+                    stop_signal: config.stop_signal.clone(),
+                })
+            })
+        })
+        .transpose()?;
+    if divert_handle.is_some() {
+        let pids: Vec<u32> = target_pids.iter().copied().collect();
+        diagnostic::info(format_args!(
+            "WinDivert redirect layer active for PIDs {pids:?}"
+        ));
+    }
+
     let summary = run_event_loop(
         running,
         &registry,
@@ -109,6 +151,9 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
         config.stop_signal.as_deref(),
     )?;
     if let Some(handle) = mitm_handle {
+        handle.stop()?;
+    }
+    if let Some(handle) = divert_handle {
         handle.stop()?;
     }
 
@@ -123,19 +168,27 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
     })
 }
 
-fn bootstrap_existing_tcp_connections(pid: u32, correlator: &Correlator) {
-    let tuples = match current_tcp_connections_for_pid(pid) {
-        Ok(tuples) => tuples,
-        Err(err) => {
-            diagnostic::warn(format_args!(
-                "skipped existing TCP bootstrap for PID {pid}: {err}"
-            ));
-            return;
+fn bootstrap_existing_tcp_connections(
+    pids: &HashSet<u32>,
+    correlator: &Correlator,
+) -> Vec<FiveTuple> {
+    let mut connections = Vec::new();
+    for pid in pids {
+        let tuples = match current_tcp_connections_for_pid(*pid) {
+            Ok(tuples) => tuples,
+            Err(err) => {
+                diagnostic::warn(format_args!(
+                    "skipped existing TCP bootstrap for PID {pid}: {err}"
+                ));
+                continue;
+            }
+        };
+        for tuple in tuples {
+            correlator.register_connection(*pid, tuple.clone());
+            connections.push(tuple);
         }
-    };
-    for tuple in tuples {
-        correlator.register_connection(pid, tuple);
     }
+    connections
 }
 
 fn bootstrap_pids(target_pid: u32, capture_pids: &HashSet<u32>) -> HashSet<u32> {

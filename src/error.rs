@@ -37,6 +37,10 @@ pub enum EtwardenError {
     /// HTTPS MITM proxy startup, runtime, or system-proxy failure.
     #[error("MITM proxy error: {0}")]
     MitmProxy(String),
+
+    /// `WinDivert` packet interception failure.
+    #[error("WinDivert error: {0}")]
+    Divert(String),
 }
 
 /// Convenience alias for results in this crate.

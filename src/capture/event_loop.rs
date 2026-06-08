@@ -5,7 +5,7 @@
 //! **Dependencies**: `capture::session`, `parser`, `filter`, `output`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 101 / 240
+//! **Line budget**: 99 / 240
 
 mod drain;
 

@@ -5,10 +5,11 @@
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 350 / 400
+//! **Line budget**: 320 / 400
 
 mod events;
 mod fields;
+mod ids;
 mod layout;
 
 use windows::core::GUID;
@@ -26,23 +27,8 @@ use crate::parser::{
 /// Microsoft-Windows-Kernel-Network provider GUID.
 pub const PROVIDER_TCPIP: &str = "7DD42A49-5329-4832-8DFD-43D979153A88";
 
-// Event IDs from the Microsoft-Windows-Kernel-Network manifest.
-pub const EVENT_ID_TCP_SEND_IPV4: u16 = 10;
-pub const EVENT_ID_TCP_RECV_IPV4: u16 = 11;
-pub const EVENT_ID_TCP_CONNECT_IPV4: u16 = 12;
-pub const EVENT_ID_TCP_DISCONNECT_IPV4: u16 = 13;
-pub const EVENT_ID_TCP_RETRANSMIT_IPV4: u16 = 14;
-pub const EVENT_ID_TCP_ESTABLISHED_IPV4: u16 = 15;
-pub const EVENT_ID_TCP_SEND_IPV6: u16 = 26;
-pub const EVENT_ID_TCP_RECV_IPV6: u16 = 27;
-pub const EVENT_ID_TCP_CONNECT_IPV6: u16 = 28;
-pub const EVENT_ID_TCP_DISCONNECT_IPV6: u16 = 29;
-pub const EVENT_ID_TCP_RETRANSMIT_IPV6: u16 = 30;
-pub const EVENT_ID_TCP_ESTABLISHED_IPV6: u16 = 31;
-pub const EVENT_ID_UDP_SEND_IPV4: u16 = 42;
-pub const EVENT_ID_UDP_RECV_IPV4: u16 = 43;
-pub const EVENT_ID_UDP_SEND_IPV6: u16 = 58;
-pub const EVENT_ID_UDP_RECV_IPV6: u16 = 59;
+// Re-export event IDs for external consumers (tests, other modules).
+pub use ids::*;
 
 // ---------------------------------------------------------------------------
 // TcpIpParser

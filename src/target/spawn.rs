@@ -5,7 +5,7 @@
 //! **Dependencies**: `target`, `etwarden::output`, `etwarden::process`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 135 / 160
+//! **Line budget**: 140 / 160
 
 use std::{
     collections::HashSet,
@@ -18,7 +18,7 @@ use std::{
 use etwarden::{
     output::diagnostic,
     process::{
-        resolve_spawn_capture_target, spawn_and_get_pid_with_options, ProcessMonitor,
+        resolve_spawn_capture_target, spawn_and_get_pid_with_options, JobObject, ProcessMonitor,
         ProcessTreeCache, SpawnOptions,
     },
 };
@@ -67,19 +67,10 @@ pub(super) fn primary_pid(root_pid: u32, pids: &HashSet<u32>, network_pids: &Has
         .unwrap_or(root_pid)
 }
 
-pub(super) fn should_wait_for_spawn_descendant(cmd: &str) -> bool {
-    let program = cmd
-        .trim()
-        .trim_start_matches('"')
-        .split(['"', ' ', '\t'])
-        .next()
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    let extension = std::path::Path::new(&program).extension();
-    matches!(
-        program.as_str(),
-        "cmd" | "cmd.exe" | "powershell" | "powershell.exe" | "pwsh" | "pwsh.exe"
-    ) || extension.is_some_and(|ext| matches!(ext.to_str(), Some("cmd" | "bat" | "ps1")))
+pub(super) const fn should_wait_for_spawn_descendant(_cmd: &str) -> bool {
+    // CreateProcessW resolves .cmd/.bat natively; the spawned process may
+    // be cmd.exe wrapping the real target. Always poll for descendants.
+    true
 }
 
 pub(super) fn spawn_target(
@@ -87,11 +78,20 @@ pub(super) fn spawn_target(
     stop_signal: &Arc<AtomicBool>,
     process_cache: &ProcessTreeCache,
 ) -> anyhow::Result<ResolvedTarget> {
+    let job = JobObject::new().map_err(|e| anyhow::anyhow!("{e}"))?;
+
     let result = spawn_and_get_pid_with_options(&spec.cmd, &spec.options)
         .map_err(|e| anyhow::anyhow!("{e}"))?;
-    let monitor = ProcessMonitor::new(result.child);
-    let root_pid = monitor.pid();
-    diagnostic::warn(format_args!("spawned PID {root_pid}"));
+
+    // Assign to job while process is still suspended (no race!), then resume.
+    let (root_pid, process_handle) = result
+        .assign_resume_into(|h| job.assign_handle(h))
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+    let monitor = ProcessMonitor::new(root_pid, process_handle, job);
+    diagnostic::warn(format_args!(
+        "spawned PID {root_pid} (job-assigned, resumed)"
+    ));
 
     let target = match resolve_spawn_capture_target(
         root_pid,

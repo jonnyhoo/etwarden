@@ -114,7 +114,9 @@ fn discovered_spawn_target_uses_tree_pids_and_network_primary() {
 }
 
 #[test]
-fn waits_for_wrapper_commands() {
+fn waits_for_all_commands() {
+    // CreateProcessW cannot predict whether a command spawns descendants,
+    // so we always poll for them.
     assert!(should_wait_for_spawn_descendant("cmd /C claude -p test"));
     assert!(should_wait_for_spawn_descendant(
         r#""C:\tools\claude.cmd" -p test"#
@@ -122,7 +124,7 @@ fn waits_for_wrapper_commands() {
     assert!(should_wait_for_spawn_descendant(
         "pwsh -NoProfile -File script.ps1"
     ));
-    assert!(!should_wait_for_spawn_descendant(
+    assert!(should_wait_for_spawn_descendant(
         "curl.exe https://example.com"
     ));
 }

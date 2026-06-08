@@ -5,7 +5,7 @@
 //! **Dependencies**: `ferrisetw`, `parser::tcpip`, `pcap::correlator`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 41 / 100
+//! **Line budget**: 49 / 100
 
 mod connection;
 mod event;
@@ -15,27 +15,30 @@ use std::sync::Arc;
 use ferrisetw::{provider::Provider, EventRecord, SchemaLocator};
 
 use crate::{
-    capture::provider::tcpip::event::parse_tcpip_event,
-    parser::{tcpip::PROVIDER_TCPIP, ParserRegistry},
+    capture::provider::tcpip::event::parse_tcpip_event, parser::ParserRegistry,
     pcap::correlator::Correlator,
 };
 
-/// Builds the Microsoft-Windows-Kernel-Network ETW provider.
+/// Builds the TCPIP kernel provider for use with a `KernelTrace` session.
 ///
-/// Parses events using ferrisetw's `Parser` and dispatches `NetEvent`s to the
-/// given `ParserRegistry`.
+/// Uses the classic kernel provider GUID (`9a280ac0-c8e0-11d1-84e2-00c04fb998a2`)
+/// with `EVENT_TRACE_FLAG_NETWORK_TCPIP` in `EnableFlags`. This is required
+/// because `Microsoft-Windows-Kernel-Network` is a classic kernel provider
+/// that does not activate via `EnableTraceEx2` alone on a `UserTrace`.
 pub fn build_tcpip_provider(
     registry: Arc<ParserRegistry>,
     correlator: Option<Arc<Correlator>>,
 ) -> Provider {
-    Provider::by_guid(PROVIDER_TCPIP)
-        .add_callback(move |record: &EventRecord, locator: &SchemaLocator| {
-            if let Some(event) = parse_tcpip_event(record, locator) {
-                if let Some(corr) = correlator.as_deref() {
-                    corr.register_event(&event);
-                }
-                registry.push_event(event);
+    let callback = move |record: &EventRecord, locator: &SchemaLocator| {
+        if let Some(event) = parse_tcpip_event(record, locator) {
+            if let Some(corr) = correlator.as_deref() {
+                corr.register_event(&event);
             }
-        })
+            registry.push_event(event);
+        }
+    };
+
+    Provider::kernel(&ferrisetw::provider::kernel_providers::TCP_IP_PROVIDER)
+        .add_callback(callback)
         .build()
 }

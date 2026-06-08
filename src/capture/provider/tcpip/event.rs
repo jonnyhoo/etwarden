@@ -34,11 +34,28 @@ use crate::{
 pub(super) fn parse_tcpip_event(record: &EventRecord, locator: &SchemaLocator) -> Option<NetEvent> {
     let schema = locator.event_schema(record).ok()?;
     let parser = Parser::create(record, &schema);
+
+    // Classic kernel events (from KernelTrace + EnableFlags) have event_id=0
+    // with the actual type in the opcode field. Manifested events use event_id
+    // directly. The classic opcode values (from evntrace.h) already match the
+    // manifest event IDs exactly (e.g. opcode 0x0A = Send = manifest ID 10),
+    // so no offset is needed.
     let event_id = record.event_id();
-    let pid = parse_kernel_network_pid(&parser)?;
+    let effective_id = if event_id == 0 {
+        u16::from(record.opcode())
+    } else {
+        event_id
+    };
+
+    let pid = parse_kernel_network_pid(&parser).or_else(|| {
+        // Classic kernel events may store PID as 0xFFFFFFFF in the parser;
+        // fall back to EventHeader.ProcessId in that case.
+        let header_pid = record.process_id();
+        (header_pid != u32::MAX).then_some(header_pid)
+    })?;
     let timestamp = record_timestamp(record)?;
 
-    match event_id {
+    match effective_id {
         EVENT_ID_TCP_CONNECT_IPV4 => parse_connect_v4(&parser, pid, timestamp),
         EVENT_ID_TCP_CONNECT_IPV6 => parse_connect_v6(&parser, pid, timestamp),
         EVENT_ID_TCP_DISCONNECT_IPV4 => parse_disconnect_v4(&parser, pid, timestamp),

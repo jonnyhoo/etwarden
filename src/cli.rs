@@ -1,11 +1,11 @@
 //! # `cli`
 //!
 //! **Purpose**: Command-line argument definitions via clap.
-//! **Public API**: `struct Cli`, `enum TargetMode`
+//! **Public API**: `struct Cli`, `enum TargetMode`, `enum BrowseMode`
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 78 / 110
+//! **Line budget**: 110 / 130
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -43,9 +43,9 @@ pub struct Cli {
     #[arg(long)]
     pub pcap_out: Option<String>,
 
-    /// Run active local HTTPS MITM proxy for the target PID.
+    /// Disable HTTPS MITM even if an active routing mode is selected.
     #[arg(long)]
-    pub mitm: bool,
+    pub no_mitm: bool,
 
     /// Local MITM proxy listen address.
     #[arg(long, default_value = "127.0.0.1:3003")]
@@ -67,9 +67,17 @@ pub struct Cli {
     #[arg(long, default_value = "1048576")]
     pub mitm_max_body_bytes: usize,
 
-    /// Opt in to global OS proxy mutation while MITM is running.
-    #[arg(long)]
+    /// Opt in to legacy global OS proxy mutation. Requires `--no-divert`.
+    #[arg(long, requires = "no_divert", conflicts_with = "no_mitm")]
     pub mitm_system_proxy: bool,
+
+    /// Enable experimental `WinDivert` TCP redirect for hot-attach MITM.
+    #[arg(long, conflicts_with_all = ["no_divert", "no_mitm"])]
+    pub divert: bool,
+
+    /// Keep `WinDivert` TCP redirect disabled. Default until transparent upstream handling is complete.
+    #[arg(long)]
+    pub no_divert: bool,
 
     /// Path to a JSON rules file (replace/intercept/hosts/block rules).
     #[arg(long)]
@@ -88,6 +96,26 @@ pub enum TargetMode {
     Spawn {
         /// The command to execute.
         cmd: String,
+    },
+    /// Launch a browser, navigate to a URL, and capture network traffic.
+    Browse {
+        /// URL to navigate to.
+        url: String,
+        /// Browser to use: chrome, edge, chromium, brave, vivaldi.
+        #[arg(long)]
+        browser: Option<String>,
+        /// Run browser in headless mode.
+        #[arg(long)]
+        headless: bool,
+        /// Explicit path to browser executable.
+        #[arg(long)]
+        browser_path: Option<PathBuf>,
+        /// Seconds to wait for page load (default 15).
+        #[arg(long, default_value = "15")]
+        timeout: u64,
+        /// Seconds to keep capturing after page load (default 0).
+        #[arg(long, default_value = "0")]
+        after_load: u64,
     },
 }
 
@@ -146,22 +174,58 @@ mod tests {
 
     #[test]
     fn cli_parses_mitm_options() {
+        // MITM is on by default; --mitm-* flags still work for tuning.
         let cli = Cli::try_parse_from([
             "etwarden",
             "--pid",
             "1234",
-            "--mitm",
             "--mitm-listen",
             "127.0.0.1:4000",
             "--mitm-body-limit",
             "1024",
+        ])
+        .expect("parse");
+        assert!(!cli.no_mitm);
+        assert_eq!(cli.mitm_listen.port(), 4000);
+        assert_eq!(cli.mitm_body_limit, 1024);
+    }
+
+    #[test]
+    fn cli_no_mitm_disables_mitm() {
+        let cli = Cli::try_parse_from(["etwarden", "--pid", "1234", "--no-mitm"]).expect("parse");
+        assert!(cli.no_mitm);
+    }
+
+    #[test]
+    fn cli_system_proxy_is_opt_in() {
+        let cli = Cli::try_parse_from(["etwarden", "--pid", "1234"]).expect("parse");
+        assert!(!cli.mitm_system_proxy);
+
+        let result = Cli::try_parse_from(["etwarden", "--pid", "1234", "--mitm-system-proxy"]);
+        assert!(result.is_err());
+
+        let cli = Cli::try_parse_from([
+            "etwarden",
+            "--pid",
+            "1234",
+            "--no-divert",
             "--mitm-system-proxy",
         ])
         .expect("parse");
-        assert!(cli.mitm);
-        assert_eq!(cli.mitm_listen.port(), 4000);
-        assert_eq!(cli.mitm_body_limit, 1024);
         assert!(cli.mitm_system_proxy);
+        assert!(cli.no_divert);
+    }
+
+    #[test]
+    fn cli_divert_is_explicit_opt_in() {
+        let cli = Cli::try_parse_from(["etwarden", "--pid", "1234"]).expect("parse");
+        assert!(!cli.divert);
+
+        let cli = Cli::try_parse_from(["etwarden", "--pid", "1234", "--divert"]).expect("parse");
+        assert!(cli.divert);
+
+        let result = Cli::try_parse_from(["etwarden", "--pid", "1234", "--divert", "--no-divert"]);
+        assert!(result.is_err());
     }
 
     #[test]

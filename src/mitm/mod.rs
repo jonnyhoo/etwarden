@@ -5,7 +5,7 @@
 //! **Dependencies**: `http-mitm-proxy`, `tokio`, `rcgen`, `parser`, `pcap`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `optional-user-proxy-write`
-//! **Line budget**: 340 / 380
+//! **Line budget**: 360 / 400
 
 mod body;
 mod ca;
@@ -44,6 +44,7 @@ use self::{
     system_proxy::SystemProxyGuard,
 };
 use crate::{
+    divert::RedirectMap,
     error::{EtwardenError, Result},
     output::diagnostic,
     parser::{
@@ -87,6 +88,8 @@ pub struct MitmProxyConfig {
     pub stop_signal: Option<Arc<AtomicBool>>,
     /// Optional compiled traffic-control rules applied to intercepted HTTP.
     pub rule_set: Option<Arc<RuleSet>>,
+    /// Optional redirect map from `WinDivert` for transparent proxy upstream resolution.
+    pub redirect_map: Option<Arc<RedirectMap>>,
 }
 
 /// Running MITM proxy thread handle.

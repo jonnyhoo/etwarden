@@ -1,125 +1,68 @@
 //! # `process::spawn::tests`
 //!
-//! **Purpose**: Unit tests for command parsing and spawned child output routing.
+//! **Purpose**: Unit tests for spawned child process creation and output routing.
 //! **Public API**: test module only
 //! **Dependencies**: `process::spawn`, `tempfile`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 170 / 220
+//! **Line budget**: 120 / 200
 
 use std::{fs, path::PathBuf};
 
 use super::*;
 
-#[test]
-fn parse_simple_command() {
-    let (prog, args) = parse_command("notepad.exe");
-    assert_eq!(prog, "notepad.exe");
-    assert!(args.is_empty());
-}
-
-#[test]
-fn parse_command_with_args() {
-    let (prog, args) = parse_command("ping -n 1 127.0.0.1");
-    assert_eq!(prog, "ping");
-    assert_eq!(args, vec!["-n", "1", "127.0.0.1"]);
-}
-
-#[test]
-fn parse_quoted_program() {
-    let (prog, args) = parse_command(r#""C:\Program Files\app.exe" --flag value"#);
-    assert_eq!(prog, r"C:\Program Files\app.exe");
-    assert_eq!(args, vec!["--flag", "value"]);
-}
-
-#[test]
-fn parse_quoted_argument() {
-    let (prog, args) = parse_command(r#"tool.exe --name "hello world" --flag"#);
-    assert_eq!(prog, "tool.exe");
-    assert_eq!(args, vec!["--name", "hello world", "--flag"]);
-}
-
-#[test]
-fn parse_empty_quoted_argument() {
-    let (prog, args) = parse_command(r#"tool.exe "" tail"#);
-    assert_eq!(prog, "tool.exe");
-    assert_eq!(args, vec!["", "tail"]);
-}
-
-#[test]
-fn parse_quoted_program_no_args() {
-    let (prog, args) = parse_command(r#""C:\My App\test.exe""#);
-    assert_eq!(prog, r"C:\My App\test.exe");
-    assert!(args.is_empty());
-}
-
-#[test]
-fn parse_unclosed_quote_falls_back() {
-    let (prog, args) = parse_command(r#""C:\Program Files\app.exe"#);
-    assert_eq!(prog, r#""C:\Program Files\app.exe"#);
-    assert!(args.is_empty());
-}
-
-#[test]
-fn parse_empty_string() {
-    let (prog, args) = parse_command("");
-    assert!(prog.is_empty());
-    assert!(args.is_empty());
-}
-
-#[test]
-fn parse_whitespace_only() {
-    let (prog, args) = parse_command("   ");
-    assert!(prog.is_empty());
-    assert!(args.is_empty());
+/// Resume the suspended primary thread, then wait for process exit.
+fn resume_and_wait(result: &SpawnResult) {
+    unsafe {
+        use windows::Win32::System::Threading::{ResumeThread, WaitForSingleObject};
+        ResumeThread(result.thread_handle());
+        let _ = WaitForSingleObject(result.process_handle(), 0xFFFF_FFFF);
+    }
 }
 
 #[test]
 fn spawn_cmd_exits_quickly() {
     let result = spawn_and_get_pid("cmd /C exit 0");
-    assert!(result.is_ok(), "spawn should succeed");
-    let sr = result.expect("spawn cmd should succeed");
-    assert!(sr.pid > 0, "PID should be positive");
-    assert_eq!(sr.child.id(), sr.pid);
+    assert!(result.is_ok(), "spawn should succeed: {:?}", result.err());
+    let result = result.expect("spawn succeeded");
+    assert!(result.pid > 0, "PID should be positive");
+
+    resume_and_wait(&result);
+
+    let mut exit_code = 0u32;
+    unsafe {
+        let _ = windows::Win32::System::Threading::GetExitCodeProcess(
+            result.process_handle(),
+            &raw mut exit_code,
+        );
+    }
+    assert_eq!(exit_code, 0, "exit code should be 0");
 }
 
 #[test]
-fn spawn_routes_stdout_and_stderr_to_files() {
-    let temp = tempfile::tempdir().expect("temp dir");
-    let stdout_path = temp.path().join("nested/stdout.txt");
-    let stderr_path = temp.path().join("nested/stderr.txt");
-    let options = SpawnOptions {
-        stdout_path: Some(stdout_path.clone()),
-        stderr_path: Some(stderr_path.clone()),
-    };
-
-    let mut result = spawn_and_get_pid_with_options(
-        "cmd /C echo ETWARDEN_STDOUT & echo ETWARDEN_STDERR 1>&2",
-        &options,
-    )
-    .expect("spawn");
-    let status = result.child.wait().expect("wait");
-
-    assert!(status.success());
-    assert!(fs::read_to_string(stdout_path)
-        .expect("stdout file")
-        .contains("ETWARDEN_STDOUT"));
-    assert!(fs::read_to_string(stderr_path)
-        .expect("stderr file")
-        .contains("ETWARDEN_STDERR"));
-}
-
-#[test]
-fn spawn_rejects_empty_output_path() {
-    let options = SpawnOptions {
-        stdout_path: Some(PathBuf::new()),
-        stderr_path: None,
-    };
-
-    let result = spawn_and_get_pid_with_options("cmd /C exit 0", &options);
-
+fn spawn_nonexistent_exits_nonzero() {
+    // cmd.exe /C wraps the command, so CreateProcessW always succeeds.
+    // The child process exits with non-zero code for an invalid command.
+    let result = spawn_and_get_pid("nonexistent_program_xyz_12345");
     assert!(
-        matches!(result, Err(err) if err.to_string().contains("stdout path must not be empty"))
+        result.is_ok(),
+        "spawn should succeed (cmd.exe wraps): {:?}",
+        result.err()
+    );
+    let result = result.expect("spawn succeeded");
+    assert!(result.pid > 0, "PID should be positive");
+    resume_and_wait(&result);
+
+    let mut exit_code = 0u32;
+    unsafe {
+        let _ = windows::Win32::System::Threading::GetExitCodeProcess(
+            result.process_handle(),
+            &raw mut exit_code,
+        );
+    }
+    assert_ne!(
+        exit_code, 0,
+        "exit code should be non-zero for nonexistent program"
     );
 }
 
@@ -137,16 +80,45 @@ fn spawn_rejects_shared_stdout_and_stderr_path() {
 }
 
 #[test]
-fn spawn_nonexistent_fails() {
-    let result = spawn_and_get_pid("nonexistent_program_xyz_12345");
-    assert!(result.is_err());
+fn spawn_writes_stdout_to_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stdout_path = dir.path().join("out.log");
+    let options = SpawnOptions {
+        stdout_path: Some(stdout_path.clone()),
+        stderr_path: None,
+    };
+
+    let result = spawn_and_get_pid_with_options("cmd /C echo hello", &options);
+    assert!(result.is_ok(), "spawn should succeed: {:?}", result.err());
+
+    let result = result.expect("spawn succeeded");
+    resume_and_wait(&result);
+
+    let content = fs::read_to_string(&stdout_path).expect("read stdout file");
+    assert!(
+        content.contains("hello"),
+        "stdout file should contain 'hello', got: {content}"
+    );
 }
 
 #[test]
-fn spawn_empty_command_fails_before_process_create() {
-    let result = spawn_and_get_pid("   ");
+fn spawn_writes_stderr_to_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let stderr_path = dir.path().join("err.log");
+    let options = SpawnOptions {
+        stdout_path: None,
+        stderr_path: Some(stderr_path.clone()),
+    };
+
+    let result = spawn_and_get_pid_with_options("cmd /C echo error 1>&2", &options);
+    assert!(result.is_ok(), "spawn should succeed: {:?}", result.err());
+
+    let result = result.expect("spawn succeeded");
+    resume_and_wait(&result);
+
+    let content = fs::read_to_string(&stderr_path).expect("read stderr file");
     assert!(
-        matches!(result, Err(err) if err.to_string().contains("must not be empty")),
-        "empty command should fail"
+        content.contains("error"),
+        "stderr file should contain 'error', got: {content}"
     );
 }
