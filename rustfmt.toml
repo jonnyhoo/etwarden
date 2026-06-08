@@ -1,6 +1,2 @@
 edition = "2021"
 max_width = 100
-imports_granularity = "Crate"
-group_imports = "StdExternalCrate"
-fn_single_line = false
-trailing_comma = "Vertical"
