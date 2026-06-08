@@ -327,5 +327,6 @@ T01 → T02 → T03 → T04 → T05 → T06 → T07 → T08 → T09 → T10 → 
 | 6 — Phase 3 spawn | T29–T32 | `[x]` |
 | 7 — Tests & Bench | T33–T34 | `[x]` |
 
-Historical atomic plan is complete. Current roadmap status: Phases 1–5 shipped;
-Phase 6 traffic control and Phase 7 advanced outputs/search/scripting remain planned.
+Historical atomic plan is complete. Current roadmap status: Phases 1–5 shipped
+(including MITM proxy + rule engine). Phase 6 (WinDivert) and Phase 7 (advanced
+analysis) remain planned.

@@ -142,8 +142,9 @@ All phases are canonical. See `docs/ROADMAP.md` for full detail.
 | 3.5 | DNS Client ETW → DnsQuery/DnsResponse NDJSON | ✅ Done |
 | 3.6 | DPI, TCP state machine, connection tracker, IP classification | ✅ Done |
 | 4 | TLS SNI/JA3/JA4 fingerprinting, HTTP DPI, process name enrichment | ✅ Done |
-| 5 | HTTPS decryption (rustls-mitm) | ✅ Done |
-| 6 | Traffic control (rule engine, WinDivert) | Planned |
+| 5 | HTTPS decryption (MITM proxy + rule engine) | ✅ Done |
+| 5.5 | `browse` subcommand: browser discovery, headless launch, CDP page-load detection | ✅ Done |
+| 6 | WinDivert active capture layer | Planned |
 | 7 | Advanced (Protobuf output, search, scripting) | Planned |
 
 ---
@@ -168,13 +169,17 @@ All phases are canonical. See `docs/ROADMAP.md` for full detail.
 | Module | Responsibility |
 |--------|---------------|
 | `capture/` | ETW session lifecycle, provider enable (TCPIP + NDIS + Correlation + DNS Client), event loop |
-| `parser/` | Convert RawEvent → NetEvent per provider; DNS wire parsing, DPI, TCP state machine |
-| `filter/` | Drop events not belonging to TargetPid |
+| `parser/` | Convert RawEvent → NetEvent per provider; DNS wire parsing, DPI (TLS/HTTP), TCP state machine |
+| `filter/` | Drop events not belonging to TargetPid or its process tree |
 | `pcap/` | Correlate RawFrame to TargetPid, write .pcapng |
-| `process/` | Spawn child process, monitor lifecycle, PID → process name lookup |
-| `output/` | Serialize NetEvent to NDJSON stdout (EventLine + DnsEventLine + SummaryLine) |
+| `process/` | Spawn child process, monitor lifecycle, PID → process name lookup, process tree cache, TCP socket inventory |
+| `runtime/` | Browse subcommand: browser discovery (registry/paths/PATH), headless launch, CDP page-load detection, capture orchestration |
+| `mitm/` | HTTPS MITM proxy: CA cert generation, system proxy, body decoding, PID resolution |
+| `rules/` | Traffic control: block/replace/intercept/hosts rules, pattern matching, config loading |
+| `output/` | Serialize NetEvent to NDJSON stdout (EventLine + DnsEventLine + HttpEventLine + TlsEventLine + RuleHitEventLine + SummaryLine + ErrorLine) |
 | `tracker.rs` | Connection flow tracker: DashMap<FiveTuple, TrackedConnection>, byte counters, DPI, idle cleanup |
 | `classify.rs` | IP scope classification: Public/Private/LinkLocal/Loopback/Multicast/etc |
+| `target.rs` | CLI target resolution (PID or spawn), stop signal, process tree filter setup |
 | `cli.rs` | clap argument definitions |
 | `error.rs` | Unified error types |
 | `main.rs` | Assemble modules, run capture loop |

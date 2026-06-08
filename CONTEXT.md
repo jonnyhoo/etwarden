@@ -140,9 +140,92 @@ _Avoid_: IP class, address scope, network scope
 
 **ProcessLookup**
 The `process/lookup.rs` module. `ProcessNameCache` maps PID → process name
-via `OpenProcess` + `QueryFullProcessImageNameW`. Used by `output/json.rs`
-to enrich NDJSON lines with `process_name` field.
+via `sysinfo`. Used by `output/json.rs` to enrich NDJSON lines with `process_name` field.
 _Avoid_: process resolver, PID resolver, process name cache
+
+**ProcessTreeCache**
+The `process/tree.rs` module. Maintains a periodically-refreshed snapshot of the
+system process tree via `sysinfo`. Maps PID → `ProcessInfo` (name, ppid, command_line, tree_path).
+Used by `filter/tree.rs` for process-tree filtering.
+_Avoid_: process tree resolver, tree snapshot
+
+**ProcessTreeFilter**
+The `filter/tree.rs` component. Allows events from a root PID and all its
+discovered descendants. Used for `--spawn` mode to track child processes.
+_Avoid_: tree filter, descendant filter
+
+---
+
+## MITM Terms
+
+**MITM**
+Man-in-the-Middle. The `mitm/mod.rs` module runs an HTTPS proxy that intercepts
+traffic, decrypts it with dynamically-generated TLS certificates, and emits HTTP
+metadata as NDJSON. Uses `http-mitm-proxy` + `rcgen`.
+_Avoid_: proxy module, HTTPS proxy, SSL proxy
+
+**MitmCaptureConfig**
+Configuration for the MITM proxy: listen address, CA settings, rule set reference.
+Passed to `start_mitm_proxy()`.
+_Avoid_: proxy config, MITM config
+
+**CertificateAuthority**
+The `mitm/ca.rs` module. Generates a root CA certificate and per-host leaf
+certificates using `rcgen`. The root CA must be trusted by the target process.
+_Avoid_: CA module, cert generator
+
+**SystemProxy**
+The `mitm/system_proxy.rs` module. Sets/restores the Windows system proxy
+via registry to redirect traffic through the MITM proxy.
+_Avoid_: proxy settings, Windows proxy
+
+---
+
+## Rules Terms
+
+**RuleSet**
+The `rules/ruleset.rs` module. Ordered collection of rules evaluated against
+each request/response. Contains block, replace, intercept, and hosts rules.
+_Avoid_: rule collection, rule list
+
+**BlockRule**
+Traffic blocking rule. Variants: HTTP (`block/http.rs`), socket (`block/socket.rs`),
+WebSocket (`block/websocket.rs`). Actions: close connection, drop frame.
+_Avoid_: deny rule, filter rule
+
+**ReplaceRule**
+The `rules/replace.rs` module. URL/body content replacement. Supports string
+and regex patterns.
+_Avoid_: rewrite rule, substitution rule
+
+**InterceptRule**
+The `rules/intercept/rule.rs` module. Pauses traffic for inspection. Matches
+on URL, header, body, PID, or process name with various operators.
+_Avoid_: breakpoint rule, pause rule
+
+**HostsRule**
+The `rules/hosts.rs` module. DNS-level host redirection. Redirects matching
+domain patterns to specified IP addresses.
+_Avoid_: DNS redirect, hosts file rule
+
+**Matcher**
+The `rules/matcher.rs` module. Pattern matching engine supporting contains,
+equals, prefix, suffix, and regex operators.
+_Avoid_: pattern matcher, match engine
+
+---
+
+## Target Terms
+
+**ResolvedTarget**
+The `target.rs` struct. Fully resolved target process with its PID and a stop
+signal (`AtomicBool`). Produced by `target::resolve()`.
+_Avoid_: target info, process target
+
+**SpawnCaptureTarget**
+The `process/spawn_capture.rs` struct. Resolves `--spawn-capture` targets with
+stdout/stderr capture paths.
+_Avoid_: capture target, spawn config
 
 ---
 
@@ -159,18 +242,47 @@ Fields: `t`, `pid`, `proto`, `src`, `dst`, `event`, `bytes_out`, `bytes_in`,
 optional `process_name`, `scope`.
 _Avoid_: network line, connection line
 
+**DnsEventLine**
+NDJSON output type for DNS events (DnsQuery/DnsResponse).
+Fields: `t`, `pid`, `event`, `hostname`, `query_type`, `query_results`, `status`.
+_Avoid_: DNS line, DNS JSON
+
+**HttpEventLine**
+NDJSON output type for MITM-decrypted HTTP events.
+Fields: `t`, `pid`, `event` (`http_request`/`http_response`), `method`, `url`,
+`host`, `status`, `headers`, `body_preview`.
+_Avoid_: HTTP line, HTTP JSON
+
+**TlsEventLine**
+NDJSON output type for TLS ClientHello events from DPI.
+Fields: `t`, `pid`, `event` (`tls_hello`), `sni`, `alpn`, `tls_version`,
+`ja3_hash`, `ja4`, cipher/extension counts.
+_Avoid_: TLS line, TLS JSON
+
+**RuleHitEventLine**
+NDJSON output type for rule engine matches.
+Fields: `t`, `event` (`rule_hit`), `rule_type`, `rule_name`, `action`, `url`, `pid`.
+_Avoid_: rule line, rule JSON
+
 **SummaryLine**
 The final JSON line written to stdout when the capture session ends.
 Contains aggregate counts and flags. Always present, even on error.
 _Avoid_: final output, summary event, exit JSON
 
+**ErrorLine**
+Terminal error line written to stdout before returning an error.
+Fields: `type` (always `"error"`), `message`.
+_Avoid_: error output, error JSON
+
 **OutputLine**
-The top-level enum in `schema.rs`: `Event(EventLine)`, `DnsEvent(DnsEventLine)`,
-`Summary(SummaryLine)`. Each variant serializes to one NDJSON line.
+The top-level enum in `schema/line/meta.rs`: `Event(EventLine)`,
+`DnsEvent(DnsEventLine)`, `HttpEvent(HttpEventLine)`, `TlsEvent(TlsEventLine)`,
+`RuleHit(RuleHitEventLine)`, `Summary(SummaryLine)`, `Error(ErrorLine)`.
+Each variant serializes to one NDJSON line.
 _Avoid_: output enum, line type
 
 **Agent Contract**
-The stable schema defined in `output/schema.rs`. Must not have breaking
+The stable schema defined in `output/schema/`. Must not have breaking
 changes between versions. Validated by `tests/schema_compat.rs`.
 _Avoid_: output format, JSON schema, API contract
 

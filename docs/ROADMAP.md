@@ -91,7 +91,7 @@ WPF前端 (src/) — 24个XAML + 63个C#文件
 
 **来源**: `backend/TLSFingerprint.go` (489行)
 
-**目标文件**: `src/parser/tls_fingerprint.rs` (新建)
+**目标文件**: `src/parser/dpi/tls/fingerprint.rs` (新建)
 
 **算法细节**:
 
@@ -253,7 +253,7 @@ pub fn build_tls_fingerprint(hello: &TlsClientHello) -> TlsFingerprint;
 
 ### 3.2 HTTP 明文 DPI
 
-**目标文件**: `src/parser/http_dpi.rs` (新建)
+**目标文件**: `src/parser/dpi/http.rs` (新建)
 
 从NDIS帧中识别明文HTTP请求/响应。
 
@@ -279,17 +279,6 @@ HTTP响应检测:
 ### 3.3 进程树关联
 
 **目标文件**: `src/process/tree.rs` (新建)
-
-```
-使用 Windows API:
-  CreateToolhelp32Snapshot → 获取进程快照
-  Process32First / Process32Next → 遍历进程
-  PROCESSENTRY32.th32ParentProcessID → 父PID
-
-输出:
-  pid → ProcessInfo { name, ppid, command_line, tree_path }
-  tree_path: "explorer.exe(1234) → chrome.exe(5678) → tab(9012)"
-```
 
 ---
 
@@ -317,7 +306,7 @@ HTTP响应检测:
 
 | 组件 | crate | 用途 |
 |------|-------|------|
-| TLS MITM | `rustls-mitm` | 动态CA + per-host证书签发 |
+| TLS MITM | `http-mitm-proxy` | 动态CA + per-host证书签发 |
 | HTTP/1.1解析 | `httparse` | 解析HTTP请求/响应 |
 | HTTP/2 | `h2` | HTTP/2帧解析 |
 | 异步运行时 | `tokio` | 异步IO |
@@ -1011,19 +1000,19 @@ end
 
 | 文件 | 类型 | 行数估计 | 说明 |
 |------|------|---------|------|
-| `src/parser/tls_fingerprint.rs` | 新建 | ~350 | TLS Client Hello解析 + JA3/JA4 |
-| `src/parser/http_dpi.rs` | 新建 | ~200 | 明文HTTP DPI |
+| `src/parser/dpi/tls/fingerprint.rs` | 新建 | ~350 | TLS Client Hello解析 + JA3/JA4 |
+| `src/parser/dpi/http.rs` | 新建 | ~200 | 明文HTTP DPI |
 | `src/process/tree.rs` | 新建 | ~150 | 进程树关联 |
 
 ### Phase 2
 
 | 文件 | 类型 | 行数估计 | 说明 |
 |------|------|---------|------|
-| `src/proxy/mod.rs` | 新建 | ~50 | MITM proxy模块入口 |
-| `src/proxy/server.rs` | 新建 | ~400 | tokio异步proxy服务器 |
-| `src/proxy/tls.rs` | 新建 | ~200 | rustls-mitm证书管理 |
-| `src/proxy/decoder.rs` | 新建 | ~150 | gzip/br/deflate解码 |
-| `src/proxy/proxy_config.rs` | 新建 | ~100 | 系统代理设置 |
+| `src/mitm/mod.rs` | 新建 | ~50 | MITM proxy模块入口 |
+| `src/mitm/server.rs` | 新建 | ~400 | tokio异步proxy服务器 |
+| `src/mitm/ca.rs` | 新建 | ~200 | rcgen证书管理 |
+| `src/mitm/body.rs` | 新建 | ~150 | gzip/br/deflate解码 |
+| `src/mitm/system_proxy.rs` | 新建 | ~100 | 系统代理设置 |
 
 ### Phase 3
 
@@ -1069,7 +1058,7 @@ hex = "0.4"          # hex编解码 (可能已有)
 
 ```toml
 [dependencies]
-rustls-mitm = "0.1"  # TLS MITM证书签发 (检查最新版本)
+rustls-mitm = "0.1"  # → 实际使用 http-mitm-proxy 0.18
 tokio = { version = "1", features = ["full"] }
 httparse = "1.9"     # HTTP/1.1解析
 h2 = "0.4"           # HTTP/2
