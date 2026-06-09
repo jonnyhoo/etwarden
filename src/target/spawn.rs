@@ -34,6 +34,7 @@ pub(super) struct SpawnTarget {
     pub(super) root_pid: u32,
     pub(super) pid: u32,
     pub(super) capture_pids: HashSet<u32>,
+    pub(super) network_pids: HashSet<u32>,
 }
 
 impl SpawnTarget {
@@ -42,6 +43,7 @@ impl SpawnTarget {
             root_pid,
             pid: root_pid,
             capture_pids: HashSet::from([root_pid]),
+            network_pids: HashSet::new(),
         }
     }
 
@@ -54,6 +56,7 @@ impl SpawnTarget {
             root_pid,
             pid: primary_pid(root_pid, &pids, network_pids),
             capture_pids: pids,
+            network_pids: network_pids.clone(),
         }
     }
 }
@@ -118,6 +121,7 @@ pub(super) fn spawn_target(
         pid: target.pid,
         root_pid: target.root_pid,
         capture_pids: target.capture_pids,
+        network_pids: target.network_pids,
         is_spawned: true,
         stop_signal: Arc::clone(stop_signal),
     })

@@ -1,0 +1,15 @@
+---
+source: tests/process_schema_compat.rs
+expression: line
+---
+{
+  "type": "process",
+  "pid": 4242,
+  "parent_pid": 1000,
+  "name": "claude.exe",
+  "exe": "C:\\Users\\agent\\AppData\\Local\\Programs\\Claude\\claude.exe",
+  "command_line": "claude.exe --debug",
+  "session_id": 1,
+  "current_session": true,
+  "started_at_unix_secs": 1781013600
+}

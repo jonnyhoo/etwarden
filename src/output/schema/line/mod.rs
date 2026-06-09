@@ -9,9 +9,11 @@
 
 mod event;
 mod meta;
+mod process;
 
 pub use event::{
     DnsEventLine, EventLine, HttpEventLine, HttpHeaderLine, HttpSseEventLine, RuleHitEventLine,
     TlsEventLine, TunnelDataEventLine,
 };
 pub use meta::{ErrorLine, OutputLine, SummaryLine};
+pub use process::{ProcessKillLine, ProcessLine, SpawnTargetLine};

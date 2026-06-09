@@ -5,7 +5,7 @@
 //! **Dependencies**: `etwarden::cli`, `etwarden::filter`, `etwarden::process`, `ctrlc`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 135 / 180
+//! **Line budget**: 140 / 180
 
 use std::{
     collections::HashSet,
@@ -33,6 +33,8 @@ pub struct ResolvedTarget {
     pub root_pid: u32,
     /// Initial PID set used for filtering and socket bootstrap.
     pub capture_pids: HashSet<u32>,
+    /// Spawn-descendant PIDs that owned TCP sockets during discovery.
+    pub network_pids: HashSet<u32>,
     /// Whether the target came from `--spawn`.
     pub is_spawned: bool,
     /// Shared signal set by Ctrl+C or child process exit.
@@ -64,6 +66,7 @@ fn pid_target(pid: u32, stop_signal: Arc<AtomicBool>) -> ResolvedTarget {
         pid,
         root_pid: pid,
         capture_pids: HashSet::from([pid]),
+        network_pids: HashSet::new(),
         is_spawned: false,
         stop_signal,
     }

@@ -2,15 +2,18 @@
 //!
 //! **Purpose**: Stable summary/error/top-level NDJSON line types.
 //! **Public API**: `SummaryLine`, `ErrorLine`, `OutputLine`
-//! **Dependencies**: `output::schema::line::event`
+//! **Dependencies**: `output::schema::line::event`, `output::schema::line::process`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 62 / 90
+//! **Line budget**: 67 / 90
 
 use serde::{Deserialize, Serialize};
 
-use super::event::{
-    DnsEventLine, EventLine, HttpEventLine, RuleHitEventLine, TlsEventLine, TunnelDataEventLine,
+use super::{
+    event::{
+        DnsEventLine, EventLine, HttpEventLine, RuleHitEventLine, TlsEventLine, TunnelDataEventLine,
+    },
+    process::{ProcessKillLine, ProcessLine, SpawnTargetLine},
 };
 
 /// The final summary line written on capture exit.
@@ -64,6 +67,9 @@ pub enum OutputLine {
     TlsEvent(TlsEventLine),
     TunnelDataEvent(TunnelDataEventLine),
     RuleHit(RuleHitEventLine),
+    Process(ProcessLine),
+    ProcessKill(ProcessKillLine),
+    SpawnTarget(SpawnTargetLine),
     Summary(SummaryLine),
     Error(ErrorLine),
 }

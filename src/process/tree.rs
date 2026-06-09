@@ -2,21 +2,20 @@
 //!
 //! **Purpose**: Safe PID→process-tree enrichment via `sysinfo` snapshots.
 //! **Public API**: `struct ProcessInfo`, `struct ProcessTreeCache`
-//! **Dependencies**: `sysinfo`, `output::diagnostic`
+//! **Dependencies**: `process::inventory`, `sysinfo`, `output::diagnostic`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 261 / 280
+//! **Line budget**: 245 / 280
 
 use std::{
     collections::{HashMap, HashSet},
-    ffi::OsString,
     sync::Mutex,
     time::{Duration, Instant},
 };
 
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
-use crate::output::diagnostic;
+use crate::{output::diagnostic, process::inventory};
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const TREE_DEPTH_LIMIT: usize = 32;
@@ -149,7 +148,7 @@ impl ProcessTreeCache {
                 ProcessSnapshot {
                     name: process.name().to_string_lossy().to_string(),
                     ppid: process.parent().map(sysinfo::Pid::as_u32),
-                    command_line: command_line(process.cmd()),
+                    command_line: inventory::command_line(process.cmd()),
                 },
             );
         }
@@ -239,22 +238,6 @@ fn append_tree_part(path: &mut String, name: &str, pid: u32) {
     path.push('(');
     path.push_str(&pid.to_string());
     path.push(')');
-}
-
-fn command_line(parts: &[OsString]) -> Option<String> {
-    let mut command = String::new();
-    for part in parts {
-        if !command.is_empty() {
-            command.push(' ');
-        }
-        command.push_str(&part.to_string_lossy());
-    }
-
-    if command.is_empty() {
-        None
-    } else {
-        Some(command)
-    }
 }
 
 #[cfg(test)]

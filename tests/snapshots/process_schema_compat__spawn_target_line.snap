@@ -1,0 +1,17 @@
+---
+source: tests/process_schema_compat.rs
+expression: line
+---
+{
+  "type": "spawn_target",
+  "root_pid": 1000,
+  "primary_pid": 4242,
+  "capture_pids": [
+    1000,
+    4242,
+    4243
+  ],
+  "network_pids": [
+    4242
+  ]
+}

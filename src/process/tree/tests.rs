@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::{ffi::OsString, sync::Arc};
 
 use super::*;
+use crate::process::inventory;
 
 fn snapshot(name: &str, ppid: Option<u32>, command_line: Option<&str>) -> ProcessSnapshot {
     ProcessSnapshot {
@@ -94,8 +95,11 @@ fn is_descendant_or_self_handles_cycles() {
 #[test]
 fn command_line_joins_arguments() {
     let parts = [OsString::from("tool.exe"), OsString::from("--flag")];
-    assert_eq!(command_line(&parts).as_deref(), Some("tool.exe --flag"));
-    assert_eq!(command_line(&[]), None);
+    assert_eq!(
+        inventory::command_line(&parts).as_deref(),
+        Some("tool.exe --flag")
+    );
+    assert_eq!(inventory::command_line(&[]), None);
 }
 
 #[test]

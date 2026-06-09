@@ -13,6 +13,11 @@
   - decrypted HTTP events also expose agent-friendly plaintext fields: `headers[]`, `body_format`, `body_text`, `body_json`, and `sse_events[]` when bytes are UTF-8/JSON/SSE.
   - raw transparent TCP tunnels emit bounded `tunnel_data` request/response payload chunks.
   - default HTTPS tunnel payloads are encrypted TLS bytes; true HTTP headers/payloads require `--divert-tls-mitm` plus trusted MITM CA.
+- Built-in process discovery is implemented for agent-first workflows:
+  - `etwarden process list --filter <text>` emits NDJSON `process` rows without external pipes/tools.
+  - `etwarden process tree --pid <pid>` emits current process-tree rows.
+  - `etwarden process kill --pid <pid> --force` terminates one exact PID only and emits a `process_kill` row.
+  - Spawn capture emits a `spawn_target` row with `root_pid`, `primary_pid`, `capture_pids`, and `network_pids` before capture events.
 - Full static gate and admin/release gate passed locally in the previous handoff.
 - WinDivert runtime binaries must be bundled in Windows release packages; repo-root ad-hoc copies remain ignored, and release output is generated under `dist/`.
 - Release packaging is now verified with official WinDivert `2.2.2-A` runtime: `dist/etwarden-windows-x64/` contains `etwarden.exe`, `WinDivert.dll`, `WinDivert64.sys`, `LICENSE.WinDivert`, `README.WinDivert`, and `THIRD_PARTY_NOTICES.txt`.
@@ -29,6 +34,13 @@
   - Active redirect only runs when MITM is enabled and `--divert` is set.
 - `src/cli.rs`
   - Default `--mitm-body-limit` is `1048576` bytes so large agent request bodies such as Claude/ccs JSON can be emitted and parsed into `body_json` by default.
+- `src/app.rs`, `src/process_command.rs`, `src/process/inventory.rs`, `src/process/kill.rs`
+  - Adds first-class process inventory and exact-PID termination commands.
+  - Uses existing `sysinfo` snapshots plus stable Win32 termination via the existing `windows` crate; no `ntapi`/raw `ntdll` dependency is introduced.
+  - Process list/filter defaults to current Windows session; `--all` includes services/other sessions.
+  - Name/text filters only produce candidates; kill requires exact `--pid` and `--force`.
+- `src/output/schema/line/process.rs` and `tests/process_schema_compat.rs`
+  - Add stable NDJSON schema variants for `process`, `process_kill`, and `spawn_target`.
 - `src/target.rs`
   - PID targets now capture only the selected PID. This prevents `--pid claude.exe` from drifting to parent/delegated `node.exe` upstream TLS flows when the useful plaintext flow is `claude.exe` loopback HTTP.
   - Spawn targets still use the discovered process tree because command launch wrappers may hide the real network child.
@@ -104,6 +116,13 @@ Loopback HTTP redirect is also live/admin verified after the process-first refac
 - Summary emitted `connections_total=1`, `bytes_out_total=261`, `bytes_in_total=189`.
 
 Loopback-specific root cause fixed during this validation: rewritten loopback packets must preserve WinDivert loopback direction instead of forcing `addr.set_outbound(false)`. Non-loopback redirects still flip direction to reflect packets into the local proxy.
+
+Built-in process command validation is verified locally:
+
+- `target\debug\etwarden.exe process list --filter etwarden` emitted one NDJSON `process` row for the running etwarden command, including `pid`, `parent_pid`, `name`, `exe`, `command_line`, `session_id`, `current_session`, and `started_at_unix_secs`.
+- A temporary `pwsh Start-Sleep 300` process was launched with PID `5804` and listed via `etwarden process list --pid 5804`.
+- `etwarden process kill --pid 5804 --force` emitted `{"type":"process_kill","pid":5804,"action":"terminate_process","success":true,...}`.
+- A follow-up `process list --pid 5804` emitted no row, confirming exact-PID termination.
 
 Packaging status: the user-provided path `D:\vibe_koding_pro\WinDivert-master\WinDivert-master` exists, but it is a source checkout only: no `WinDivert.dll` or `WinDivert64.sys` was found there. Official WinDivert `2.2.2-A` was downloaded from `https://reqrypt.org/download/WinDivert-2.2.2-A.zip` into the ignored repo cache, extracted, and used for packaging. `WinDivert64.sys` Authenticode signature verified as valid during packaging.
 
@@ -225,12 +244,16 @@ Repo-root ad-hoc copies are covered by `.gitignore`. Release bundles are written
 |------|------|
 | `src/cli.rs` | CLI flags for MITM, legacy proxy, experimental divert |
 | `src/main.rs` | Top-level routing into capture config |
+| `src/app.rs` | Binary command-family routing |
+| `src/process_command.rs` | Agent-first process list/tree/kill command routing |
 | `src/capture/mod.rs` | MITM/divert startup orchestration |
 | `src/divert/redirect.rs` | SOCKET + FLOW + NETWORK worker loops |
 | `src/divert/ffi.rs` | Dynamic WinDivert FFI |
 | `src/divert/packet.rs` | IPv4/TCP parsing and address/port rewrite |
 | `src/divert/redirect_map.rs` | Client source port to original destination map |
 | `src/process/network.rs` | Startup TCP connection inventory |
+| `src/process/inventory.rs` | Built-in process snapshot, filter, and tree selection |
+| `src/process/kill.rs` | Exact-PID process termination wrapper |
 | `src/mitm/mod.rs` | MITM proxy entrypoint and request/response event capture |
 | `src/mitm/transparent.rs` | Transparent redirect routing facade |
 | `src/mitm/transparent/` | Transparent protocol sniffing, HTTP/TLS socket handling, URI rebuild, raw tunnel fallback, and origin upstream forwarding |
