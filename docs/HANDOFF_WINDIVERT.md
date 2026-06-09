@@ -6,7 +6,8 @@
 - Default MITM config does **not** mutate Windows system proxy settings.
 - WinDivert redirect is implemented but experimental; it only runs with explicit `--divert`.
 - Transparent MITM upstream resolution has an initial implementation in `src/mitm/transparent.rs`; it is compile/unit covered, but not live/admin verified.
-- WinDivert runtime binaries are local artifacts and are ignored, not vendored.
+- Full static gate and admin/release gate now pass locally.
+- WinDivert runtime binaries are local artifacts and are ignored, not vendored; they are currently absent from workspace/PATH, so live divert validation is blocked.
 
 ## What changed
 
@@ -44,7 +45,9 @@ Transparent proxy upstream resolution is implemented but not live/admin verified
 
 The new path bypasses `http-mitm-proxy` CONNECT handling for transparently redirected sockets: it takes the original destination from `RedirectMap`, accepts raw HTTP/TLS, reconstructs the upstream URI, and forwards to the original IP:port.
 
-Keep `--divert` experimental until this is tested live with admin privileges.
+Current blocker: admin privileges are available, but `WinDivert.dll` is not present in the workspace or PATH, and the previously documented `E:\VIBE_CODING_WORK\WinDivert-2.2.2-A` path is absent on this machine.
+
+Keep `--divert` experimental until this is tested live with admin privileges and local WinDivert runtime artifacts.
 
 ## Recommended next validation
 
