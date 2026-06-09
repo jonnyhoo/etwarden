@@ -35,8 +35,10 @@ cargo +nightly fmt --check && cargo test -p etwarden <module-or-filter> && cargo
 
 Full static gate before commit:
 ```
-cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit && cargo deny check && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo test && cargo doc --no-deps && git diff --check && git status --short
+cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo test && cargo doc --no-deps && git diff --check && git status --short
 ```
+
+`cargo audit --no-fetch --stale` and `cargo deny check --disable-fetch` use the local RustSec advisory DB. Update `~/.cargo/advisory-db` separately when network is available; do not let transient advisory DB fetch failures block unrelated local commits.
 
 Admin/release gate:
 ```
