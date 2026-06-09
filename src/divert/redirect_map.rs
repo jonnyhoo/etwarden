@@ -1,17 +1,18 @@
 //! # `divert::redirect_map`
 //!
-//! **Purpose**: Thread-safe map from local proxy port → original destination (IP, port, PID).
+//! **Purpose**: Thread-safe map from local proxy port → original destination.
 //! **Public API**: `RedirectMap`, `OriginalDest`
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 80 / 100
+//! **Line budget**: 92 / 110
 
 use std::{collections::HashMap, net::Ipv4Addr, sync::RwLock};
 
 /// Original destination before WinDivert redirect.
 #[derive(Debug, Clone)]
 pub struct OriginalDest {
+    pub local_ip: Ipv4Addr,
     pub ip: Ipv4Addr,
     pub port: u16,
     pub pid: u32,
@@ -58,6 +59,27 @@ impl RedirectMap {
             .cloned()
     }
 
+    /// Looks up by reflected proxy peer/local endpoint and returns client source port.
+    pub fn get_by_origin(
+        &self,
+        local_ip: Ipv4Addr,
+        remote_ip: Ipv4Addr,
+        remote_port: u16,
+    ) -> Option<(u16, OriginalDest)> {
+        let inner = self.inner.read().expect("redirect map lock poisoned");
+        inner
+            .iter()
+            .find(|(_, dest)| {
+                dest.local_ip == local_ip && dest.ip == remote_ip && dest.port == remote_port
+            })
+            .or_else(|| {
+                inner
+                    .iter()
+                    .find(|(_, dest)| dest.ip == remote_ip && dest.port == remote_port)
+            })
+            .map(|(src_port, dest)| (*src_port, dest.clone()))
+    }
+
     /// Returns the number of active redirect entries.
     #[must_use]
     pub fn len(&self) -> usize {
@@ -85,6 +107,7 @@ mod tests {
     fn insert_and_take() {
         let map = RedirectMap::new();
         let dest = OriginalDest {
+            local_ip: Ipv4Addr::new(192, 168, 1, 100),
             ip: Ipv4Addr::new(93, 184, 216, 34),
             port: 443,
             pid: 1234,
@@ -111,6 +134,7 @@ mod tests {
         map.insert(
             51000,
             OriginalDest {
+                local_ip: Ipv4Addr::new(192, 168, 1, 100),
                 ip: Ipv4Addr::LOCALHOST,
                 port: 80,
                 pid: 1,
@@ -118,5 +142,27 @@ mod tests {
         );
         assert!(map.get(51000).is_some());
         assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn get_by_origin_returns_client_source_port() {
+        let map = RedirectMap::new();
+        let local_ip = Ipv4Addr::new(192, 168, 1, 100);
+        let remote_ip = Ipv4Addr::new(93, 184, 216, 34);
+        map.insert(
+            51000,
+            OriginalDest {
+                local_ip,
+                ip: remote_ip,
+                port: 80,
+                pid: 1,
+            },
+        );
+
+        let (src_port, dest) = map
+            .get_by_origin(local_ip, remote_ip, 80)
+            .expect("origin match");
+        assert_eq!(src_port, 51000);
+        assert_eq!(dest.ip, remote_ip);
     }
 }

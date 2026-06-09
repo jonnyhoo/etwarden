@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 185 / 200
+//! **Line budget**: 187 / 210
 
 pub mod event_loop;
 pub mod provider;
@@ -56,6 +56,9 @@ pub struct CaptureConfig {
     pub rule_set: Option<Arc<RuleSet>>,
     /// Enable `WinDivert` TCP redirect for hot-attach MITM (requires `--pid` + MITM).
     pub enable_divert: bool,
+    /// Optional include/exclude destination ports for `WinDivert` redirect.
+    pub divert_ports: Vec<u16>,
+    pub divert_exclude_ports: Vec<u16>,
 }
 
 /// Runs the capture loop with the given configuration.
@@ -128,6 +131,8 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
                     proxy_addr: mitm.listen_addr,
                     redirect_map: Arc::clone(map),
                     existing_flows: existing_tcp_connections.clone(),
+                    include_ports: config.divert_ports.clone(),
+                    exclude_ports: config.divert_exclude_ports.clone(),
                     stop_signal: config.stop_signal.clone(),
                 })
             })

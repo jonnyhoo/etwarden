@@ -5,10 +5,11 @@
 //! **Dependencies**: `mitm`, `transparent::{connection, upstream, uri}`, `divert`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 67 / 100
+//! **Line budget**: 72 / 100
 
 mod cert;
 mod connection;
+mod tcp;
 #[cfg(test)]
 mod tests;
 mod upstream;
@@ -41,12 +42,19 @@ pub(super) fn upstream_from_map(
     state: &ProxyState,
     remote_addr: std::net::SocketAddr,
 ) -> Option<TransparentUpstream> {
-    let dest = state.redirect_map.as_ref()?.take(remote_addr.port())?;
+    let dest = state
+        .redirect_map
+        .as_ref()?
+        .get(destination_port(remote_addr))?;
     Some(TransparentUpstream {
-        scheme: uri::scheme_for_port(dest.port),
+        scheme: uri::scheme_for_port(dest.port, state.divert_tls_mitm),
         dest,
         host_hint: None,
     })
+}
+
+fn destination_port(remote_addr: std::net::SocketAddr) -> u16 {
+    remote_addr.port()
 }
 
 pub(super) async fn send_upstream_request(

@@ -5,11 +5,13 @@
 //! **Dependencies**: `output::schema::line::event`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 60 / 90
+//! **Line budget**: 62 / 90
 
 use serde::{Deserialize, Serialize};
 
-use super::event::{DnsEventLine, EventLine, HttpEventLine, RuleHitEventLine, TlsEventLine};
+use super::event::{
+    DnsEventLine, EventLine, HttpEventLine, RuleHitEventLine, TlsEventLine, TunnelDataEventLine,
+};
 
 /// The final summary line written on capture exit.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -60,6 +62,7 @@ pub enum OutputLine {
     DnsEvent(DnsEventLine),
     HttpEvent(HttpEventLine),
     TlsEvent(TlsEventLine),
+    TunnelDataEvent(TunnelDataEventLine),
     RuleHit(RuleHitEventLine),
     Summary(SummaryLine),
     Error(ErrorLine),

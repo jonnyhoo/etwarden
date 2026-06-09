@@ -101,7 +101,7 @@ pub fn filters(
             target.capture_pids.clone(),
         ))]
     } else {
-        vec![Box::new(PidFilter::single(target.pid))]
+        vec![Box::new(PidFilter::new(target.capture_pids.clone()))]
     }
 }
 

@@ -58,6 +58,7 @@ Read in this order:
 | `.repo-control-plane/hook-lanes.json` | Hook lane ownership and dedup rules (global vs repo vs CI). |
 | `.repo-control-plane/static-gates/artifact-policy.json` | WinDivert / runtime artifact ignore policy. |
 | `scripts/repo-control.ps1` | Single entry point for all control-plane commands. |
+| `scripts/package-release.ps1` | Builds Windows release folder with bundled WinDivert runtime files and notices. |
 | `Cargo.toml` | Dependencies, lints, features, release profile. |
 | `rustfmt.toml` | Code format config. |
 | `deny.toml` | Supply chain audit config. |
@@ -169,6 +170,27 @@ pwsh -NoProfile -File scripts/repo-control.ps1 verify:admin
 ```
 
 Runs: `nextest run --features integration` → `llvm-cov` → `bench --no-run`.
+
+### Windows release packaging
+
+`--divert` depends on WinDivert runtime files. Windows release packages must ship
+these next to `etwarden.exe`:
+
+- `WinDivert.dll`
+- `WinDivert64.sys`
+- `LICENSE.WinDivert`
+- `THIRD_PARTY_NOTICES.txt`
+
+Packaging command:
+
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 package:release -WinDivertRoot <official-release-or-build-root>
+```
+
+Use an official signed WinDivert release or a signed local build. A source
+checkout such as `WinDivert-master` is not enough until it produces
+`WinDivert.dll` + `WinDivert64.sys`. Repo-root ad-hoc copies stay ignored;
+release bundles are written under ignored `dist/`.
 
 ### Diagnostic commands
 

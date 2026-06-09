@@ -5,7 +5,7 @@
 //! **Dependencies**: `mitm`, `transparent::{cert, uri}`, `tokio`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 133 / 140
+//! **Line budget**: 138 / 160
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -18,7 +18,9 @@ use hyper_util::rt::{TokioExecutor, TokioIo};
 use tokio::net::TcpStream;
 use tokio_rustls::{rustls, LazyConfigAcceptor};
 
-use super::{cert::server_config_for_host, uri::transparent_uri, TransparentUpstream};
+use super::{
+    cert::server_config_for_host, tcp::tunnel_tcp, uri::transparent_uri, TransparentUpstream,
+};
 use crate::{
     error::{EtwardenError, Result},
     mitm::{handle_request, ProxyState},
@@ -44,10 +46,13 @@ async fn handle_connection(
     state: Arc<ProxyState>,
     upstream: TransparentUpstream,
 ) -> Result<()> {
-    if upstream.scheme == "https" {
-        handle_tls_connection(stream, remote_addr, state, upstream).await
-    } else {
-        handle_http_connection(stream, remote_addr, state, upstream).await
+    match upstream.scheme {
+        "https" => handle_tls_connection(stream, remote_addr, state, upstream).await,
+        "http" => handle_http_connection(stream, remote_addr, state, upstream).await,
+        "tcp" => tunnel_tcp(stream, remote_addr, state, upstream).await,
+        scheme => Err(EtwardenError::MitmProxy(format!(
+            "unknown transparent scheme: {scheme}"
+        ))),
     }
 }
 

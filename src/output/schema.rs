@@ -8,7 +8,7 @@
 //! **Dependencies**: `parser::types`, `classify`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 121 / 180
+//! **Line budget**: 122 / 180
 
 mod convert;
 mod line;
@@ -17,7 +17,7 @@ mod scope;
 pub use convert::{event_to_line, event_to_line_enriched, event_to_line_with_process_info};
 pub use line::{
     DnsEventLine, ErrorLine, EventLine, HttpEventLine, OutputLine, RuleHitEventLine, SummaryLine,
-    TlsEventLine,
+    TlsEventLine, TunnelDataEventLine,
 };
 
 #[cfg(test)]

@@ -5,7 +5,7 @@
 //! **Dependencies**: `windows`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 310 / 340
+//! **Line budget**: 318 / 340
 
 #![expect(
     unsafe_code,
@@ -31,6 +31,9 @@ pub const WINDIVERT_LAYER_NETWORK: u32 = 0;
 /// FLOW layer — captures flow establish/delete events with PID.
 pub const WINDIVERT_LAYER_FLOW: u32 = 2;
 
+/// SOCKET layer — captures socket connect events with PID before packet SYN.
+pub const WINDIVERT_LAYER_SOCKET: u32 = 3;
+
 /// Shutdown both send and recv.
 pub const WINDIVERT_SHUTDOWN_BOTH: u32 = 0x03;
 
@@ -48,6 +51,9 @@ pub const WINDIVERT_EVENT_FLOW_ESTABLISHED: u8 = 1;
 
 /// FLOW event: flow deleted (closed).
 pub const WINDIVERT_EVENT_FLOW_DELETED: u8 = 2;
+
+/// SOCKET event: outbound socket connect operation.
+pub const WINDIVERT_EVENT_SOCKET_CONNECT: u8 = 4;
 
 // ---------------------------------------------------------------------------
 // WinDivertAddress — 80-byte raw buffer (WinDivert 2.2 layout)
@@ -112,6 +118,15 @@ impl WinDivertAddress {
     #[must_use]
     pub const fn outbound(&self) -> bool {
         (self.buf[10] & 0x02) != 0
+    }
+
+    /// Sets the NETWORK injection direction.
+    pub fn set_outbound(&mut self, outbound: bool) {
+        self.buf[10] = if outbound {
+            self.buf[10] | 0x02
+        } else {
+            self.buf[10] & !0x02
+        };
     }
 
     /// Loopback flag (bit 18 of bitfield = bit 2 of byte 10).

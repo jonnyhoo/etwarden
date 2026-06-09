@@ -6,7 +6,7 @@
 //! **Dependencies**: `etwarden`, `insta`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 205 / 240
+//! **Line budget**: 224 / 260
 
 use chrono::{TimeZone, Utc};
 use etwarden::{
@@ -144,6 +144,23 @@ fn tls_hello_event() -> NetEvent {
     }
 }
 
+fn tunnel_data_event() -> NetEvent {
+    NetEvent::TunnelData {
+        timestamp: ts(),
+        pid: 1234,
+        src: "10.0.0.1:49152".into(),
+        dst: "93.184.216.34:443".into(),
+        direction: "request".into(),
+        encrypted: true,
+        headers_base64: None,
+        headers_truncated: false,
+        payload_base64: Some("YWJj".into()),
+        payload_truncated: true,
+        bytes_seen: 4096,
+        bytes_captured: 3,
+    }
+}
+
 #[test]
 fn snapshot_connect_event_line() {
     let line = event_to_line(&connect_event());
@@ -196,6 +213,12 @@ fn snapshot_http_response_event_line() {
 fn snapshot_tls_hello_event_line() {
     let line = event_to_line(&tls_hello_event());
     insta::assert_json_snapshot!("tls_hello_event_line", line);
+}
+
+#[test]
+fn snapshot_tunnel_data_event_line() {
+    let line = event_to_line(&tunnel_data_event());
+    insta::assert_json_snapshot!("tunnel_data_event_line", line);
 }
 
 #[test]

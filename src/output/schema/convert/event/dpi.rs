@@ -5,12 +5,12 @@
 //! **Dependencies**: `output::schema::convert::dpi`, `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 90 / 140
+//! **Line budget**: 108 / 160
 
 use super::super::{
     dpi::{
         decrypted_http_request_line, decrypted_http_response_line, http_request_line,
-        http_response_line, tls_hello_line,
+        http_response_line, tls_hello_line, tunnel_data_line,
     },
     process::ProcessFields,
 };
@@ -40,6 +40,8 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             host.as_deref(),
             content_type.as_deref(),
             content_length,
+            None,
+            false,
             process_fields,
         ),
         NetEvent::DecryptedHttpRequest {
@@ -51,6 +53,8 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             ref path,
             ref host,
             ref version,
+            ref headers_base64,
+            headers_truncated,
             ref content_type,
             content_length,
             ref content_encoding,
@@ -68,6 +72,8 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             host.as_deref(),
             content_type.as_deref(),
             content_length,
+            headers_base64.as_deref(),
+            headers_truncated,
             content_encoding.as_deref(),
             decoded,
             body_base64.as_deref(),
@@ -96,6 +102,8 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             host.as_deref(),
             content_type.as_deref(),
             content_length,
+            None,
+            false,
             process_fields,
         ),
         NetEvent::DecryptedHttpResponse {
@@ -107,6 +115,8 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             ref host,
             ref version,
             status_code,
+            ref headers_base64,
+            headers_truncated,
             ref content_type,
             content_length,
             ref content_encoding,
@@ -124,6 +134,8 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             host.as_deref(),
             content_type.as_deref(),
             content_length,
+            headers_base64.as_deref(),
+            headers_truncated,
             content_encoding.as_deref(),
             decoded,
             body_base64.as_deref(),
@@ -166,6 +178,34 @@ pub(super) fn line(event: &NetEvent, process_fields: ProcessFields) -> OutputLin
             alpn,
             cipher_count,
             extension_count,
+            process_fields,
+        ),
+        NetEvent::TunnelData {
+            timestamp,
+            pid,
+            ref src,
+            ref dst,
+            ref direction,
+            encrypted,
+            ref headers_base64,
+            headers_truncated,
+            ref payload_base64,
+            payload_truncated,
+            bytes_seen,
+            bytes_captured,
+        } => tunnel_data_line(
+            timestamp,
+            pid,
+            src,
+            dst,
+            direction,
+            encrypted,
+            headers_base64.as_deref(),
+            headers_truncated,
+            payload_base64.as_deref(),
+            payload_truncated,
+            bytes_seen,
+            bytes_captured,
             process_fields,
         ),
         _ => super::unsupported_event_line(),

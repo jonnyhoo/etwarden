@@ -43,7 +43,8 @@ pub(super) fn event_to_line_enriched(
         | NetEvent::DecryptedHttpRequest { .. }
         | NetEvent::HttpResponse { .. }
         | NetEvent::DecryptedHttpResponse { .. }
-        | NetEvent::TlsHello { .. } => dpi::line(event, process_fields),
+        | NetEvent::TlsHello { .. }
+        | NetEvent::TunnelData { .. } => dpi::line(event, process_fields),
         NetEvent::RuleHit { data } => OutputLine::RuleHit(RuleHitEventLine {
             kind: "rule_hit".into(),
             timestamp: data.timestamp,

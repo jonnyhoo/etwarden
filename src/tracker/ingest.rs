@@ -68,6 +68,7 @@ impl TrackableEvent {
             | NetEvent::HttpResponse { .. }
             | NetEvent::DecryptedHttpResponse { .. }
             | NetEvent::TlsHello { .. }
+            | NetEvent::TunnelData { .. }
             | NetEvent::RuleHit { .. } => return None,
         };
 

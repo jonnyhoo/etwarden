@@ -5,7 +5,7 @@
 //! **Dependencies**: `mitm`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 78 / 100
+//! **Line budget**: 82 / 100
 
 use http_mitm_proxy::hyper::{
     body::Incoming,
@@ -20,11 +20,13 @@ use http_mitm_proxy::hyper::{
 use super::TransparentUpstream;
 use crate::error::{EtwardenError, Result};
 
-pub(super) const fn scheme_for_port(port: u16) -> &'static str {
-    if port == 443 {
+pub(super) const fn scheme_for_port(port: u16, tls_mitm: bool) -> &'static str {
+    if port == 80 {
+        "http"
+    } else if port == 443 && tls_mitm {
         "https"
     } else {
-        "http"
+        "tcp"
     }
 }
 

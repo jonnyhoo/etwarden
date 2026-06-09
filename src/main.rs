@@ -5,7 +5,7 @@
 //! **Dependencies**: `target`, `cli`, `capture`, `filter`, `output`, `pcap`, `process`, `runtime`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 170 / 180
+//! **Line budget**: 173 / 190
 
 use std::{io::Write, sync::Arc};
 
@@ -96,6 +96,8 @@ fn run() -> anyhow::Result<()> {
         stop_signal: Some(target.stop_signal),
         rule_set,
         enable_divert,
+        divert_ports: cli.divert_ports.clone(),
+        divert_exclude_ports: cli.divert_exclude_ports.clone(),
     };
 
     let summary = capture::run_capture(&mut config).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -139,6 +141,7 @@ fn mitm_capture_config(cli: &Cli) -> Option<MitmCaptureConfig> {
         body_limit: cli.mitm_body_limit,
         max_body_bytes: cli.mitm_max_body_bytes,
         enable_system_proxy: cli.mitm_system_proxy && cli.no_divert,
+        divert_tls_mitm: cli.divert_tls_mitm,
     })
 }
 
@@ -191,6 +194,8 @@ fn run_browse_mode(
             stop_signal: Some(capture_stop),
             rule_set: None,
             enable_divert: false,
+            divert_ports: Vec::new(),
+            divert_exclude_ports: Vec::new(),
         };
         capture::run_capture(&mut capture_config)
     });

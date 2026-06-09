@@ -4,28 +4,42 @@
 	"artifacts": [
 		{
 			"name": "WinDivert.dll",
-			"required": false,
-			"ignore": true,
-			"doc": "WinDivert user-mode DLL. Not vendored. Must be in workspace or PATH for --divert."
+			"requiredForRelease": true,
+			"gitignoredAtRepoRoot": true,
+			"packagedBy": "scripts/package-release.ps1",
+			"doc": "WinDivert user-mode DLL. Must be bundled next to etwarden.exe in Windows release packages."
 		},
 		{
 			"name": "WinDivert32.sys",
-			"required": false,
-			"ignore": true,
-			"doc": "WinDivert 32-bit kernel driver."
+			"requiredForRelease": false,
+			"gitignoredAtRepoRoot": true,
+			"doc": "WinDivert 32-bit kernel driver. Not packaged for x64 releases."
 		},
 		{
 			"name": "WinDivert64.sys",
-			"required": false,
-			"ignore": true,
-			"doc": "WinDivert 64-bit kernel driver."
+			"requiredForRelease": true,
+			"gitignoredAtRepoRoot": true,
+			"packagedBy": "scripts/package-release.ps1",
+			"doc": "WinDivert 64-bit kernel driver. Must be bundled next to etwarden.exe in Windows x64 release packages; official signed binaries preferred."
 		}
 	],
+	"releasePackage": {
+		"directory": "dist/etwarden-windows-x64/",
+		"requiredFiles": [
+			"etwarden.exe",
+			"WinDivert.dll",
+			"WinDivert64.sys",
+			"LICENSE.WinDivert",
+			"THIRD_PARTY_NOTICES.txt"
+		],
+		"command": "pwsh -NoProfile -File scripts/package-release.ps1 -WinDivertRoot <official-release-or-build-root>",
+		"licenseMode": "Convey WinDivert under LGPLv3 terms; keep dynamic DLL loading and ship license/notice."
+	},
 	"localArtifacts": [
 		{ "name": "etwarden-mitm-ca.crt", "ignore": true },
 		{ "name": "etwarden-mitm-ca.key", "ignore": true },
 		{ "name": "*.log", "ignore": true },
 		{ "name": "spawn_test*.txt", "ignore": true }
 	],
-	"policy": "Runtime artifacts are gitignored. WinDivert binary vendoring requires a license/provenance decision before any release packaging change."
+	"policy": "Repo root runtime artifacts are gitignored. Windows release packages must bundle WinDivert.dll and WinDivert64.sys with WinDivert license/notice via scripts/package-release.ps1."
 }

@@ -26,6 +26,7 @@ impl NetEvent {
             | Self::HttpResponse { .. }
             | Self::DecryptedHttpResponse { .. }
             | Self::TlsHello { .. }
+            | Self::TunnelData { .. }
             | Self::RuleHit { .. } => 0,
         }
     }
@@ -45,7 +46,8 @@ impl NetEvent {
             | Self::DecryptedHttpRequest { pid, .. }
             | Self::HttpResponse { pid, .. }
             | Self::DecryptedHttpResponse { pid, .. }
-            | Self::TlsHello { pid, .. } => *pid,
+            | Self::TlsHello { pid, .. }
+            | Self::TunnelData { pid, .. } => *pid,
             Self::RuleHit { data } => data.pid,
         }
     }
@@ -66,6 +68,7 @@ impl NetEvent {
             | Self::HttpResponse { .. }
             | Self::DecryptedHttpResponse { .. }
             | Self::TlsHello { .. }
+            | Self::TunnelData { .. }
             | Self::RuleHit { .. } => 0,
         }
     }

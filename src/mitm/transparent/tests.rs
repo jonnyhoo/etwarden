@@ -5,13 +5,17 @@
 //! **Dependencies**: `mitm::transparent`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 90 / 100
+//! **Line budget**: 100 / 120
 
 use bytes::Bytes;
 use http_body_util::Full;
 use http_mitm_proxy::hyper::{header::HOST, http::HeaderMap, Request};
 
-use super::{upstream::strip_request_authority, uri::transparent_authority, TransparentUpstream};
+use super::{
+    upstream::strip_request_authority,
+    uri::{scheme_for_port, transparent_authority},
+    TransparentUpstream,
+};
 use crate::{divert::OriginalDest, mitm::header_value};
 
 #[test]
@@ -76,9 +80,18 @@ fn strip_request_authority_leaves_origin_form() {
     assert_eq!(header_value(req.headers(), HOST), Some("example.com:443"));
 }
 
+#[test]
+fn transparent_scheme_only_mitms_plain_http_by_default() {
+    assert_eq!(scheme_for_port(80, false), "http");
+    assert_eq!(scheme_for_port(443, false), "tcp");
+    assert_eq!(scheme_for_port(16_669, false), "tcp");
+    assert_eq!(scheme_for_port(443, true), "https");
+}
+
 fn transparent_test_upstream(port: u16, scheme: &'static str) -> TransparentUpstream {
     TransparentUpstream {
         dest: OriginalDest {
+            local_ip: "192.168.1.100".parse().expect("ip"),
             ip: "93.184.216.34".parse().expect("ip"),
             port,
             pid: 4242,

@@ -5,71 +5,156 @@
 - Critical global-proxy defect is mitigated: `--mitm-system-proxy` is opt-in and requires `--no-divert`.
 - Default MITM config does **not** mutate Windows system proxy settings.
 - WinDivert redirect is implemented but experimental; it only runs with explicit `--divert`.
-- Transparent MITM upstream resolution has an initial implementation in `src/mitm/transparent.rs`; it is compile/unit covered, but not live/admin verified.
-- Full static gate and admin/release gate now pass locally.
-- WinDivert runtime binaries are local artifacts and are ignored, not vendored; they are currently absent from workspace/PATH, so live divert validation is blocked.
+- Transparent HTTP redirect is now live/admin verified against the packaged release folder.
+- Claude hot-attach validation no longer breaks `claude.exe` network when non-HTTP/TLS traffic is transparently tunneled instead of actively parsed.
+- Request/response data capture is implemented:
+  - decrypted HTTP events include bounded base64 request/response headers and payloads.
+  - raw transparent TCP tunnels emit bounded `tunnel_data` request/response payload chunks.
+  - default HTTPS tunnel payloads are encrypted TLS bytes; true HTTP headers/payloads require `--divert-tls-mitm` plus trusted MITM CA.
+- Full static gate and admin/release gate passed locally in the previous handoff.
+- WinDivert runtime binaries must be bundled in Windows release packages; repo-root ad-hoc copies remain ignored, and release output is generated under `dist/`.
+- Release packaging is now verified with official WinDivert `2.2.2-A` runtime: `dist/etwarden-windows-x64/` contains `etwarden.exe`, `WinDivert.dll`, `WinDivert64.sys`, `LICENSE.WinDivert`, `README.WinDivert`, and `THIRD_PARTY_NOTICES.txt`.
 
 ## What changed
 
 - `src/cli.rs`
   - Added `--divert` opt-in for experimental active redirect.
+  - Added `--divert-tls-mitm` opt-in for active transparent HTTPS MITM.
   - Kept `--no-divert` for legacy global system-proxy mode gating.
   - `--mitm-system-proxy` now requires `--no-divert` and conflicts with `--no-mitm`.
 - `src/main.rs`
   - MITM system proxy is disabled by default.
   - Active redirect only runs when MITM is enabled and `--divert` is set.
+- `src/target.rs`
+  - PID targets now filter on the resolved capture PID set, not only the leaf PID, so delegated parent traffic such as `claude.exe` -> `node.exe` is emitted.
 - `src/capture/mod.rs`
   - Builds one shared `RedirectMap` before MITM/divert startup.
   - Bootstraps existing TCP connections for selected PIDs.
   - Starts WinDivert only when `enable_divert` is true.
 - `src/divert/`
-  - Added FLOW + NETWORK WinDivert implementation.
+  - Added SOCKET + FLOW + NETWORK WinDivert implementation.
+  - SOCKET records target PID connect tuples before the NETWORK SYN race.
   - FLOW tracks target PID TCP flows.
-  - NETWORK rewrites matching outbound TCP SYN packets to the local MITM proxy.
-  - FLOW table now preserves PID into `RedirectMap` entries.
+  - NETWORK reflects matching outbound TCP packets into the local MITM proxy and rewrites proxy replies back to the original destination tuple.
+  - FLOW/SOCKET attribution now preserves PID into `RedirectMap` entries.
 - `src/process/network.rs`
   - Existing TCP inventory supports startup flow bootstrap.
 - `src/mitm/mod.rs`
-  - Reads accepted client source port from `RemoteAddr` and consumes matching `RedirectMap` entry.
+  - Reads accepted client source port from `RemoteAddr` and resolves matching `RedirectMap` entry.
   - Delegates transparent socket handling and upstream forwarding to `src/mitm/transparent.rs`.
+  - Emits bounded base64 `headers_base64` and payload fields for decrypted HTTP request/response events.
+- `src/mitm/body.rs`
+  - Adds bounded raw-byte base64 capture helper shared by HTTP and tunnel capture.
 - `src/mitm/transparent.rs` and `src/mitm/transparent/`
-  - Handle transparent HTTP directly and transparent TLS via `LazyConfigAcceptor` without requiring explicit proxy CONNECT.
+  - Handle transparent HTTP directly.
+  - Tunnel non-HTTP/non-80 transparent redirects as raw TCP so HTTPS, HTTP/2, SSE MCP, and custom protocols are not broken by forced HTTP/TLS parsing.
   - Rebuild absolute upstream URI from Host/authority/SNI hint plus original destination.
   - Dial original destination IP:port for transparent upstream forwarding.
+- `src/mitm/transparent/tcp.rs`
+  - Captures request/response tunnel bytes with the configured byte limit and emits `tunnel_data` after tunnel close.
+- `src/parser/types/event.rs` and `src/output/schema/`
+  - Add `TunnelData` / `TunnelDataEventLine` plus header fields on decrypted HTTP schema lines.
+- `scripts/package-release.ps1`
+  - Builds `dist/etwarden-windows-x64/` with `etwarden.exe`, `WinDivert.dll`, `WinDivert64.sys`, `LICENSE.WinDivert`, and `THIRD_PARTY_NOTICES.txt`.
+  - Requires an official signed WinDivert release or signed build root containing runtime binaries; source checkout alone is not enough.
+  - Skips unchanged locked files and removes unmanaged files from the default package output before listing package contents.
+- `.repo-control-plane/static-gates/artifact-policy.json`
+  - Records WinDivert release-package requirements and LGPLv3 notice mode.
 - `Cargo.toml` / `Cargo.lock`
   - Added direct `webpki-roots` dependency for transparent TLS upstream validation.
 
-## Remaining validation gap
+## Live/admin validation result
 
-Transparent proxy upstream resolution is implemented but not live/admin verified.
+HTTP transparent redirect is live/admin verified from an elevated shell using packaged `dist/etwarden-windows-x64/` runtime files.
 
-The new path bypasses `http-mitm-proxy` CONNECT handling for transparently redirected sockets: it takes the original destination from `RedirectMap`, accepts raw HTTP/TLS, reconstructs the upstream URI, and forwards to the original IP:port.
+Validated behavior:
 
-Current blocker: admin privileges are available, but `WinDivert.dll` is not present in the workspace or PATH, and the previously documented `E:\VIBE_CODING_WORK\WinDivert-2.2.2-A` path is absent on this machine.
+- Admin shell confirmed: `IsAdmin=True`.
+- `WinDivert.dll` loaded from `dist/etwarden-windows-x64/WinDivert.dll`.
+- MITM listened on local interface `192.168.254.61:3003`.
+- SOCKET saw target connect: `PID=8572 local:19219 -> remote:172.66.147.243:80`.
+- NETWORK emitted redirect: `REDIRECT 192.168.254.61:19219 -> 172.66.147.243:80 to proxy :3003`.
+- NDJSON emitted `decrypted_http_request` and `decrypted_http_response` for `example.com:80`.
+- Client got `STATUS=200`, `LEN=528`.
+- Summary emitted `connections_total=1`, `bytes_out_total=170`, `bytes_in_total=610`.
 
-Keep `--divert` experimental until this is tested live with admin privileges and local WinDivert runtime artifacts.
+Root cause fixed during live validation: destination-only SYN rewrite reached neither the local MITM nor the original TCP client correctly. Current implementation reflects client packets into an inbound local-proxy connection and rewrites proxy replies back to the original destination tuple.
 
-## Recommended next validation
+Packaging status: the user-provided path `D:\vibe_koding_pro\WinDivert-master\WinDivert-master` exists, but it is a source checkout only: no `WinDivert.dll` or `WinDivert64.sys` was found there. Official WinDivert `2.2.2-A` was downloaded from `https://reqrypt.org/download/WinDivert-2.2.2-A.zip` into the ignored repo cache, extracted, and used for packaging. `WinDivert64.sys` Authenticode signature verified as valid during packaging.
 
-1. Run live/admin integration test plan for:
-   - FLOW events for target PID.
-   - NETWORK SYN rewrite.
-   - MITM request/response emitted after transparent redirect.
-2. Verify protocol edge cases:
-   - HTTPS with SNI + trusted generated CA.
+Keep `--divert` experimental until HTTPS, HTTP/2, and non-default-port cases are live/admin covered.
+
+Claude hot-attach validation after the raw TCP tunnel change:
+
+- Target: already-running `claude.exe` PID `9188`.
+- Packaged runtime: `dist/etwarden-windows-x64/etwarden.exe --pid 9188 --divert --mitm-listen 192.168.254.61:3003 --duration 300`.
+- WinDivert loaded from packaged `dist/etwarden-windows-x64/WinDivert.dll`.
+- Redirect active for process tree including `claude.exe` PID `9188` and parent `node.exe` PID `18612`.
+- User sent a prompt while capture was active.
+- Captured loopback prompt flow: `claude.exe` `127.0.0.1:16851 -> 127.0.0.1:23100`, `bytes_out=141976`, repeated recv chunks, then disconnect.
+- Captured remote Claude/network flow: `node.exe` PID `18612`, `192.168.254.61:16852 -> 119.23.85.51:443`, redirected to local proxy and tunneled as TCP.
+- Tunnel result: `transparent TCP tunnel closed pid=18612 target=119.23.85.51:443 up=143394 down=8561`.
+- Previous failure (`transparent TLS accept failed: tls handshake eof`) is absent in this run.
+
+Claude request/response data validation after `tunnel_data` implementation:
+
+- Target: already-running `claude.exe` PID `9188`; delegated remote traffic owned by parent `node.exe` PID `18612`.
+- Packaged runtime: `dist/etwarden-windows-x64/etwarden.exe --pid 9188 --divert --mitm-listen 192.168.254.61:3003 --duration 240`.
+- Capture started only after stderr confirmed SOCKET, FLOW, and NETWORK redirect workers were active.
+- User sent a prompt while capture was active.
+- Redirect confirmed: `REDIRECT 192.168.254.61:14354 -> 119.23.85.51:443 to proxy :3003`.
+- Tunnel result: `transparent TCP tunnel closed pid=18612 target=119.23.85.51:443 up=144429 down=9911`.
+- NDJSON emitted two `tunnel_data` lines for PID `18612`:
+  - request: `encrypted=true`, `payload_base64` present, `bytes_seen=144429`, `bytes_captured=65536`, `payload_truncated=true`.
+  - response: `encrypted=true`, `payload_base64` present, `bytes_seen=9911`, `bytes_captured=9911`.
+- HTTP headers were absent because default Claude HTTPS was raw-tunneled, not actively decrypted. This is expected safe behavior. Use `--divert-tls-mitm` with a trusted MITM CA to expose real HTTPS request/response headers and payloads.
+
+## Release packaging decision
+
+Windows release packages must include WinDivert runtime files next to `etwarden.exe`; otherwise `--divert` breaks on a clean machine.
+
+Use:
+
+```powershell
+pwsh -NoProfile -File scripts/repo-control.ps1 package:release -WinDivertRoot <official-release-or-build-root>
+```
+
+The package script expects one runtime directory containing:
+
+- `WinDivert.dll`
+- `WinDivert64.sys`
+
+It writes/copies:
+
+- `dist/etwarden-windows-x64/etwarden.exe`
+- `dist/etwarden-windows-x64/WinDivert.dll`
+- `dist/etwarden-windows-x64/WinDivert64.sys`
+- `dist/etwarden-windows-x64/LICENSE.WinDivert`
+- `dist/etwarden-windows-x64/THIRD_PARTY_NOTICES.txt`
+
+WinDivert is LGPLv3/GPLv2 dual-licensed. Package under LGPLv3 terms, keep the current dynamic DLL loading, ship `LICENSE.WinDivert`, and preserve user ability to replace `WinDivert.dll`/`WinDivert64.sys` with an interface-compatible build. Prefer official signed WinDivert runtime binaries for release; use `-AllowUnsignedDriver` only for local admin validation.
+
+## Remaining validation
+
+1. Verify protocol edge cases:
    - HTTP Host header reconstruction.
-   - Non-default destination ports.
-   - HTTP/2 client-side requests over transparent TLS.
-3. Keep static regression coverage passing:
+   - Explicit active HTTPS MITM opt-in with SNI + trusted generated CA.
+   - Non-default destination ports beyond the Claude/SSE-MCP case.
+   - HTTP/2 client-side requests in raw tunnel mode and any future active MITM mode.
+2. Keep static regression coverage passing:
    - Default run does not enable global system proxy.
    - `--mitm-system-proxy` only works with `--no-divert`.
    - `--divert` is explicit opt-in.
    - Existing IPv4 TCP tuples seed WinDivert flow keys.
    - Transparent authority reconstruction and upstream origin-form forwarding.
+   - WinDivert packet reflection/reverse rewrite helpers.
+3. Verify release packaging:
+   - Run `scripts/repo-control.ps1 package:release` against an official release or signed build root containing `WinDivert.dll` + `WinDivert64.sys`.
+   - Confirm clean-machine package runs `etwarden.exe --divert ...` without requiring PATH/workspace WinDivert artifacts.
 
 ## Local artifact policy
 
-Do not commit:
+Do not commit repo-root ad-hoc copies:
 
 - `etwarden-mitm-ca.key`
 - `etwarden-mitm-ca.crt`
@@ -79,7 +164,7 @@ Do not commit:
 - `WinDivert32.sys`
 - `WinDivert64.sys`
 
-These are covered by `.gitignore`. WinDivert binary vendoring still needs a license/provenance decision before any release packaging change.
+Repo-root ad-hoc copies are covered by `.gitignore`. Release bundles are written under ignored `dist/` by `scripts/package-release.ps1` and must include WinDivert license/notice files.
 
 ## Useful files
 
@@ -88,18 +173,22 @@ These are covered by `.gitignore`. WinDivert binary vendoring still needs a lice
 | `src/cli.rs` | CLI flags for MITM, legacy proxy, experimental divert |
 | `src/main.rs` | Top-level routing into capture config |
 | `src/capture/mod.rs` | MITM/divert startup orchestration |
-| `src/divert/redirect.rs` | FLOW + NETWORK worker loops |
+| `src/divert/redirect.rs` | SOCKET + FLOW + NETWORK worker loops |
 | `src/divert/ffi.rs` | Dynamic WinDivert FFI |
-| `src/divert/packet.rs` | IPv4/TCP parsing and destination rewrite |
-| `src/divert/redirect_map.rs` | Local source port to original destination map |
+| `src/divert/packet.rs` | IPv4/TCP parsing and address/port rewrite |
+| `src/divert/redirect_map.rs` | Client source port to original destination map |
 | `src/process/network.rs` | Startup TCP connection inventory |
 | `src/mitm/mod.rs` | MITM proxy entrypoint and request/response event capture |
 | `src/mitm/transparent.rs` | Transparent redirect routing facade |
 | `src/mitm/transparent/` | Transparent HTTP/TLS socket handling, URI rebuild, and origin upstream forwarding |
+| `scripts/package-release.ps1` | Release bundle creation with WinDivert runtime and notices |
+| `.repo-control-plane/static-gates/artifact-policy.json` | Runtime artifact packaging policy |
 
 ## WinDivert reference
 
-- Local docs: `E:\VIBE_CODING_WORK\WinDivert-2.2.2-A\doc\WinDivert.html`
-- Header: `E:\VIBE_CODING_WORK\WinDivert-2.2.2-A\include\windivert.h`
+- Local docs: `D:\vibe_koding_pro\WinDivert-master\WinDivert-master\doc\windivert.html`
+- Header: `D:\vibe_koding_pro\WinDivert-master\WinDivert-master\include\windivert.h`
+- Source checkout version file: `2.2.0`
+- Packaged runtime version: official WinDivert `2.2.2-A` under `.repo-control-plane/cache/windivert/` (ignored)
 - FLOW layer requires `WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY`.
 - FLOW address IPv4 fields are host-byte-order u32; packet headers use network byte order.

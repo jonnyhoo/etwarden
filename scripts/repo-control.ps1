@@ -92,6 +92,7 @@ function Cmd-Status {
         '.repo-control-plane/hook-lanes.json',
         '.repo-control-plane/static-gates/artifact-policy.json',
         'scripts/repo-control.ps1',
+        'scripts/package-release.ps1',
         '.githooks/pre-commit',
         '.githooks/pre-push',
         '.github/workflows/ci.yml'
@@ -267,11 +268,13 @@ function Cmd-CheckControlPlane {
     }
 
     # scripts
-    $scriptPath = Join-Path $RepoRoot 'scripts' 'repo-control.ps1'
-    if (Test-Path $scriptPath) {
-        Write-Host "  [OK] scripts/repo-control.ps1" -ForegroundColor Green
-    } else {
-        $errors += 'scripts/repo-control.ps1 missing'
+    foreach ($script in @('repo-control.ps1', 'package-release.ps1')) {
+        $scriptPath = Join-Path (Join-Path $RepoRoot 'scripts') $script
+        if (Test-Path $scriptPath) {
+            Write-Host "  [OK] scripts/$script" -ForegroundColor Green
+        } else {
+            $errors += "scripts/$script missing"
+        }
     }
 
     # repo hooks
@@ -294,7 +297,7 @@ function Cmd-CheckControlPlane {
 
     # .gitignore covers runtime artifacts
     $gitignore = Get-Content (Join-Path $RepoRoot '.gitignore') -Raw
-    $requiredPatterns = @('WinDivert.dll', '*.log', '/target')
+    $requiredPatterns = @('WinDivert.dll', '*.log', '/target', '/dist')
     foreach ($pat in $requiredPatterns) {
         if ($gitignore -notmatch [regex]::Escape($pat)) {
             $errors += ".gitignore missing pattern: $pat"
@@ -381,6 +384,13 @@ function Cmd-VerifyAdmin {
     Write-Host "verify:admin PASS" -ForegroundColor Green
 }
 
+function Cmd-PackageRelease {
+    $scriptPath = Join-Path $RepoRoot 'scripts' 'package-release.ps1'
+    & pwsh -NoProfile -File $scriptPath @CommandArgs
+    $code = $LASTEXITCODE
+    if ($null -ne $code -and $code -ne 0) { exit $code }
+}
+
 function Cmd-HooksInstall {
     Write-Host "=== hooks:install ===" -ForegroundColor Yellow
     Write-Host "Repo hooks (.githooks/) are auto-invoked by global fortress hooks." -ForegroundColor Cyan
@@ -463,6 +473,7 @@ switch ($Command) {
     'verify:focused'      { Cmd-VerifyFocused }
     'verify:full'         { Cmd-VerifyFull }
     'verify:admin'        { Cmd-VerifyAdmin }
+    'package:release'     { Cmd-PackageRelease }
     'hooks:install'       { Cmd-HooksInstall }
     'hooks:doctor'        { Cmd-HooksDoctor }
     default {
@@ -477,6 +488,7 @@ switch ($Command) {
         Write-Host "  verify:focused      Run focused gate (fmt + nextest + clippy)"
         Write-Host "  verify:full         Run full static gate"
         Write-Host "  verify:admin        Run admin/release gate"
+        Write-Host "  package:release     Build Windows release folder with WinDivert runtime"
         Write-Host "  hooks:install       Show hook install instructions"
         Write-Host "  hooks:doctor        Diagnose hook integration"
         if ($Command -ne '') {

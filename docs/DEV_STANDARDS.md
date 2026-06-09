@@ -20,6 +20,7 @@
 | cargo-coupling | `cargo install cargo-coupling` | Coupling health gate |
 | cargo-llvm-cov | `cargo install cargo-llvm-cov` | Coverage (Windows-friendly) |
 | cargo-criterion | `cargo install cargo-criterion` | Benchmarks |
+| signed WinDivert release/build | upstream release or local MSBuild+WDK build | Release packaging for `--divert` runtime |
 
 ---
 
@@ -62,6 +63,16 @@ cargo bench --no-run                           # bench compile check
 
 No merge unless the relevant focused gate and full static gate pass. Admin/release
 gate is required before release or admin-runner integration changes.
+
+Windows release packaging:
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 package:release -WinDivertRoot <official-release-or-build-root>
+```
+
+`--divert` release packages must include `WinDivert.dll`, `WinDivert64.sys`,
+`LICENSE.WinDivert`, and `THIRD_PARTY_NOTICES.txt` next to `etwarden.exe`.
+Use official signed WinDivert runtime binaries or a signed local build. A source
+checkout alone is not a runtime package.
 
 Duplicate policy:
 - Pre-commit hook repeats `cargo +nightly fmt --check` and `cargo clippy --all-targets -- -D warnings` as final guard.

@@ -1,11 +1,11 @@
 //! # `divert::packet`
 //!
-//! **Purpose**: Minimal IP/TCP header parsing and destination rewrite for packet redirect.
-//! **Public API**: `ParsedPacket`, `parse_ipv4_tcp`, `rewrite_tcp_dst`
+//! **Purpose**: Minimal IP/TCP header parsing and address rewrite for packet redirect.
+//! **Public API**: `ParsedPacket`, `parse_ipv4_tcp`, rewrite helpers
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 160 / 180
+//! **Line budget**: 170 / 190
 
 use std::net::Ipv4Addr;
 
@@ -28,6 +28,7 @@ pub struct ParsedPacket {
 
 /// TCP flags.
 pub const TCP_SYN: u8 = 0x02;
+pub const TCP_ACK: u8 = 0x10;
 
 /// Parses an IPv4+TCP packet and extracts the 5-tuple + header lengths.
 ///
@@ -117,6 +118,28 @@ pub fn rewrite_tcp_dst(
     true
 }
 
+/// Rewrites source/destination IPv4 addresses and TCP ports in an IPv4+TCP packet buffer.
+pub fn rewrite_tcp_addrs(
+    packet: &mut [u8],
+    new_src_ip: Ipv4Addr,
+    new_src_port: u16,
+    new_dst_ip: Ipv4Addr,
+    new_dst_port: u16,
+    ip_header_len: u8,
+) -> bool {
+    let ip_hl = ip_header_len as usize;
+    if packet.len() < ip_hl + 20 {
+        return false;
+    }
+
+    packet[12..16].copy_from_slice(&new_src_ip.octets());
+    packet[16..20].copy_from_slice(&new_dst_ip.octets());
+    packet[ip_hl..ip_hl + 2].copy_from_slice(&new_src_port.to_be_bytes());
+    packet[ip_hl + 2..ip_hl + 4].copy_from_slice(&new_dst_port.to_be_bytes());
+
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddrV4;
@@ -180,5 +203,27 @@ mod tests {
         assert_eq!(parsed.dst_port, 3003);
         assert_eq!(parsed.src_ip, *src.ip());
         assert_eq!(parsed.src_port, src.port());
+    }
+
+    #[test]
+    fn rewrite_changes_src_and_dst() {
+        let src = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 100), 51000);
+        let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 80);
+        let mut pkt = build_syn_packet(&src, &dst);
+
+        assert!(rewrite_tcp_addrs(
+            &mut pkt,
+            dst.ip().to_owned(),
+            src.port(),
+            src.ip().to_owned(),
+            3003,
+            20
+        ));
+
+        let parsed = parse_ipv4_tcp(&pkt).expect("should still parse");
+        assert_eq!(parsed.src_ip, *dst.ip());
+        assert_eq!(parsed.src_port, src.port());
+        assert_eq!(parsed.dst_ip, *src.ip());
+        assert_eq!(parsed.dst_port, 3003);
     }
 }

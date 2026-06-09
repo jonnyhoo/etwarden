@@ -5,7 +5,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 110 / 130
+//! **Line budget**: 124 / 150
 
 use std::{net::SocketAddr, path::PathBuf};
 
@@ -74,6 +74,18 @@ pub struct Cli {
     /// Enable experimental `WinDivert` TCP redirect for hot-attach MITM.
     #[arg(long, conflicts_with_all = ["no_divert", "no_mitm"])]
     pub divert: bool,
+
+    /// Limit `--divert` transparent redirect to destination ports, comma-separated.
+    #[arg(long, value_delimiter = ',', conflicts_with = "no_divert")]
+    pub divert_ports: Vec<u16>,
+
+    /// Exclude destination ports from `--divert`, comma-separated.
+    #[arg(long, value_delimiter = ',', conflicts_with = "no_divert")]
+    pub divert_exclude_ports: Vec<u16>,
+
+    /// Actively MITM transparent TLS instead of raw-tunneling it. Requires trusted MITM CA.
+    #[arg(long, requires = "divert", conflicts_with_all = ["no_divert", "no_mitm"])]
+    pub divert_tls_mitm: bool,
 
     /// Keep `WinDivert` TCP redirect disabled. Default until transparent upstream handling is complete.
     #[arg(long)]
@@ -226,6 +238,34 @@ mod tests {
 
         let result = Cli::try_parse_from(["etwarden", "--pid", "1234", "--divert", "--no-divert"]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_parses_divert_port_filters() {
+        let cli = Cli::try_parse_from([
+            "etwarden",
+            "--pid",
+            "1234",
+            "--divert",
+            "--divert-ports",
+            "80,443",
+            "--divert-exclude-ports",
+            "16669",
+        ])
+        .expect("parse");
+
+        assert_eq!(cli.divert_ports, vec![80, 443]);
+        assert_eq!(cli.divert_exclude_ports, vec![16669]);
+    }
+
+    #[test]
+    fn cli_parses_divert_tls_mitm_opt_in() {
+        let cli =
+            Cli::try_parse_from(["etwarden", "--pid", "1234", "--divert", "--divert-tls-mitm"])
+                .expect("parse");
+
+        assert!(cli.divert_tls_mitm);
+        assert!(Cli::try_parse_from(["etwarden", "--pid", "1234", "--divert-tls-mitm"]).is_err());
     }
 
     #[test]

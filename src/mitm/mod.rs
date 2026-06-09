@@ -5,7 +5,7 @@
 //! **Dependencies**: `http-mitm-proxy`, `tokio`, `parser`, `pcap`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `optional-user-proxy-write`
-//! **Line budget**: 768 / 800
+//! **Line budget**: 783 / 840
 
 mod body;
 mod ca;
@@ -41,8 +41,11 @@ use hyper_util::rt::TokioIo;
 use tokio::{net::TcpListener, sync::oneshot};
 
 use self::{
-    body::capture_body, ca::load_or_generate_issuer, pid::resolve_proxy_pid,
-    system_proxy::SystemProxyGuard, transparent::TransparentUpstream,
+    body::{capture_body, capture_bytes_base64},
+    ca::load_or_generate_issuer,
+    pid::resolve_proxy_pid,
+    system_proxy::SystemProxyGuard,
+    transparent::TransparentUpstream,
 };
 use crate::{
     divert::RedirectMap,
@@ -78,6 +81,7 @@ pub struct MitmCaptureConfig {
     pub body_limit: usize,
     pub max_body_bytes: usize,
     pub enable_system_proxy: bool,
+    pub divert_tls_mitm: bool,
 }
 
 /// Runtime MITM proxy config wired to active capture state.
@@ -170,6 +174,7 @@ struct ProxyState {
     listen_addr: SocketAddr,
     body_limit: usize,
     max_body_bytes: usize,
+    divert_tls_mitm: bool,
     client: DefaultClient,
     issuer: RootIssuer,
     registry: Arc<ParserRegistry>,
@@ -241,6 +246,7 @@ async fn run_proxy(
         listen_addr,
         body_limit: config.capture.body_limit,
         max_body_bytes: config.capture.max_body_bytes,
+        divert_tls_mitm: config.capture.divert_tls_mitm,
         client,
         issuer: Arc::clone(&issuer),
         registry: config.registry,
@@ -608,6 +614,7 @@ fn request_event(
     body: &[u8],
     body_limit: usize,
 ) -> Result<NetEvent> {
+    let headers = capture_bytes_base64(&headers_to_bytes(&parts.headers), body_limit);
     let captured = capture_body(
         header_value(&parts.headers, CONTENT_ENCODING),
         content_length(&parts.headers),
@@ -623,6 +630,8 @@ fn request_event(
         path: request_path(&parts.uri),
         host: host_value(&parts.uri, &parts.headers),
         version: version_string(parts.version),
+        headers_base64: headers.base64,
+        headers_truncated: headers.truncated,
         content_type: header_string(&parts.headers, CONTENT_TYPE),
         content_length: captured.content_length,
         content_encoding: captured.content_encoding,
@@ -640,6 +649,7 @@ fn response_event(
     body: &[u8],
     body_limit: usize,
 ) -> Result<NetEvent> {
+    let headers = capture_bytes_base64(&headers_to_bytes(&parts.headers), body_limit);
     let captured = capture_body(
         header_value(&parts.headers, CONTENT_ENCODING),
         content_length(&parts.headers),
@@ -655,6 +665,8 @@ fn response_event(
         host: request_uri.host().map(str::to_owned),
         version: version_string(parts.version),
         status_code: parts.status.as_u16(),
+        headers_base64: headers.base64,
+        headers_truncated: headers.truncated,
         content_type: header_string(&parts.headers, CONTENT_TYPE),
         content_length: captured.content_length,
         content_encoding: captured.content_encoding,
@@ -662,6 +674,17 @@ fn response_event(
         body_base64: captured.body_base64,
         body_truncated: captured.body_truncated,
     })
+}
+
+fn headers_to_bytes(headers: &HeaderMap) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (name, value) in headers {
+        out.extend_from_slice(name.as_str().as_bytes());
+        out.extend_from_slice(b": ");
+        out.extend_from_slice(value.as_bytes());
+        out.extend_from_slice(b"\r\n");
+    }
+    out
 }
 
 fn request_dst(uri: &Uri) -> String {
@@ -761,6 +784,7 @@ mod tests {
             body_limit: 10,
             max_body_bytes: 5,
             enable_system_proxy: false,
+            divert_tls_mitm: false,
         };
         assert!(validate_config(&config).is_err());
     }

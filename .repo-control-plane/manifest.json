@@ -98,6 +98,7 @@
 		"verifyFocused": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:focused",
 		"verifyFull": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:full",
 		"verifyAdmin": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:admin",
+		"packageRelease": "pwsh -NoProfile -File scripts/repo-control.ps1 package:release -WinDivertRoot <official-release-or-build-root>",
 		"hooksInstall": "pwsh -NoProfile -File scripts/repo-control.ps1 hooks:install",
 		"hooksDoctor": "pwsh -NoProfile -File scripts/repo-control.ps1 hooks:doctor"
 	},
@@ -123,6 +124,7 @@
 		".githooks/pre-commit",
 		".githooks/pre-push",
 		".github/workflows/ci.yml",
+		"scripts/package-release.ps1",
 		".gitignore",
 		"AGENTS.md",
 		"CLAUDE.md",

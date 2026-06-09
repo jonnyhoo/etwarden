@@ -1,11 +1,11 @@
 //! # `mitm::body`
 //!
 //! **Purpose**: Decompresses and bounds captured MITM HTTP bodies before NDJSON emission.
-//! **Public API**: `CapturedBody`, `capture_body`
+//! **Public API**: `CapturedBody`, `CapturedBytes`, capture helpers
 //! **Dependencies**: `base64`, `brotli`, `flate2`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 120 / 160
+//! **Line budget**: 136 / 180
 
 use std::io::Read;
 
@@ -22,6 +22,33 @@ pub struct CapturedBody {
     pub content_length: Option<u64>,
     pub body_base64: Option<String>,
     pub body_truncated: bool,
+}
+
+/// Bounded, base64-wrapped raw byte capture metadata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CapturedBytes {
+    pub base64: Option<String>,
+    pub truncated: bool,
+    pub captured_len: usize,
+}
+
+/// Captures arbitrary bytes for NDJSON-safe emission.
+#[must_use]
+pub fn capture_bytes_base64(bytes: &[u8], limit: usize) -> CapturedBytes {
+    if bytes.is_empty() {
+        return CapturedBytes {
+            base64: None,
+            truncated: false,
+            captured_len: 0,
+        };
+    }
+    let truncated = bytes.len() > limit;
+    let captured = if truncated { &bytes[..limit] } else { bytes };
+    CapturedBytes {
+        base64: Some(STANDARD.encode(captured)),
+        truncated,
+        captured_len: captured.len(),
+    }
 }
 
 /// Captures a HTTP body, decoding common content encodings and base64-wrapping bytes.
@@ -148,5 +175,14 @@ mod tests {
 
         assert_eq!(captured.content_encoding.as_deref(), Some("zstd"));
         assert!(!captured.decoded);
+    }
+
+    #[test]
+    fn raw_bytes_capture_is_bounded() {
+        let captured = capture_bytes_base64(b"abcdef", 3);
+
+        assert_eq!(captured.base64.as_deref(), Some("YWJj"));
+        assert!(captured.truncated);
+        assert_eq!(captured.captured_len, 3);
     }
 }

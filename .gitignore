@@ -1,12 +1,16 @@
 /target
 /captures
 /logs/coupling*.json
+/dist
 
-# Local runtime artifacts
+# Local runtime artifacts at repo root
 /*.log
 /spawn_test*.txt
 /etwarden-mitm-ca.crt
 /etwarden-mitm-ca.key
+
+# WinDivert runtime artifacts are packaged into /dist by scripts/package-release.ps1.
+# Keep root ad-hoc copies ignored; release bundles live under ignored /dist.
 /WinDivert.dll
 /WinDivert32.sys
 /WinDivert64.sys

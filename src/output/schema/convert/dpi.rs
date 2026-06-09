@@ -5,12 +5,12 @@
 //! **Dependencies**: `output::schema`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 80 / 120
+//! **Line budget**: 102 / 150
 
 use chrono::{DateTime, Utc};
 
 use super::process::ProcessFields;
-use crate::output::schema::{HttpEventLine, OutputLine, TlsEventLine};
+use crate::output::schema::{HttpEventLine, OutputLine, TlsEventLine, TunnelDataEventLine};
 
 #[expect(
     clippy::too_many_arguments,
@@ -27,6 +27,8 @@ pub(super) fn http_request_line(
     host: Option<&str>,
     content_type: Option<&str>,
     content_length: Option<u64>,
+    headers_base64: Option<&str>,
+    headers_truncated: bool,
     process_fields: ProcessFields,
 ) -> OutputLine {
     let ProcessFields {
@@ -46,6 +48,8 @@ pub(super) fn http_request_line(
         path: Some(path.to_owned()),
         status_line: None,
         version: version.to_owned(),
+        headers_base64: headers_base64.map(str::to_owned),
+        headers_truncated,
         status_code: None,
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
@@ -77,6 +81,8 @@ pub(super) fn http_response_line(
     host: Option<&str>,
     content_type: Option<&str>,
     content_length: Option<u64>,
+    headers_base64: Option<&str>,
+    headers_truncated: bool,
     process_fields: ProcessFields,
 ) -> OutputLine {
     let ProcessFields {
@@ -96,6 +102,8 @@ pub(super) fn http_response_line(
         path: None,
         status_line: Some(status_line.to_owned()),
         version: version.to_owned(),
+        headers_base64: headers_base64.map(str::to_owned),
+        headers_truncated,
         status_code: Some(status_code),
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
@@ -127,6 +135,8 @@ pub(super) fn decrypted_http_request_line(
     host: Option<&str>,
     content_type: Option<&str>,
     content_length: Option<u64>,
+    headers_base64: Option<&str>,
+    headers_truncated: bool,
     content_encoding: Option<&str>,
     decoded: bool,
     body_base64: Option<&str>,
@@ -150,6 +160,8 @@ pub(super) fn decrypted_http_request_line(
         path: Some(path.to_owned()),
         status_line: None,
         version: version.to_owned(),
+        headers_base64: headers_base64.map(str::to_owned),
+        headers_truncated,
         status_code: None,
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
@@ -181,6 +193,8 @@ pub(super) fn decrypted_http_response_line(
     host: Option<&str>,
     content_type: Option<&str>,
     content_length: Option<u64>,
+    headers_base64: Option<&str>,
+    headers_truncated: bool,
     content_encoding: Option<&str>,
     decoded: bool,
     body_base64: Option<&str>,
@@ -204,6 +218,8 @@ pub(super) fn decrypted_http_response_line(
         path: None,
         status_line: Some(status_line.to_owned()),
         version: version.to_owned(),
+        headers_base64: headers_base64.map(str::to_owned),
+        headers_truncated,
         status_code: Some(status_code),
         host: host.map(str::to_owned),
         content_type: content_type.map(str::to_owned),
@@ -213,6 +229,53 @@ pub(super) fn decrypted_http_response_line(
         decoded,
         body_base64: body_base64.map(str::to_owned),
         body_truncated,
+        process_name: name,
+        ppid,
+        command_line,
+        tree_path,
+    })
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tunnel data schema projection keeps source fields explicit"
+)]
+pub(super) fn tunnel_data_line(
+    timestamp: DateTime<Utc>,
+    pid: u32,
+    src: &str,
+    dst: &str,
+    direction: &str,
+    encrypted: bool,
+    headers_base64: Option<&str>,
+    headers_truncated: bool,
+    payload_base64: Option<&str>,
+    payload_truncated: bool,
+    bytes_seen: u64,
+    bytes_captured: u64,
+    process_fields: ProcessFields,
+) -> OutputLine {
+    let ProcessFields {
+        name,
+        ppid,
+        command_line,
+        tree_path,
+    } = process_fields;
+
+    OutputLine::TunnelDataEvent(TunnelDataEventLine {
+        timestamp,
+        pid,
+        event: "tunnel_data".into(),
+        src: src.to_owned(),
+        dst: dst.to_owned(),
+        direction: direction.to_owned(),
+        encrypted,
+        headers_base64: headers_base64.map(str::to_owned),
+        headers_truncated,
+        payload_base64: payload_base64.map(str::to_owned),
+        payload_truncated,
+        bytes_seen,
+        bytes_captured,
         process_name: name,
         ppid,
         command_line,

@@ -1,11 +1,11 @@
 //! # `output::schema::line::event`
 //!
 //! **Purpose**: Stable event NDJSON line types.
-//! **Public API**: `EventLine`, `DnsEventLine`, `HttpEventLine`, `TlsEventLine`, `RuleHitEventLine`
+//! **Public API**: event NDJSON line structs
 //! **Dependencies**: `parser::types`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 170 / 200
+//! **Line budget**: 205 / 260
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -117,6 +117,12 @@ pub struct HttpEventLine {
     pub status_line: Option<String>,
     /// HTTP version token.
     pub version: String,
+    /// Base64-encoded bounded HTTP headers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers_base64: Option<String>,
+    /// Whether `headers_base64` was truncated by the capture limit.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub headers_truncated: bool,
     /// HTTP response status code.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_code: Option<u16>,
@@ -144,6 +150,54 @@ pub struct HttpEventLine {
     /// Whether `body_base64` was truncated by the capture limit.
     #[serde(default, skip_serializing_if = "is_false")]
     pub body_truncated: bool,
+    /// Resolved process name.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub process_name: Option<String>,
+    /// Parent process ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ppid: Option<u32>,
+    /// Process command line.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command_line: Option<String>,
+    /// Parent→child process tree path.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tree_path: Option<String>,
+}
+
+/// Bounded raw transparent tunnel data in the agent contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TunnelDataEventLine {
+    /// ISO 8601 timestamp.
+    #[serde(rename = "t")]
+    pub timestamp: DateTime<Utc>,
+    /// Process ID that owned the tunnel.
+    pub pid: u32,
+    /// Event type: `tunnel_data`.
+    pub event: String,
+    /// Source address:port.
+    pub src: String,
+    /// Destination address:port.
+    pub dst: String,
+    /// Direction: `request` or `response`.
+    pub direction: String,
+    /// True when bytes are encrypted TLS/application data.
+    pub encrypted: bool,
+    /// Base64-encoded bounded request/response headers when plaintext HTTP is visible.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headers_base64: Option<String>,
+    /// Whether `headers_base64` was truncated by the capture limit.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub headers_truncated: bool,
+    /// Base64-encoded bounded payload bytes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub payload_base64: Option<String>,
+    /// Whether `payload_base64` was truncated by the capture limit.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub payload_truncated: bool,
+    /// Total bytes seen in this first captured chunk.
+    pub bytes_seen: u64,
+    /// Total bytes emitted in this event.
+    pub bytes_captured: u64,
     /// Resolved process name.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub process_name: Option<String>,

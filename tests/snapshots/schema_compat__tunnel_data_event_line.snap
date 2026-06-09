@@ -1,0 +1,17 @@
+---
+source: tests/schema_compat.rs
+expression: line
+---
+{
+  "t": "2025-01-15T12:00:00Z",
+  "pid": 1234,
+  "event": "tunnel_data",
+  "src": "10.0.0.1:49152",
+  "dst": "93.184.216.34:443",
+  "direction": "request",
+  "encrypted": true,
+  "payload_base64": "YWJj",
+  "payload_truncated": true,
+  "bytes_seen": 4096,
+  "bytes_captured": 3
+}
