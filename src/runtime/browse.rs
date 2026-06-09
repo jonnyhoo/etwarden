@@ -19,7 +19,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{process::JobObject, runtime::which::BrowserFamily};
+use crate::{process::job::JobObject, runtime::which::BrowserFamily};
 
 /// Configuration for the browse subcommand.
 pub struct BrowseConfig {

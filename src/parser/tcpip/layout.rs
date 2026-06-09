@@ -7,9 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 95 / 140
 
-use crate::parser::tcpip::fields::{
-    event_pid, fmt_addr_port, fmt_ipv4, fmt_ipv6, read_u16, read_u32,
-};
+use super::fields::{event_pid, fmt_addr_port, fmt_ipv4, fmt_ipv6, read_u16, read_u32};
 
 const IPV4_LAYOUT_LEN: usize = 20;
 const IPV6_LAYOUT_LEN: usize = 44;

@@ -11,7 +11,7 @@ use std::collections::HashSet;
 
 use crate::{
     output::schema::{OutputLine, ProcessKillLine, ProcessLine, SpawnTargetLine},
-    process::{KillProcessResult, ProcessEntry, ProcessInfo},
+    process::{inventory::ProcessEntry, kill::KillProcessResult, tree::ProcessInfo},
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

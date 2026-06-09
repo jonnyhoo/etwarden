@@ -18,7 +18,7 @@ mod process;
 use process::ProcessFields;
 pub use process::{process_entry_to_line, process_kill_result_to_line, spawn_target_to_line};
 
-use crate::{output::schema::OutputLine, parser::types::NetEvent, process::ProcessInfo};
+use crate::{output::schema::OutputLine, parser::types::NetEvent, process::tree::ProcessInfo};
 
 /// Converts a `NetEvent` into an `EventLine` for output.
 ///

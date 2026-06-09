@@ -14,7 +14,8 @@ use windows::Win32::{
     System::Threading::{GetExitCodeProcess, WaitForSingleObject, INFINITE},
 };
 
-use crate::{error::EtwardenError, process::JobObject};
+use super::job::JobObject;
+use crate::error::EtwardenError;
 
 /// Monitors a child process for liveness and exit status.
 ///

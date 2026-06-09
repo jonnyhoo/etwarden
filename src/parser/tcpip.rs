@@ -14,8 +14,8 @@ mod layout;
 
 use windows::core::GUID;
 
+use self::events::parse_event;
 use crate::parser::{
-    tcpip::events::parse_event,
     types::{NetEvent, RawEvent},
     EventParser,
 };

@@ -18,7 +18,7 @@ use std::{
 use etwarden::{
     cli::{Cli, TargetMode},
     filter::{pid::PidFilter, tree::ProcessTreeFilter, Filter},
-    process::{ProcessTreeCache, SpawnOptions},
+    process::{spawn::SpawnOptions, tree::ProcessTreeCache},
 };
 
 mod spawn;

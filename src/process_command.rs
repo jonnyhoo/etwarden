@@ -10,7 +10,10 @@
 use etwarden::{
     cli::ProcessCommand,
     output::schema::{process_entry_to_line, process_kill_result_to_line, OutputLine},
-    process::{filtered_processes, kill_process, process_tree, ProcessFilter},
+    process::{
+        inventory::{filtered_processes, process_tree, ProcessFilter},
+        kill::kill_process,
+    },
 };
 
 pub(super) fn lines(command: &ProcessCommand) -> anyhow::Result<Vec<OutputLine>> {

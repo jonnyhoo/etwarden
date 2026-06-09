@@ -18,8 +18,11 @@ use std::{
 use etwarden::{
     output::diagnostic,
     process::{
-        resolve_spawn_capture_target, spawn_and_get_pid_with_options, JobObject, ProcessMonitor,
-        ProcessTreeCache, SpawnOptions,
+        job::JobObject,
+        monitor::ProcessMonitor,
+        spawn::{spawn_and_get_pid_with_options, SpawnOptions},
+        spawn_capture::resolve_spawn_capture_target,
+        tree::ProcessTreeCache,
     },
 };
 

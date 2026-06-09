@@ -30,7 +30,7 @@ use crate::{
     output::{diagnostic, schema::SummaryLine, Emitter},
     parser::{types::FiveTuple, ParserRegistry},
     pcap::{correlator::Correlator, PcapSink},
-    process::current_tcp_connections_for_pid,
+    process::network::current_tcp_connections_for_pid,
     rules::ruleset::RuleSet,
 };
 

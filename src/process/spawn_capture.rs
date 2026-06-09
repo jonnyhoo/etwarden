@@ -9,11 +9,11 @@
 
 use std::{collections::HashSet, thread, time::Duration};
 
-use crate::{
-    error::EtwardenError,
-    output::diagnostic,
-    process::{current_tcp_owners_with_connections, ProcessTreeCache, TcpOwnerConnections},
+use super::{
+    network::{current_tcp_owners_with_connections, TcpOwnerConnections},
+    tree::ProcessTreeCache,
 };
+use crate::{error::EtwardenError, output::diagnostic};
 
 const DISCOVERY_POLLS: usize = 20;
 const DISCOVERY_INTERVAL: Duration = Duration::from_millis(50);

@@ -15,7 +15,8 @@ use std::{
 
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
 
-use crate::{output::diagnostic, process::inventory};
+use super::inventory;
+use crate::output::diagnostic;
 
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 const TREE_DEPTH_LIMIT: usize = 32;

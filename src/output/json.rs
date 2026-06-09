@@ -13,7 +13,7 @@ use crate::{
     error::EtwardenError,
     output::{schema::event_to_line_with_process_info, Emitter},
     parser::types::NetEvent,
-    process::ProcessTreeCache,
+    process::tree::ProcessTreeCache,
 };
 
 /// Writes `NetEvent` as NDJSON lines to a `Write` sink.
