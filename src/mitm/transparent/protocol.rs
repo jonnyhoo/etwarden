@@ -5,7 +5,7 @@
 //! **Dependencies**: `tokio`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 115 / 130
+//! **Line budget**: 127 / 130
 
 use std::time::Duration;
 
@@ -116,6 +116,10 @@ mod tests {
     fn unknown_bytes_fall_back_to_tcp() {
         assert_eq!(
             classify_peek(b"\x01\x02\x03", true),
+            TransparentProtocol::Tcp
+        );
+        assert_eq!(
+            classify_peek(b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n", true),
             TransparentProtocol::Tcp
         );
     }

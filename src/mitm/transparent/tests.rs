@@ -5,7 +5,7 @@
 //! **Dependencies**: `mitm::transparent`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 97 / 120
+//! **Line budget**: 118 / 120
 
 use bytes::Bytes;
 use http_body_util::Full;
@@ -39,6 +39,30 @@ fn transparent_authority_keeps_non_default_port() {
         transparent_authority(&"/".parse().expect("uri"), &headers, &upstream).expect("authority");
 
     assert_eq!(authority.as_str(), "example.com:8443");
+}
+
+#[test]
+fn transparent_authority_reconstructs_host_header_port() {
+    let mut headers = HeaderMap::new();
+    headers.insert(HOST, "api.example.com:8080".parse().expect("host header"));
+    let upstream = transparent_test_upstream(8080, TransparentProtocol::Http);
+
+    let authority = transparent_authority(&"/v1".parse().expect("uri"), &headers, &upstream)
+        .expect("authority");
+
+    assert_eq!(authority.as_str(), "api.example.com:8080");
+}
+
+#[test]
+fn transparent_authority_omits_default_port_from_host_header() {
+    let mut headers = HeaderMap::new();
+    headers.insert(HOST, "example.com:80".parse().expect("host header"));
+    let upstream = transparent_test_upstream(80, TransparentProtocol::Http);
+
+    let authority =
+        transparent_authority(&"/".parse().expect("uri"), &headers, &upstream).expect("authority");
+
+    assert_eq!(authority.as_str(), "example.com");
 }
 
 #[test]
