@@ -62,7 +62,7 @@ pub(super) fn upstream_from_map(
     })
 }
 
-fn destination_port(remote_addr: std::net::SocketAddr) -> u16 {
+const fn destination_port(remote_addr: std::net::SocketAddr) -> u16 {
     remote_addr.port()
 }
 

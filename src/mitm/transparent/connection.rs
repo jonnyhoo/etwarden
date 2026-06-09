@@ -38,7 +38,7 @@ pub(in crate::mitm) fn spawn_connection(
     upstream: TransparentUpstream,
 ) {
     tokio::spawn(async move {
-        if let Err(err) = handle_connection(stream, remote_addr, state, upstream).await {
+        if let Err(err) = Box::pin(handle_connection(stream, remote_addr, state, upstream)).await {
             diagnostic::warn(format_args!("MITM transparent connection closed: {err}"));
         }
     });
@@ -67,7 +67,9 @@ async fn handle_connection(
         TransparentProtocol::Tls => {
             handle_tls_connection(stream, remote_addr, state, upstream).await
         }
-        TransparentProtocol::Tcp => tunnel_tcp(stream, remote_addr, state, upstream).await,
+        TransparentProtocol::Tcp => {
+            Box::pin(tunnel_tcp(stream, remote_addr, state, upstream)).await
+        }
     }
 }
 

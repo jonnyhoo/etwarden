@@ -26,7 +26,7 @@ This repo has two independent planes that never cross-depend:
 | Plane | Roots | Owns | Invariant |
 |-------|-------|------|-----------|
 | **Product** | `src/`, `tests/`, `benches/` | ETW, NDIS, MITM, WinDivert, NDJSON contract | Never depends on control-plane scripts |
-| **Control** | `.repo-control-plane/`, `scripts/`, `.githooks/`, `.github/` | Gates, hooks, doctor, CI, artifact policy | Never mutates product runtime behavior |
+| **Control** | `.repo-control-plane/`, `scripts/`, `.githooks/` | Gates, hooks, doctor, artifact policy | Never mutates product runtime behavior |
 
 ---
 
@@ -55,7 +55,7 @@ Read in this order:
 | `docs/TASK_PLAN.md` | Task tracking. |
 | `docs/HANDOFF_WINDIVERT.md` | WinDivert redirect handoff status and validation gaps. |
 | `.repo-control-plane/manifest.json` | Control plane registry: canonical docs, hook lanes, commands, managed files. |
-| `.repo-control-plane/hook-lanes.json` | Hook lane ownership and dedup rules (global vs repo vs CI). |
+| `.repo-control-plane/hook-lanes.json` | Hook lane ownership and dedup rules (global vs repo vs manual). |
 | `.repo-control-plane/static-gates/artifact-policy.json` | WinDivert / runtime artifact ignore policy. |
 | `scripts/repo-control.ps1` | Single entry point for all control-plane commands. |
 | `scripts/package-release.ps1` | Builds Windows release folder with bundled WinDivert runtime files and notices. |
@@ -76,7 +76,7 @@ Read in this order:
 | What does data flow look like? | `ARCHITECTURE.md` → Data Flow |
 | What are the extension points? | `ARCHITECTURE.md` → Hot-Swap Seams |
 | What is the JSON output format? | `ARCHITECTURE.md` → JSON Output Contract |
-| What are the CI gates? | This file → Pipeline |
+| What are the local gates? | This file → Pipeline |
 | What lint rules apply? | `docs/DEV_STANDARDS.md` → Clippy / Lint Policy |
 | What goes in each file header? | `docs/DEV_STANDARDS.md` → File Header |
 | How do I handle errors? | `docs/DEV_STANDARDS.md` → Error Handling |
@@ -125,17 +125,25 @@ cargo +nightly fmt --check && cargo nextest run -p etwarden <filter> && cargo cl
 
 ### Step 3: Full gate before commit
 
-Before every commit:
+Before every commit, run the repo pre-commit gate:
 
 ```
-pwsh -NoProfile -File scripts/repo-control.ps1 verify:full
+pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-commit
 ```
 
-Runs: `check-control-plane` → `check-docs` → `fmt --check` → `clippy` → `audit` → `deny` → `machete` → `coupling` → `nextest run` → `test --doc` → `doc --no-deps` → `git diff --check`.
+Runs: `check-control-plane` → `check-docs` → `cargo check -p etwarden` → `git diff --check`.
+
+Before every push, run the repo pre-push/full gate:
+
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-push
+```
+
+Runs: `check-control-plane` → `check-docs` → `fmt --all --check` → `check` → `clippy` → `audit` → `deny` → `machete` → `udeps` → `hack` → `semver-checks` → `coupling` → `nextest run` → `test --doc` → `doc --no-deps` → `git diff --check`.
 
 Or manually:
 ```
-cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo nextest run && cargo test --doc && cargo doc --no-deps && git diff --check && git status --short
+cargo +nightly fmt --all --check && cargo check -p etwarden && cargo clippy --all-targets --all-features -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo +nightly udeps --all-targets --all-features && cargo hack check --all-targets --feature-powerset && cargo semver-checks --baseline-rev <latest-tag> && cargo coupling --check --no-git --max-circular 5 && cargo nextest run && cargo test --doc && cargo doc --no-deps && git diff --check && git status --short
 ```
 
 ### Step 4: Commit
@@ -146,7 +154,7 @@ git add <files> && git commit -m "<message>"
 
 Hooks fire automatically:
 1. Global pre-commit: `cargo fmt` (auto-fix), text guards, language lanes
-2. Repo pre-commit: `check-control-plane`, `check-docs`, `git diff --check`
+2. Repo pre-commit: `check-control-plane`, `check-docs`, `cargo check -p etwarden`, `git diff --check`
 
 ### Step 5: Push
 
@@ -155,15 +163,10 @@ git push
 ```
 
 Hooks fire automatically:
-1. Global pre-push: `cargo fmt --check`, `cargo clippy`, text guards
-2. Repo pre-push: `audit`, `deny`, `machete`, `coupling`, `nextest run`, `test --doc`, `doc --no-deps`
+1. Global pre-push: generic/language guards; Rust fallback only when repo pre-push is absent
+2. Repo pre-push: `fmt`, `check`, `clippy`, `audit`, `deny`, `machete`, `udeps`, `hack`, `semver-checks`, `coupling`, `nextest run`, `test --doc`, `doc --no-deps`
 
-### Step 6: CI (automatic)
-
-`.github/workflows/ci.yml` runs the full self-contained chain on push/PR.
-Does not assume local hooks ran.
-
-### Admin / release gate (manual, requires admin runner)
+### Step 6: Admin / release gate (manual, requires admin runner)
 
 ```
 pwsh -NoProfile -File scripts/repo-control.ps1 verify:admin
@@ -200,6 +203,8 @@ release bundles are written under ignored `dist/`.
 | `pwsh -NoProfile -File scripts/repo-control.ps1 doctor` | Check toolchain and environment health |
 | `pwsh -NoProfile -File scripts/repo-control.ps1 check-control-plane` | Validate control-plane structure |
 | `pwsh -NoProfile -File scripts/repo-control.ps1 check-docs` | Validate canonical docs presence |
+| `pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-commit` | Run repo pre-commit gate |
+| `pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-push` | Run repo pre-push/full gate |
 | `pwsh -NoProfile -File scripts/repo-control.ps1 hooks:doctor` | Diagnose hook integration |
 
 ---
@@ -211,11 +216,10 @@ Hook gates are partitioned by owner. No lane duplicates another lane's work.
 | Lane | Owner | Phase | Runs | Does NOT run |
 |------|-------|-------|------|-------------|
 | Global pre-commit | fortress | pre-commit | `cargo fmt` (auto-fix), text guards, language lanes | — |
-| Global pre-push | fortress | pre-push | `cargo fmt --check`, `cargo clippy`, text guards | — |
-| Repo pre-commit | repo | pre-commit | `check-control-plane`, `check-docs`, `git diff --check` | fmt, clippy, test |
-| Repo pre-push | repo | pre-push | `audit`, `deny`, `machete`, `coupling`, `nextest run`, `test --doc`, `doc --no-deps` | fmt, clippy |
-| CI | ci | push/PR | Full self-contained chain (fmt + clippy + all repo gates) | — |
-| Admin/release | ci | manual | `nextest --features integration`, `llvm-cov`, `bench --no-run` | — |
+| Global pre-push | fortress | pre-push | generic/language guards; Rust fallback only when repo pre-push is absent | repo-owned Rust gates |
+| Repo pre-commit | repo | pre-commit | `check-control-plane`, `check-docs`, `cargo check -p etwarden`, `git diff --check` | fmt, clippy, tests |
+| Repo pre-push | repo | pre-push | `fmt`, `check`, `clippy`, `audit`, `deny`, `machete`, `udeps`, `hack`, `semver-checks`, `coupling`, `nextest run`, `test --doc`, `doc --no-deps` | global generic guards |
+| Admin/release | repo | manual | `nextest --features integration`, `llvm-cov`, `bench --no-run` | pre-commit/pre-push |
 
 Full lane spec: `.repo-control-plane/hook-lanes.json`.
 

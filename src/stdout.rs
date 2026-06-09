@@ -11,7 +11,7 @@ use std::io::Write;
 
 use etwarden::output::schema::OutputLine;
 
-pub(super) fn write_output_line(output: &OutputLine) -> anyhow::Result<()> {
+pub fn write_output_line(output: &OutputLine) -> anyhow::Result<()> {
     let mut stdout = std::io::stdout().lock();
     write_output_line_to(&mut stdout, output)
 }

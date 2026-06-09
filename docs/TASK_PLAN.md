@@ -168,19 +168,12 @@
 - **Verify**: `cargo build --release`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
 
 ### T20 — Phase 1 gate
-- **File**: (no new file — run full CI gate)
+- **File**: (no new file — run full local hook gate)
 - **Depends**: T19
 - **Notes**: —
 - **Verify**:
   ```
-  cargo +nightly fmt --check
-  cargo clippy --all-targets -- -D warnings
-  cargo deny check
-  cargo audit
-  cargo machete
-  cargo test
-  cargo doc --no-deps
-  cargo bench --no-run
+  pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-push
   ```
 
 ---
@@ -236,7 +229,7 @@
 ### T28 — Phase 2 gate
 - **File**: (no new file)
 - **Depends**: T27
-- **Verify**: full CI gate (same as T20)
+- **Verify**: full local hook gate (same as T20)
 
 ---
 
@@ -265,7 +258,7 @@
 ### T32 — Phase 3 gate
 - **File**: (no new file)
 - **Depends**: T31
-- **Verify**: full CI gate
+- **Verify**: full local hook gate
 
 ---
 

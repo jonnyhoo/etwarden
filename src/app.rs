@@ -18,7 +18,7 @@ use etwarden::{
 
 use crate::{capture_command, process_command, stdout};
 
-pub(super) fn main_entry() -> anyhow::Result<()> {
+pub fn main_entry() -> anyhow::Result<()> {
     match run() {
         Ok(()) => Ok(()),
         Err(err) => {

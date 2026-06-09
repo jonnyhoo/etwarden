@@ -25,7 +25,7 @@
 			"invariant": "Product code never depends on control-plane scripts."
 		},
 		"control": {
-			"roots": [".repo-control-plane/", "scripts/", ".githooks/", ".github/"],
+			"roots": [".repo-control-plane/", "scripts/", ".githooks/"],
 			"invariant": "Control plane never mutates product runtime behavior."
 		}
 	},
@@ -33,48 +33,49 @@
 		"globalPreCommit": {
 			"owner": "global-fortress",
 			"runs": ["generic-text-guards", "cargo fmt (auto-fix)", "language-lanes"],
-			"doc": "Owned by global fortress hooks. Repo hooks must not duplicate."
+			"doc": "Owned by global fortress hooks. Repo pre-commit must not duplicate Rust formatting."
 		},
 		"globalPrePush": {
 			"owner": "global-fortress",
-			"runs": ["generic-text-guards", "cargo fmt --check", "cargo clippy"],
-			"doc": "Owned by global fortress hooks. Repo hooks must not duplicate."
+			"runs": [
+				"generic-text-guards",
+				"language-lanes",
+				"Rust fmt/clippy fallback only when repo pre-push is absent"
+			],
+			"doc": "Global pre-push skips Rust fallback when .githooks/pre-push exists."
 		},
 		"repoPreCommit": {
 			"owner": "repo",
-			"runs": ["check-control-plane", "check-docs", "git diff --check"],
-			"doc": "Lightweight repo-structure checks only. No fmt/clippy."
+			"runs": [
+				"check-control-plane",
+				"check-docs",
+				"cargo check -p etwarden",
+				"git diff --check"
+			],
+			"doc": "Fast repo gate only. No fmt/clippy/tests."
 		},
 		"repoPrePush": {
 			"owner": "repo",
 			"runs": [
+				"cargo +nightly fmt --all --check",
+				"cargo check -p etwarden",
+				"cargo clippy --all-targets --all-features -- -D warnings",
 				"cargo audit --no-fetch --stale",
 				"cargo deny check --disable-fetch",
 				"cargo machete",
+				"cargo +nightly udeps --all-targets --all-features",
+				"cargo hack check --all-targets --feature-powerset",
+				"cargo semver-checks --baseline-rev <latest-tag>",
 				"cargo coupling --check --no-git --max-circular 5",
 				"cargo nextest run",
 				"cargo test --doc",
-				"cargo doc --no-deps"
+				"cargo doc --no-deps",
+				"git diff --check"
 			],
-			"doc": "Repo-specific supply-chain, coupling, test, doc gates. No fmt/clippy (global owns those)."
-		},
-		"ci": {
-			"owner": "ci",
-			"runs": [
-				"cargo +nightly fmt --check",
-				"cargo clippy --all-targets -- -D warnings",
-				"cargo audit --no-fetch --stale",
-				"cargo deny check --disable-fetch",
-				"cargo machete",
-				"cargo coupling --check --no-git --max-circular 5",
-				"cargo nextest run",
-				"cargo test --doc",
-				"cargo doc --no-deps"
-			],
-			"doc": "Full self-contained CI chain. Does not depend on local hooks."
+			"doc": "Complete Rust/static push gate. Owns fmt/clippy because global pre-push delegates Rust checks when repo hook exists."
 		},
 		"adminRelease": {
-			"owner": "ci",
+			"owner": "repo",
 			"runs": [
 				"cargo nextest run --features integration",
 				"cargo llvm-cov --summary-only",
@@ -95,6 +96,8 @@
 		"doctor": "pwsh -NoProfile -File scripts/repo-control.ps1 doctor",
 		"checkControlPlane": "pwsh -NoProfile -File scripts/repo-control.ps1 check-control-plane",
 		"checkDocs": "pwsh -NoProfile -File scripts/repo-control.ps1 check-docs",
+		"gatePreCommit": "pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-commit",
+		"gatePrePush": "pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-push",
 		"verifyFocused": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:focused",
 		"verifyFull": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:full",
 		"verifyAdmin": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:admin",
@@ -110,6 +113,9 @@
 		"cargo-audit",
 		"cargo-machete",
 		"cargo-coupling",
+		"cargo-udeps",
+		"cargo-hack",
+		"cargo-semver-checks",
 		"cargo-clippy",
 		"rustup"
 	],
@@ -123,8 +129,8 @@
 		"scripts/repo-control.ps1",
 		".githooks/pre-commit",
 		".githooks/pre-push",
-		".github/workflows/ci.yml",
 		"scripts/package-release.ps1",
+		".gitattributes",
 		".gitignore",
 		"AGENTS.md",
 		"CLAUDE.md",

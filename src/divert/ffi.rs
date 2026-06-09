@@ -121,7 +121,7 @@ impl WinDivertAddress {
     }
 
     /// Sets the NETWORK injection direction.
-    pub fn set_outbound(&mut self, outbound: bool) {
+    pub const fn set_outbound(&mut self, outbound: bool) {
         self.buf[10] = if outbound {
             self.buf[10] | 0x02
         } else {

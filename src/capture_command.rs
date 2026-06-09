@@ -22,7 +22,7 @@ use etwarden::{
 
 use crate::{stdout, target};
 
-pub(super) fn run(cli: &Cli) -> anyhow::Result<()> {
+pub fn run(cli: &Cli) -> anyhow::Result<()> {
     if let Some(TargetMode::Browse {
         url,
         browser,

@@ -7,23 +7,32 @@
 			"phases": ["pre-commit"],
 			"owner": "global-fortress",
 			"runs": ["generic-text-guards", "cargo fmt (auto-fix)", "language-lanes"],
-			"dedupRule": "Repo hooks must not duplicate any gate family listed here."
+			"dedupRule": "Repo pre-commit must not duplicate Rust formatting."
 		},
 		{
 			"id": "global-pre-push",
 			"layer": "global",
 			"phases": ["pre-push"],
 			"owner": "global-fortress",
-			"runs": ["generic-text-guards", "cargo fmt --check", "cargo clippy"],
-			"dedupRule": "Repo hooks must not duplicate fmt or clippy."
+			"runs": [
+				"generic-text-guards",
+				"language-lanes",
+				"Rust fmt/clippy fallback only when repo pre-push is absent"
+			],
+			"dedupRule": "When .githooks/pre-push exists, repo pre-push owns Rust push gates."
 		},
 		{
 			"id": "repo-pre-commit",
 			"layer": "repo",
 			"phases": ["pre-commit"],
 			"owner": "repo",
-			"runs": ["check-control-plane", "check-docs", "git diff --check"],
-			"dedupRule": "Lightweight only. No fmt, no clippy, no test."
+			"runs": [
+				"check-control-plane",
+				"check-docs",
+				"cargo check -p etwarden",
+				"git diff --check"
+			],
+			"dedupRule": "Fast only. No fmt, no clippy, no tests."
 		},
 		{
 			"id": "repo-pre-push",
@@ -31,39 +40,28 @@
 			"phases": ["pre-push"],
 			"owner": "repo",
 			"runs": [
+				"cargo +nightly fmt --all --check",
+				"cargo check -p etwarden",
+				"cargo clippy --all-targets --all-features -- -D warnings",
 				"cargo audit --no-fetch --stale",
 				"cargo deny check --disable-fetch",
 				"cargo machete",
+				"cargo +nightly udeps --all-targets --all-features",
+				"cargo hack check --all-targets --feature-powerset",
+				"cargo semver-checks --baseline-rev <latest-tag>",
 				"cargo coupling --check --no-git --max-circular 5",
 				"cargo nextest run",
 				"cargo test --doc",
-				"cargo doc --no-deps"
+				"cargo doc --no-deps",
+				"git diff --check"
 			],
-			"dedupRule": "No fmt, no clippy. Those are global-pre-push owned."
-		},
-		{
-			"id": "ci-full",
-			"layer": "ci",
-			"phases": ["ci"],
-			"owner": "ci",
-			"runs": [
-				"cargo +nightly fmt --check",
-				"cargo clippy --all-targets -- -D warnings",
-				"cargo audit --no-fetch --stale",
-				"cargo deny check --disable-fetch",
-				"cargo machete",
-				"cargo coupling --check --no-git --max-circular 5",
-				"cargo nextest run",
-				"cargo test --doc",
-				"cargo doc --no-deps"
-			],
-			"dedupRule": "CI is self-contained. Does not assume local hooks ran."
+			"dedupRule": "Repo pre-push owns the complete Rust/static push gate because global pre-push skips Rust fallback when this hook exists."
 		},
 		{
 			"id": "admin-release",
-			"layer": "ci",
-			"phases": ["ci"],
-			"owner": "ci",
+			"layer": "manual",
+			"phases": ["manual"],
+			"owner": "repo",
 			"runs": [
 				"cargo nextest run --features integration",
 				"cargo llvm-cov --summary-only",

@@ -9,7 +9,7 @@ fn entry(pid: u32, parent_pid: Option<u32>, name: &str, current_session: bool) -
         name: name.into(),
         exe: Some(format!(r"C:\Tools\{name}")),
         command_line: Some(format!("{name} --flag")),
-        session_id: Some(if current_session { 1 } else { 0 }),
+        session_id: Some(u32::from(current_session)),
         current_session,
         started_at_unix_secs: 1000 + u64::from(pid),
     }

@@ -18,26 +18,37 @@
 | cargo-audit | `cargo install cargo-audit` | CVE advisory scan |
 | cargo-machete | `cargo install cargo-machete` | Unused dependency cleanup |
 | cargo-coupling | `cargo install cargo-coupling` | Coupling health gate |
+| cargo-udeps | `cargo install cargo-udeps --locked` | Unused dependency check |
+| cargo-hack | `cargo install cargo-hack --locked` | Feature matrix check |
+| cargo-semver-checks | `cargo install cargo-semver-checks --locked` | Public API compatibility |
 | cargo-llvm-cov | `cargo install cargo-llvm-cov` | Coverage (Windows-friendly) |
 | cargo-criterion | `cargo install cargo-criterion` | Benchmarks |
 | signed WinDivert release/build | upstream release or local MSBuild+WDK build | Release packaging for `--divert` runtime |
 
 ---
 
-## CI Gate (windows-latest, must all pass, in order)
+## Local Hook Gates (must all pass, in order)
 
 Use `&&` between commands so the gate stops on first failure. Do not use
 PowerShell `;` for gate chains; it can hide an earlier failure behind a later
 success.
 
-Hook lane dedup: global fortress pre-push owns `fmt` + `clippy`. Repo hooks do
-not duplicate those. See `.repo-control-plane/hook-lanes.json` for full ownership.
+There is no GitHub CI workflow. Static gates run locally through global hooks
+plus repo hooks. See `.repo-control-plane/hook-lanes.json` for lane ownership.
+
+Hook lane split:
+- Global pre-commit: generic text guards, Rust `cargo fmt` auto-fix, language lanes.
+- Repo pre-commit: `check-control-plane`, `check-docs`, `cargo check -p etwarden`, `git diff --check`.
+- Global pre-push: generic/language guards; Rust fmt/clippy fallback only when repo pre-push is absent.
+- Repo pre-push: complete Rust/static push gate, including fmt/clippy.
 
 Test runner: `cargo nextest run` is canonical. Fallback to `cargo test` only
 when nextest is absent. Doctests require separate `cargo test --doc`.
 
 Control plane commands (preferred):
 ```
+pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-commit
+pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-push
 pwsh -NoProfile -File scripts/repo-control.ps1 verify:focused
 pwsh -NoProfile -File scripts/repo-control.ps1 verify:full
 ```
@@ -47,10 +58,23 @@ Focused gate for small slices:
 cargo +nightly fmt --check && cargo nextest run -p etwarden <module-or-filter> && cargo clippy --all-targets -- -D warnings
 ```
 
-Full static gate before commit:
+Pre-commit gate:
 ```
-cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo nextest run && cargo test --doc && cargo doc --no-deps && git diff --check && git status --short
+pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-commit
 ```
+
+Full static gate before push:
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 gate:pre-push
+```
+
+Manual equivalent:
+```
+cargo +nightly fmt --all --check && cargo check -p etwarden && cargo clippy --all-targets --all-features -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo +nightly udeps --all-targets --all-features && cargo hack check --all-targets --feature-powerset && cargo semver-checks --baseline-rev <latest-tag> && cargo coupling --check --no-git --max-circular 5 && cargo nextest run && cargo test --doc && cargo doc --no-deps && git diff --check && git status --short
+```
+
+`cargo semver-checks` needs a git tag baseline. If no tag exists yet,
+`scripts/repo-control.ps1` skips semver-checks and prints a warning.
 
 `cargo audit --no-fetch --stale` and `cargo deny check --disable-fetch` use the local RustSec advisory DB. Update `~/.cargo/advisory-db` separately when network is available; do not let transient advisory DB fetch failures block unrelated local commits.
 
@@ -61,8 +85,8 @@ cargo llvm-cov --summary-only                  # coverage report
 cargo bench --no-run                           # bench compile check
 ```
 
-No merge unless the relevant focused gate and full static gate pass. Admin/release
-gate is required before release or admin-runner integration changes.
+No push unless repo pre-commit and repo pre-push gates pass. Admin/release gate
+is required before release or admin-runner integration changes.
 
 Windows release packaging:
 ```
@@ -75,11 +99,12 @@ Use official signed WinDivert runtime binaries or a signed local build. A source
 checkout alone is not a runtime package.
 
 Duplicate policy:
-- Pre-commit hook repeats `cargo +nightly fmt --check` and `cargo clippy --all-targets -- -D warnings` as final guard.
-- That repeat is intentional. Do not add extra manual reruns unless files changed.
+- Repo hook files are thin shims; gate logic lives in `scripts/repo-control.ps1`.
+- Repo pre-commit does not duplicate global Rust formatting.
+- Repo pre-push owns Rust fmt/clippy because global pre-push delegates Rust checks when `.githooks/pre-push` exists.
 - If a gate fails, fix root cause. Do not bypass or reorder checks to get green output.
 
-**Not in CI (run manually):**
+**Not in hook gate (run manually):**
 - `cargo mutants` — valuable but slow, run before releases
 - `cargo miri` — incompatible with windows-rs / ETW FFI
 - `cargo coupling --json -o logs/coupling.json` — full churn-aware report for refactor planning
@@ -88,7 +113,7 @@ Duplicate policy:
 
 ## Coupling Baseline (cargo-coupling)
 
-CI uses a structural, deterministic gate:
+Repo pre-push uses a structural, deterministic gate:
 
 ```
 cargo coupling --check --no-git --max-circular 5
@@ -96,7 +121,7 @@ cargo coupling --check --no-git --max-circular 5
 
 Rationale:
 
-- `--no-git` avoids failing CI on short-term churn while the project is still evolving.
+- `--no-git` avoids failing local push gates on short-term churn while the project is still evolving.
 - `--max-circular 5` records the current module-cycle budget; do not increase it.
 - Lower `--max-circular` only after an intentional refactor removes cycles.
 - Do not add facade traits only to satisfy the report; refactor only when the module boundary is real.

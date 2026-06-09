@@ -7,7 +7,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 100 / 120
 
-use std::collections::HashSet;
+use std::{collections::HashSet, hash::BuildHasher};
 
 use crate::{
     output::schema::{OutputLine, ProcessKillLine, ProcessLine, SpawnTargetLine},
@@ -65,12 +65,16 @@ pub fn process_kill_result_to_line(result: KillProcessResult) -> OutputLine {
 
 /// Builds a spawn-target discovery NDJSON output line.
 #[must_use]
-pub fn spawn_target_to_line(
+pub fn spawn_target_to_line<CaptureHasher, NetworkHasher>(
     root_pid: u32,
     primary_pid: u32,
-    capture_pids: &HashSet<u32>,
-    network_pids: &HashSet<u32>,
-) -> OutputLine {
+    capture_pids: &HashSet<u32, CaptureHasher>,
+    network_pids: &HashSet<u32, NetworkHasher>,
+) -> OutputLine
+where
+    CaptureHasher: BuildHasher,
+    NetworkHasher: BuildHasher,
+{
     OutputLine::SpawnTarget(SpawnTargetLine::new(
         root_pid,
         primary_pid,

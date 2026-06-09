@@ -40,7 +40,12 @@ pub(super) fn project_http_payload(
     } else {
         Vec::new()
     };
-    let body_format = body_format(body_base64, body_text.as_deref(), &body_json, &sse_events);
+    let body_format = body_format(
+        body_base64,
+        body_text.as_deref(),
+        body_json.as_ref(),
+        &sse_events,
+    );
 
     HttpPayloadProjection {
         headers,
@@ -129,7 +134,7 @@ fn is_sse(content_type: Option<&str>) -> bool {
 fn body_format(
     body_base64: Option<&str>,
     body_text: Option<&str>,
-    body_json: &Option<Value>,
+    body_json: Option<&Value>,
     sse_events: &[HttpSseEventLine],
 ) -> Option<String> {
     if body_json.is_some() {

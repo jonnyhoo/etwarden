@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # etwarden repo pre-commit hook
-# Lightweight: control-plane structure + docs + git diff --check
-# No fmt, no clippy, no test — those are global-fortress owned.
+# Thin shim: repo gate logic lives in scripts/repo-control.ps1.
 
 set -euo pipefail
 
@@ -10,17 +9,6 @@ if [ -z "$REPO_ROOT" ]; then
     exit 0
 fi
 
-SCRIPT="$REPO_ROOT/scripts/repo-control.ps1"
+cd "$REPO_ROOT"
 
-# Run control-plane check
-if [ -f "$SCRIPT" ]; then
-    pwsh -NoProfile -File "$SCRIPT" check-control-plane
-fi
-
-# Run docs check
-if [ -f "$SCRIPT" ]; then
-    pwsh -NoProfile -File "$SCRIPT" check-docs
-fi
-
-# Git whitespace/blank-at-end check
-git diff --check
+pwsh -NoProfile -File "$REPO_ROOT/scripts/repo-control.ps1" gate:pre-commit

@@ -8,7 +8,6 @@ allow = [
     "MIT",
     "MIT-0",
     "Apache-2.0",
-    "Apache-2.0 WITH LLVM-exception",
     "BSD-3-Clause",
     "CDLA-Permissive-2.0",
     "ISC",
@@ -17,9 +16,20 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "deny"
 wildcards         = "deny"
 deny = []
+skip = [
+    { crate = "getrandom@0.2.17", reason = "Pinned by ring/rand 0.8 while upstream crates also use getrandom 0.3/0.4." },
+    { crate = "getrandom@0.3.4", reason = "Pulled by rand 0.9/build tooling while uuid/tempfile have moved to getrandom 0.4." },
+    { crate = "rand@0.8.6", reason = "Pinned by ferrisetw 1.2.0; tokio-tungstenite uses rand 0.9." },
+    { crate = "rand_chacha@0.3.1", reason = "Pinned through ferrisetw's rand 0.8 dependency." },
+    { crate = "rand_core@0.6.4", reason = "Pinned through ferrisetw's rand 0.8 dependency." },
+    { crate = "syn@1.0.109", reason = "Pinned by pcap-file's derive-into-owned dependency; active proc-macro stack uses syn 2." },
+    { crate = "thiserror@1.0.69", reason = "Pinned by pcap-file 2.0.0; workspace and current transitive stack use thiserror 2." },
+    { crate = "thiserror-impl@1.0.69", reason = "Pinned by thiserror 1.0.69 via pcap-file 2.0.0." },
+    { crate = "zerocopy@0.7.35", reason = "Pinned by ferrisetw 1.2.0; active rand stack uses zerocopy 0.8." },
+]
 
 [advisories]
 unmaintained = "workspace"

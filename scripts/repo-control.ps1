@@ -29,10 +29,46 @@ function Test-ToolPresent {
     [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Assert-ToolPresent {
+    param([string]$Name, [string]$InstallHint)
+    if (Test-ToolPresent $Name) { return }
+    Write-Host "[repo-control] MISSING tool: $Name" -ForegroundColor Red
+    if ($InstallHint) {
+        Write-Host "[repo-control] Install: $InstallHint" -ForegroundColor Yellow
+    }
+    exit 1
+}
+
+function Assert-FullGateTools {
+    $hints = @{
+        'git' = 'Install Git for Windows'
+        'cargo' = 'rustup toolchain install stable nightly'
+        'rustup' = 'https://rustup.rs'
+        'cargo-nextest' = 'cargo install cargo-nextest --locked'
+        'cargo-deny' = 'cargo install cargo-deny --locked'
+        'cargo-audit' = 'cargo install cargo-audit --locked'
+        'cargo-machete' = 'cargo install cargo-machete --locked'
+        'cargo-coupling' = 'cargo install cargo-coupling --locked'
+        'cargo-udeps' = 'cargo install cargo-udeps --locked'
+        'cargo-hack' = 'cargo install cargo-hack --locked'
+        'cargo-semver-checks' = 'cargo install cargo-semver-checks --locked'
+        'cargo-clippy' = 'rustup component add clippy'
+    }
+    foreach ($tool in $hints.Keys) {
+        Assert-ToolPresent $tool $hints[$tool]
+    }
+}
+
 function Invoke-Gate {
     param([string]$Label, [scriptblock]$Block)
     Write-Host "[repo-control] $Label..." -ForegroundColor Cyan
-    $result = & $Block
+    $global:LASTEXITCODE = 0
+    try {
+        $result = & $Block
+    } catch {
+        Write-Error "[repo-control] FAILED: $Label ($_)"
+        exit 1
+    }
     $code = $LASTEXITCODE
     if ($null -eq $code) { $code = 0 }
     if ($code -ne 0) {
@@ -54,6 +90,16 @@ function Run-Tests {
     } else {
         & cargo test @CommandArgs
     }
+}
+
+function Invoke-SemverChecks {
+    $tag = (& git describe --tags --abbrev=0 2>$null)
+    if ($LASTEXITCODE -ne 0 -or -not $tag) {
+        Write-Warning '[repo-control] cargo semver-checks skipped: no git tag baseline yet.'
+        $global:LASTEXITCODE = 0
+        return
+    }
+    & cargo semver-checks --baseline-rev $tag.Trim()
 }
 
 # --- commands ---
@@ -93,9 +139,9 @@ function Cmd-Status {
         '.repo-control-plane/static-gates/artifact-policy.json',
         'scripts/repo-control.ps1',
         'scripts/package-release.ps1',
+        '.gitattributes',
         '.githooks/pre-commit',
-        '.githooks/pre-push',
-        '.github/workflows/ci.yml'
+        '.githooks/pre-push'
     )
     Write-Host ""
     Write-Host "Control-plane files:" -ForegroundColor Cyan
@@ -287,14 +333,6 @@ function Cmd-CheckControlPlane {
         }
     }
 
-    # CI workflow
-    $ciPath = Join-Path $RepoRoot '.github' 'workflows' 'ci.yml'
-    if (Test-Path $ciPath) {
-        Write-Host "  [OK] .github/workflows/ci.yml" -ForegroundColor Green
-    } else {
-        $errors += '.github/workflows/ci.yml missing'
-    }
-
     # .gitignore covers runtime artifacts
     $gitignore = Get-Content (Join-Path $RepoRoot '.gitignore') -Raw
     $requiredPatterns = @('WinDivert.dll', '*.log', '/target', '/dist')
@@ -304,6 +342,18 @@ function Cmd-CheckControlPlane {
         }
     }
     Write-Host "  [OK] .gitignore artifact patterns" -ForegroundColor Green
+
+    # .gitattributes keeps bash hooks LF-only on Windows
+    $gitattributesPath = Join-Path $RepoRoot '.gitattributes'
+    if (Test-Path $gitattributesPath) {
+        $gitattributes = Get-Content $gitattributesPath -Raw
+        if ($gitattributes -notmatch '(?m)^\.githooks/\*\s+text\s+eol=lf$') {
+            $errors += '.gitattributes missing hook LF rule: .githooks/* text eol=lf'
+        }
+        Write-Host "  [OK] .gitattributes hook LF rule" -ForegroundColor Green
+    } else {
+        $errors += '.gitattributes missing'
+    }
 
     # summary
     Write-Host ""
@@ -359,14 +409,28 @@ function Cmd-VerifyFocused {
     Write-Host "verify:focused PASS" -ForegroundColor Green
 }
 
-function Cmd-VerifyFull {
+function Cmd-GatePreCommit {
     Invoke-Gate 'check-control-plane' { Cmd-CheckControlPlane }
     Invoke-Gate 'check-docs' { Cmd-CheckDocs }
-    Invoke-Gate 'cargo +nightly fmt --check' { & cargo +nightly fmt --check }
-    Invoke-Gate 'cargo clippy --all-targets -- -D warnings' { & cargo clippy --all-targets -- -D warnings }
+    Invoke-Gate 'cargo check -p etwarden' { & cargo check -p etwarden }
+    Invoke-Gate 'git diff --check' { & git diff --check }
+    Write-Host ""
+    Write-Host "gate:pre-commit PASS" -ForegroundColor Green
+}
+
+function Cmd-VerifyFull {
+    Assert-FullGateTools
+    Invoke-Gate 'check-control-plane' { Cmd-CheckControlPlane }
+    Invoke-Gate 'check-docs' { Cmd-CheckDocs }
+    Invoke-Gate 'cargo +nightly fmt --all --check' { & cargo +nightly fmt --all --check }
+    Invoke-Gate 'cargo check -p etwarden' { & cargo check -p etwarden }
+    Invoke-Gate 'cargo clippy --all-targets --all-features -- -D warnings' { & cargo clippy --all-targets --all-features -- -D warnings }
     Invoke-Gate 'cargo audit --no-fetch --stale' { & cargo audit --no-fetch --stale }
     Invoke-Gate 'cargo deny check --disable-fetch' { & cargo deny check --disable-fetch }
     Invoke-Gate 'cargo machete' { & cargo machete }
+    Invoke-Gate 'cargo +nightly udeps --all-targets --all-features' { & cargo +nightly udeps --all-targets --all-features }
+    Invoke-Gate 'cargo hack check --all-targets --feature-powerset' { & cargo hack check --all-targets --feature-powerset }
+    Invoke-Gate 'cargo semver-checks --baseline-rev <latest-tag>' { Invoke-SemverChecks }
     Invoke-Gate 'cargo coupling --check --no-git --max-circular 5' { & cargo coupling --check --no-git --max-circular 5 }
     Invoke-Gate 'cargo nextest run' { Run-Tests }
     Invoke-Gate 'cargo test --doc' { & cargo test --doc }
@@ -374,6 +438,12 @@ function Cmd-VerifyFull {
     Invoke-Gate 'git diff --check' { & git diff --check }
     Write-Host ""
     Write-Host "verify:full PASS" -ForegroundColor Green
+}
+
+function Cmd-GatePrePush {
+    Cmd-VerifyFull
+    Write-Host ""
+    Write-Host "gate:pre-push PASS" -ForegroundColor Green
 }
 
 function Cmd-VerifyAdmin {
@@ -470,6 +540,8 @@ switch ($Command) {
     'doctor'              { Cmd-Doctor }
     'check-control-plane' { Cmd-CheckControlPlane }
     'check-docs'          { Cmd-CheckDocs }
+    'gate:pre-commit'     { Cmd-GatePreCommit }
+    'gate:pre-push'       { Cmd-GatePrePush }
     'verify:focused'      { Cmd-VerifyFocused }
     'verify:full'         { Cmd-VerifyFull }
     'verify:admin'        { Cmd-VerifyAdmin }
@@ -485,6 +557,8 @@ switch ($Command) {
         Write-Host "  doctor              Check toolchain and environment health"
         Write-Host "  check-control-plane Validate control-plane structure"
         Write-Host "  check-docs          Validate canonical docs presence"
+        Write-Host "  gate:pre-commit     Run repo pre-commit gate"
+        Write-Host "  gate:pre-push       Run repo pre-push gate"
         Write-Host "  verify:focused      Run focused gate (fmt + nextest + clippy)"
         Write-Host "  verify:full         Run full static gate"
         Write-Host "  verify:admin        Run admin/release gate"

@@ -60,7 +60,7 @@ pub fn snapshot_processes() -> Vec<ProcessEntry> {
 
     let current_session = sys
         .process(sysinfo::Pid::from_u32(std::process::id()))
-        .and_then(|process| process.session_id())
+        .and_then(sysinfo::Process::session_id)
         .map(sysinfo::Pid::as_u32);
 
     let mut entries: Vec<ProcessEntry> = sys

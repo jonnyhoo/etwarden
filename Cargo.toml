@@ -54,7 +54,7 @@ ferrisetw   = "1.2"
 netstat2    = { package = "netstat-esr", version = "0.8" }
 
 # Windows API bindings (ETW, process, networking)
-windows     = { version = "0.58", features = [
+windows     = { version = "0.57", features = [
     "Win32_System_Diagnostics_Etw",
     "Win32_Foundation",
     "Win32_NetworkManagement_IpHelper",
@@ -69,7 +69,7 @@ windows     = { version = "0.58", features = [
 
 # Error handling
 anyhow      = "1.0"
-thiserror   = "1.0"
+thiserror   = "2.0"
 
 # Timestamps
 chrono      = { version = "0.4",  features = ["serde"] }

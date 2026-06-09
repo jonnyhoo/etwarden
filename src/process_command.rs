@@ -16,7 +16,7 @@ use etwarden::{
     },
 };
 
-pub(super) fn lines(command: &ProcessCommand) -> anyhow::Result<Vec<OutputLine>> {
+pub fn lines(command: &ProcessCommand) -> anyhow::Result<Vec<OutputLine>> {
     match command {
         ProcessCommand::List { filter, pid, all } => list_lines(filter.clone(), *pid, *all),
         ProcessCommand::Tree { pid, all } => tree_lines(*pid, *all),

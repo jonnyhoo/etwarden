@@ -179,7 +179,7 @@ etwarden/
 │   └── event_throughput.rs        # criterion: ETW event parse throughput
 │
 ├── docs/
-│   ├── DEV_STANDARDS.md           # Toolchain, CI gate, lint policy, file rules
+│   ├── DEV_STANDARDS.md           # Toolchain, local hook gates, lint policy, file rules
 │   ├── ROADMAP.md                 # Full research + implementation plan
 │   └── TASK_PLAN.md               # Task tracking
 │
