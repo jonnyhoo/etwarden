@@ -2,15 +2,16 @@
 //!
 //! **Purpose**: Active HTTPS MITM proxy that emits decrypted HTTP metadata into NDJSON flow.
 //! **Public API**: `MitmCaptureConfig`, `MitmProxyConfig`, `MitmProxyHandle`, `start_mitm_proxy`
-//! **Dependencies**: `http-mitm-proxy`, `tokio`, `rcgen`, `parser`, `pcap`, `rules`
+//! **Dependencies**: `http-mitm-proxy`, `tokio`, `parser`, `pcap`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `optional-user-proxy-write`
-//! **Line budget**: 360 / 400
+//! **Line budget**: 768 / 800
 
 mod body;
 mod ca;
 mod pid;
 mod system_proxy;
+mod transparent;
 
 use std::{
     net::SocketAddr,
@@ -41,7 +42,7 @@ use tokio::{net::TcpListener, sync::oneshot};
 
 use self::{
     body::capture_body, ca::load_or_generate_issuer, pid::resolve_proxy_pid,
-    system_proxy::SystemProxyGuard,
+    system_proxy::SystemProxyGuard, transparent::TransparentUpstream,
 };
 use crate::{
     divert::RedirectMap,
@@ -170,9 +171,11 @@ struct ProxyState {
     body_limit: usize,
     max_body_bytes: usize,
     client: DefaultClient,
+    issuer: RootIssuer,
     registry: Arc<ParserRegistry>,
     correlator: Arc<Correlator>,
     rule_set: Option<Arc<RuleSet>>,
+    redirect_map: Option<Arc<RedirectMap>>,
 }
 
 fn validate_config(config: &MitmCaptureConfig) -> Result<()> {
@@ -239,9 +242,11 @@ async fn run_proxy(
         body_limit: config.capture.body_limit,
         max_body_bytes: config.capture.max_body_bytes,
         client,
+        issuer: Arc::clone(&issuer),
         registry: config.registry,
         correlator: config.correlator,
         rule_set: config.rule_set,
+        redirect_map: config.redirect_map,
     });
     let target_proxy = Arc::new(MitmProxy::new(
         Some(issuer),
@@ -273,7 +278,9 @@ async fn run_proxy(
                         continue;
                     }
                 };
-                if is_target_client(&state, remote_addr) {
+                if let Some(upstream) = transparent::upstream_from_map(&state, remote_addr) {
+                    transparent::spawn_connection(stream, remote_addr, Arc::clone(&state), upstream);
+                } else if is_target_client(&state, remote_addr) {
                     let proxy = Arc::clone(&target_proxy);
                     let state = Arc::clone(&state);
                     let service = service_fn(move |req| handle_request(req, Arc::clone(&state)));
@@ -356,9 +363,21 @@ async fn handle_request(
     state: Arc<ProxyState>,
 ) -> Result<Response<Full<Bytes>>> {
     let remote_addr = req.extensions().get::<RemoteAddr>().map(|addr| addr.0);
-    let pid = remote_addr
-        .and_then(|addr| resolve_proxy_pid(&state.correlator, addr, state.listen_addr))
-        .filter(|pid| *pid == state.target_pid);
+    let transparent = req.extensions().get::<TransparentUpstream>().cloned();
+    let pid = transparent
+        .as_ref()
+        .map(|upstream| {
+            if upstream.dest.pid == 0 {
+                state.target_pid
+            } else {
+                upstream.dest.pid
+            }
+        })
+        .or_else(|| {
+            remote_addr
+                .and_then(|addr| resolve_proxy_pid(&state.correlator, addr, state.listen_addr))
+                .filter(|pid| *pid == state.target_pid)
+        });
 
     let (client_request_parts, client_request_stream) = req.into_parts();
     let upstream_uri = client_request_parts.uri.clone();
@@ -475,11 +494,8 @@ async fn handle_request(
         *upstream_req.uri_mut() = effective_uri.clone();
     }
 
-    let (upstream_response, _upgrade) = state
-        .client
-        .send_request(upstream_req)
-        .await
-        .map_err(|e| EtwardenError::MitmProxy(format!("MITM upstream request failed: {e}")))?;
+    let (upstream_response, _upgrade) =
+        transparent::send_upstream_request(&state, upstream_req, transparent.as_ref()).await?;
     let (server_response_parts, server_response_stream) = upstream_response.into_parts();
     let captured_response_body =
         collect_body(server_response_stream, state.max_body_bytes, "response").await?;

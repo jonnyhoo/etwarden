@@ -5,7 +5,7 @@
 - Critical global-proxy defect is mitigated: `--mitm-system-proxy` is opt-in and requires `--no-divert`.
 - Default MITM config does **not** mutate Windows system proxy settings.
 - WinDivert redirect is implemented but experimental; it only runs with explicit `--divert`.
-- `RedirectMap` is wired into MITM config, but transparent upstream resolution is not complete in `src/mitm/mod.rs`.
+- Transparent MITM upstream resolution has an initial implementation in `src/mitm/transparent.rs`; it is compile/unit covered, but not live/admin verified.
 - WinDivert runtime binaries are local artifacts and are ignored, not vendored.
 
 ## What changed
@@ -25,32 +25,44 @@
   - Added FLOW + NETWORK WinDivert implementation.
   - FLOW tracks target PID TCP flows.
   - NETWORK rewrites matching outbound TCP SYN packets to the local MITM proxy.
+  - FLOW table now preserves PID into `RedirectMap` entries.
 - `src/process/network.rs`
   - Existing TCP inventory supports startup flow bootstrap.
+- `src/mitm/mod.rs`
+  - Reads accepted client source port from `RemoteAddr` and consumes matching `RedirectMap` entry.
+  - Delegates transparent socket handling and upstream forwarding to `src/mitm/transparent.rs`.
+- `src/mitm/transparent.rs` and `src/mitm/transparent/`
+  - Handle transparent HTTP directly and transparent TLS via `LazyConfigAcceptor` without requiring explicit proxy CONNECT.
+  - Rebuild absolute upstream URI from Host/authority/SNI hint plus original destination.
+  - Dial original destination IP:port for transparent upstream forwarding.
+- `Cargo.toml` / `Cargo.lock`
+  - Added direct `webpki-roots` dependency for transparent TLS upstream validation.
 
-## Remaining product gap
+## Remaining validation gap
 
-Transparent proxy upstream resolution is still incomplete.
+Transparent proxy upstream resolution is implemented but not live/admin verified.
 
-Current `http-mitm-proxy` behavior forwards CONNECT traffic using the CONNECT authority. After WinDivert rewrites a raw TCP destination to `127.0.0.1:proxy_port`, the proxy can receive traffic, but it still needs a complete path to recover and use the original destination from `RedirectMap` when no explicit proxy CONNECT authority exists.
+The new path bypasses `http-mitm-proxy` CONNECT handling for transparently redirected sockets: it takes the original destination from `RedirectMap`, accepts raw HTTP/TLS, reconstructs the upstream URI, and forwards to the original IP:port.
 
-Keep `--divert` experimental until this is implemented and tested live.
+Keep `--divert` experimental until this is tested live with admin privileges.
 
-## Recommended next implementation
+## Recommended next validation
 
-1. Implement transparent upstream resolution in MITM:
-   - Read accepted client source port from `RemoteAddr`.
-   - Lookup original destination in `RedirectMap`.
-   - Forward TLS/HTTP upstream using the original destination when the request was transparently redirected.
-2. Add regression coverage for:
+1. Run live/admin integration test plan for:
+   - FLOW events for target PID.
+   - NETWORK SYN rewrite.
+   - MITM request/response emitted after transparent redirect.
+2. Verify protocol edge cases:
+   - HTTPS with SNI + trusted generated CA.
+   - HTTP Host header reconstruction.
+   - Non-default destination ports.
+   - HTTP/2 client-side requests over transparent TLS.
+3. Keep static regression coverage passing:
    - Default run does not enable global system proxy.
    - `--mitm-system-proxy` only works with `--no-divert`.
    - `--divert` is explicit opt-in.
    - Existing IPv4 TCP tuples seed WinDivert flow keys.
-3. Add live/admin integration test plan for:
-   - FLOW events for target PID.
-   - NETWORK SYN rewrite.
-   - MITM request/response emitted after transparent redirect.
+   - Transparent authority reconstruction and upstream origin-form forwarding.
 
 ## Local artifact policy
 
@@ -78,7 +90,9 @@ These are covered by `.gitignore`. WinDivert binary vendoring still needs a lice
 | `src/divert/packet.rs` | IPv4/TCP parsing and destination rewrite |
 | `src/divert/redirect_map.rs` | Local source port to original destination map |
 | `src/process/network.rs` | Startup TCP connection inventory |
-| `src/mitm/mod.rs` | MITM proxy; still needs transparent upstream completion |
+| `src/mitm/mod.rs` | MITM proxy entrypoint and request/response event capture |
+| `src/mitm/transparent.rs` | Transparent redirect routing facade |
+| `src/mitm/transparent/` | Transparent HTTP/TLS socket handling, URI rebuild, and origin upstream forwarding |
 
 ## WinDivert reference
 

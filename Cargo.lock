@@ -667,6 +667,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
+ "webpki-roots",
  "windows 0.58.0",
 ]
 

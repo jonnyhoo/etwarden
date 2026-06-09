@@ -8,10 +8,10 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 260 / 280
+//! **Line budget**: 440 / 460
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     net::{Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -48,8 +48,8 @@ struct FlowKey {
     remote_port: u16,
 }
 
-/// Thread-safe set of active flows belonging to target PIDs.
-type FlowTable = Arc<Mutex<HashSet<FlowKey>>>;
+/// Thread-safe map of active flows belonging to target PIDs: flow key → PID.
+type FlowTable = Arc<Mutex<HashMap<FlowKey, u32>>>;
 
 // ---------------------------------------------------------------------------
 // Config & handle
@@ -249,7 +249,7 @@ fn flow_monitor_loop(
                 "FLOW + established PID={pid} local:{} -> remote:{}:{}",
                 key.local_port, local_ip, key.remote_port,
             ));
-            table.insert(key);
+            table.insert(key, pid);
         } else if event == WINDIVERT_EVENT_FLOW_DELETED {
             let mut table = flow_table
                 .lock()
@@ -317,19 +317,19 @@ fn redirect_loop(
             remote_port: parsed.dst_port,
         };
 
-        let matched = {
+        let matched_pid = {
             let table = flow_table
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
-            table.contains(&lookup)
+            table.get(&lookup).copied()
         };
 
-        if !matched {
+        let Some(pid) = matched_pid else {
             // Not a target flow — reinject unchanged.
             let pkt = packet.to_vec();
             let _ = handle.send(&pkt, &addr);
             continue;
-        }
+        };
 
         // Target flow matched — redirect to local proxy.
         diagnostic::info(format_args!(
@@ -342,7 +342,7 @@ fn redirect_loop(
             OriginalDest {
                 ip: parsed.dst_ip,
                 port: parsed.dst_port,
-                pid: 0, // PID not needed here; MITM proxy resolves upstream from Host header
+                pid,
             },
         );
 
@@ -377,8 +377,12 @@ fn build_pid_filter(pids: &HashSet<u32>) -> String {
     parts.join(" or ")
 }
 
-fn flow_keys_from_tuples(tuples: &[FiveTuple]) -> HashSet<FlowKey> {
-    tuples.iter().filter_map(flow_key_from_tuple).collect()
+fn flow_keys_from_tuples(tuples: &[FiveTuple]) -> HashMap<FlowKey, u32> {
+    tuples
+        .iter()
+        .filter_map(flow_key_from_tuple)
+        .map(|key| (key, 0))
+        .collect()
 }
 
 fn flow_key_from_tuple(tuple: &FiveTuple) -> Option<FlowKey> {
@@ -412,7 +416,7 @@ mod tests {
 
         let keys = flow_keys_from_tuples(&[tuple]);
 
-        assert!(keys.contains(&FlowKey {
+        assert!(keys.contains_key(&FlowKey {
             local_port: 51_000,
             remote_ip: [93, 184, 216, 34],
             remote_port: 443,
