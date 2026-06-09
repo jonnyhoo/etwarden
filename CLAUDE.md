@@ -19,6 +19,17 @@ Language: **Rust (stable ≥ 1.75, edition 2021)**
 
 ---
 
+## Two planes
+
+This repo has two independent planes that never cross-depend:
+
+| Plane | Roots | Owns | Invariant |
+|-------|-------|------|-----------|
+| **Product** | `src/`, `tests/`, `benches/` | ETW, NDIS, MITM, WinDivert, NDJSON contract | Never depends on control-plane scripts |
+| **Control** | `.repo-control-plane/`, `scripts/`, `.githooks/`, `.github/` | Gates, hooks, doctor, CI, artifact policy | Never mutates product runtime behavior |
+
+---
+
 ## Zero-context start
 
 Read in this order:
@@ -26,7 +37,7 @@ Read in this order:
 1. `AGENTS.md` ← you are here
 2. `ARCHITECTURE.md` — module layout, data flow, seam design, phase roadmap
 3. `CONTEXT.md` — domain glossary, provider GUIDs, canonical terms
-4. `docs/DEV_STANDARDS.md` — toolchain, CI gate, lint policy, file rules, LLM conventions
+4. `docs/DEV_STANDARDS.md` — toolchain, lint policy, file rules, LLM conventions
 5. `docs/ROADMAP.md` — full research + implementation plan for all future phases
 
 ---
@@ -39,9 +50,14 @@ Read in this order:
 | `CLAUDE.md` | Identical copy of `AGENTS.md` for Claude-family agents. |
 | `ARCHITECTURE.md` | Full system architecture: modules, data flow, seams, JSON contract. |
 | `CONTEXT.md` | Domain glossary. Canonical term definitions. Provider GUIDs. |
-| `docs/DEV_STANDARDS.md` | Dev standards: toolchain, CI, lint, naming, file budget, unsafe policy. |
+| `docs/DEV_STANDARDS.md` | Dev standards: toolchain, lint, naming, file budget, unsafe policy. |
 | `docs/ROADMAP.md` | Full research: competitor analysis, 4-phase plan, algorithms, data structures. |
 | `docs/TASK_PLAN.md` | Task tracking. |
+| `docs/HANDOFF_WINDIVERT.md` | WinDivert redirect handoff status and validation gaps. |
+| `.repo-control-plane/manifest.json` | Control plane registry: canonical docs, hook lanes, commands, managed files. |
+| `.repo-control-plane/hook-lanes.json` | Hook lane ownership and dedup rules (global vs repo vs CI). |
+| `.repo-control-plane/static-gates/artifact-policy.json` | WinDivert / runtime artifact ignore policy. |
+| `scripts/repo-control.ps1` | Single entry point for all control-plane commands. |
 | `Cargo.toml` | Dependencies, lints, features, release profile. |
 | `rustfmt.toml` | Code format config. |
 | `deny.toml` | Supply chain audit config. |
@@ -59,74 +75,155 @@ Read in this order:
 | What does data flow look like? | `ARCHITECTURE.md` → Data Flow |
 | What are the extension points? | `ARCHITECTURE.md` → Hot-Swap Seams |
 | What is the JSON output format? | `ARCHITECTURE.md` → JSON Output Contract |
-| What are the CI gates? | `docs/DEV_STANDARDS.md` → CI Gate |
+| What are the CI gates? | This file → Pipeline |
 | What lint rules apply? | `docs/DEV_STANDARDS.md` → Clippy / Lint Policy |
 | What goes in each file header? | `docs/DEV_STANDARDS.md` → File Header |
 | How do I handle errors? | `docs/DEV_STANDARDS.md` → Error Handling |
 | What are the line budgets? | `ARCHITECTURE.md` → Module Line Budgets |
 | What are the naming rules? | `docs/DEV_STANDARDS.md` → Naming Conventions |
 | What is the implementation plan? | `docs/ROADMAP.md` |
+| What hook lane owns what? | `.repo-control-plane/hook-lanes.json` |
 
 ---
 
-## CI Gate (run before every commit)
+## Pipeline
 
-Rules:
-- Use `&&` between gate commands. Never use PowerShell `;` for gates; it can hide earlier failures.
-- Stop at the first failing command. Fix root cause before continuing.
-- Run a focused gate after small edits, then one full static gate before commit.
-- Do not rerun an unchanged passing gate for reassurance; rerun only after edits or external changes.
+The control plane owns the complete development pipeline. Use it.
 
-Focused gate for small slices:
-```
-cargo +nightly fmt --check && cargo test -p etwarden <module-or-filter> && cargo clippy --all-targets -- -D warnings
-```
+### Control plane entry point
 
-Full static gate before commit:
+All control-plane commands go through `scripts/repo-control.ps1`:
+
 ```
-cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit && cargo deny check && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo test && cargo doc --no-deps && git diff --check && git status --short
+pwsh -NoProfile -File scripts/repo-control.ps1 <command>
 ```
 
-Admin/release gate:
+### Step 1: Environment check (run once per session)
+
 ```
-cargo test --features integration
-cargo llvm-cov --summary-only
-cargo bench --no-run
+pwsh -NoProfile -File scripts/repo-control.ps1 doctor
 ```
+
+Checks: required tools, nightly toolchain, advisory DB, hook integration.
+Fix any reported issues before proceeding.
+
+### Step 2: Verify after edits
+
+After small edits (single module or focused change):
+
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 verify:focused
+```
+
+Runs: `fmt --check` → `nextest run` → `clippy -D warnings`.
+
+Or manually:
+```
+cargo +nightly fmt --check && cargo nextest run -p etwarden <filter> && cargo clippy --all-targets -- -D warnings
+```
+
+### Step 3: Full gate before commit
+
+Before every commit:
+
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 verify:full
+```
+
+Runs: `check-control-plane` → `check-docs` → `fmt --check` → `clippy` → `audit` → `deny` → `machete` → `coupling` → `nextest run` → `test --doc` → `doc --no-deps` → `git diff --check`.
+
+Or manually:
+```
+cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo nextest run && cargo test --doc && cargo doc --no-deps && git diff --check && git status --short
+```
+
+### Step 4: Commit
+
+```
+git add <files> && git commit -m "<message>"
+```
+
+Hooks fire automatically:
+1. Global pre-commit: `cargo fmt` (auto-fix), text guards, language lanes
+2. Repo pre-commit: `check-control-plane`, `check-docs`, `git diff --check`
+
+### Step 5: Push
+
+```
+git push
+```
+
+Hooks fire automatically:
+1. Global pre-push: `cargo fmt --check`, `cargo clippy`, text guards
+2. Repo pre-push: `audit`, `deny`, `machete`, `coupling`, `nextest run`, `test --doc`, `doc --no-deps`
+
+### Step 6: CI (automatic)
+
+`.github/workflows/ci.yml` runs the full self-contained chain on push/PR.
+Does not assume local hooks ran.
+
+### Admin / release gate (manual, requires admin runner)
+
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 verify:admin
+```
+
+Runs: `nextest run --features integration` → `llvm-cov` → `bench --no-run`.
+
+### Diagnostic commands
+
+| Command | Purpose |
+|---------|---------|
+| `pwsh -NoProfile -File scripts/repo-control.ps1 status` | Show repo status: files, docs, tools, hooks |
+| `pwsh -NoProfile -File scripts/repo-control.ps1 doctor` | Check toolchain and environment health |
+| `pwsh -NoProfile -File scripts/repo-control.ps1 check-control-plane` | Validate control-plane structure |
+| `pwsh -NoProfile -File scripts/repo-control.ps1 check-docs` | Validate canonical docs presence |
+| `pwsh -NoProfile -File scripts/repo-control.ps1 hooks:doctor` | Diagnose hook integration |
 
 ---
 
-## Git Hook Policy
+## Hook lanes
 
-**`--no-verify` is permanently banned.**
+Hook gates are partitioned by owner. No lane duplicates another lane's work.
 
-Rationale: hooks enforce the CI gate locally. Bypassing them means broken code
-enters the repo. There are no exceptions.
+| Lane | Owner | Phase | Runs | Does NOT run |
+|------|-------|-------|------|-------------|
+| Global pre-commit | fortress | pre-commit | `cargo fmt` (auto-fix), text guards, language lanes | — |
+| Global pre-push | fortress | pre-push | `cargo fmt --check`, `cargo clippy`, text guards | — |
+| Repo pre-commit | repo | pre-commit | `check-control-plane`, `check-docs`, `git diff --check` | fmt, clippy, test |
+| Repo pre-push | repo | pre-push | `audit`, `deny`, `machete`, `coupling`, `nextest run`, `test --doc`, `doc --no-deps` | fmt, clippy |
+| CI | ci | push/PR | Full self-contained chain (fmt + clippy + all repo gates) | — |
+| Admin/release | ci | manual | `nextest --features integration`, `llvm-cov`, `bench --no-run` | — |
 
-Rules:
+Full lane spec: `.repo-control-plane/hook-lanes.json`.
+
+---
+
+## Rules
+
+### Gate rules
+
+- Use `&&` between gate commands. Never use PowerShell `;` for gates.
+- Stop at first failure. Fix root cause before continuing.
+- Do not rerun an unchanged passing gate for reassurance.
+- Test runner: `cargo nextest run` is canonical. Fallback to `cargo test` only when nextest is absent.
+- Doctests: `cargo test --doc` (nextest does not run doctests).
+- Audit DB: keep `~/.cargo/advisory-db` updated when network is available; gates use local DB.
+
+### Git hook rules
+
+**`--no-verify` is permanently banned.** No exceptions.
+
 - Never run `git commit --no-verify`
 - Never run `git push --no-verify`
 - Never suggest `--no-verify` as a workaround
 - If a hook fails: fix the underlying issue, do not bypass the hook
 - If a hook is broken: fix the hook, do not disable it
-- Expected duplicate: full static gate runs `fmt`/`clippy`; pre-commit repeats them as final guard.
-- This duplicate is intentional and bounded. Do not add ad hoc extra reruns unless files changed.
 
-Pre-commit hook must run at minimum:
-```
-cargo +nightly fmt --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-```
+Repo hooks (`.githooks/`) are auto-invoked by global fortress hooks (`~/.githooks/`).
+No separate install step needed when global fortress hooks are active.
 
-Pre-push hook must run at minimum:
-```
-cargo deny check
-cargo audit
-```
-
-To install hooks: `cargo run --bin install-hooks` (once implemented) or
-manually copy from `.githooks/` to `.git/hooks/`.
+Install global fortress hooks: `powershell -File ~/.githooks/install_global_fortress_hooks.ps1`
 
 ---
 

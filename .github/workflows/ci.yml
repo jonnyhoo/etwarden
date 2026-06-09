@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  full-static-gate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Install nightly toolchain (fmt only)
+        run: rustup toolchain install nightly --component rustfmt
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      - name: Install cargo tools
+        run: |
+          cargo install cargo-nextest --locked
+          cargo install cargo-deny --locked
+          cargo install cargo-audit --locked
+          cargo install cargo-machete --locked
+          cargo install cargo-coupling --locked
+
+      - name: Fetch advisory DB
+        run: cargo audit fetch
+        continue-on-error: true
+
+      - name: Check control plane
+        run: pwsh -NoProfile -File scripts/repo-control.ps1 check-control-plane
+
+      - name: Check docs
+        run: pwsh -NoProfile -File scripts/repo-control.ps1 check-docs
+
+      - name: Format check
+        run: cargo +nightly fmt --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Audit
+        run: cargo audit --no-fetch --stale
+
+      - name: Deny
+        run: cargo deny check --disable-fetch
+
+      - name: Machete
+        run: cargo machete
+
+      - name: Coupling
+        run: cargo coupling --check --no-git --max-circular 5
+
+      - name: Test
+        run: cargo nextest run
+
+      - name: Doctest
+        run: cargo test --doc
+
+      - name: Doc build
+        run: cargo doc --no-deps
+
+      - name: Git diff check
+        run: git diff --check

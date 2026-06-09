@@ -10,3 +10,9 @@
 /WinDivert.dll
 /WinDivert32.sys
 /WinDivert64.sys
+
+# Repo control plane — mutable runtime/cache data
+.repo-control-plane/cache/*
+!.repo-control-plane/cache/.gitkeep
+.repo-control-plane/runtime/*
+!.repo-control-plane/runtime/.gitkeep

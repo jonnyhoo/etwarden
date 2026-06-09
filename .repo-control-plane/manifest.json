@@ -1,0 +1,131 @@
+{
+	"skill": "repo-control-plane",
+	"manifestVersion": 1,
+	"repoName": "etwarden",
+	"repoKind": "rust-windows-cli",
+	"canonicalDocs": {
+		"llmEntry": "AGENTS.md",
+		"architecture": "ARCHITECTURE.md",
+		"glossary": "CONTEXT.md",
+		"devStandards": "docs/DEV_STANDARDS.md",
+		"roadmap": "docs/ROADMAP.md",
+		"taskPlan": "docs/TASK_PLAN.md",
+		"handoffWinDivert": "docs/HANDOFF_WINDIVERT.md"
+	},
+	"planes": {
+		"product": {
+			"roots": ["src/", "tests/", "benches/"],
+			"config": [
+				"Cargo.toml",
+				"Cargo.lock",
+				"rustfmt.toml",
+				"deny.toml",
+				".coupling.toml"
+			],
+			"invariant": "Product code never depends on control-plane scripts."
+		},
+		"control": {
+			"roots": [".repo-control-plane/", "scripts/", ".githooks/", ".github/"],
+			"invariant": "Control plane never mutates product runtime behavior."
+		}
+	},
+	"hookLanes": {
+		"globalPreCommit": {
+			"owner": "global-fortress",
+			"runs": ["generic-text-guards", "cargo fmt (auto-fix)", "language-lanes"],
+			"doc": "Owned by global fortress hooks. Repo hooks must not duplicate."
+		},
+		"globalPrePush": {
+			"owner": "global-fortress",
+			"runs": ["generic-text-guards", "cargo fmt --check", "cargo clippy"],
+			"doc": "Owned by global fortress hooks. Repo hooks must not duplicate."
+		},
+		"repoPreCommit": {
+			"owner": "repo",
+			"runs": ["check-control-plane", "check-docs", "git diff --check"],
+			"doc": "Lightweight repo-structure checks only. No fmt/clippy."
+		},
+		"repoPrePush": {
+			"owner": "repo",
+			"runs": [
+				"cargo audit --no-fetch --stale",
+				"cargo deny check --disable-fetch",
+				"cargo machete",
+				"cargo coupling --check --no-git --max-circular 5",
+				"cargo nextest run",
+				"cargo test --doc",
+				"cargo doc --no-deps"
+			],
+			"doc": "Repo-specific supply-chain, coupling, test, doc gates. No fmt/clippy (global owns those)."
+		},
+		"ci": {
+			"owner": "ci",
+			"runs": [
+				"cargo +nightly fmt --check",
+				"cargo clippy --all-targets -- -D warnings",
+				"cargo audit --no-fetch --stale",
+				"cargo deny check --disable-fetch",
+				"cargo machete",
+				"cargo coupling --check --no-git --max-circular 5",
+				"cargo nextest run",
+				"cargo test --doc",
+				"cargo doc --no-deps"
+			],
+			"doc": "Full self-contained CI chain. Does not depend on local hooks."
+		},
+		"adminRelease": {
+			"owner": "ci",
+			"runs": [
+				"cargo nextest run --features integration",
+				"cargo llvm-cov --summary-only",
+				"cargo bench --no-run"
+			],
+			"doc": "Requires admin runner. Not in pre-commit/pre-push."
+		}
+	},
+	"testRunner": {
+		"primary": "cargo-nextest",
+		"fallback": "cargo test",
+		"doctest": "cargo test --doc",
+		"doc": "Use cargo nextest run as canonical test runner. Fallback only when nextest is absent."
+	},
+	"commands": {
+		"entry": "pwsh -NoProfile -File scripts/repo-control.ps1 entry",
+		"status": "pwsh -NoProfile -File scripts/repo-control.ps1 status",
+		"doctor": "pwsh -NoProfile -File scripts/repo-control.ps1 doctor",
+		"checkControlPlane": "pwsh -NoProfile -File scripts/repo-control.ps1 check-control-plane",
+		"checkDocs": "pwsh -NoProfile -File scripts/repo-control.ps1 check-docs",
+		"verifyFocused": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:focused",
+		"verifyFull": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:full",
+		"verifyAdmin": "pwsh -NoProfile -File scripts/repo-control.ps1 verify:admin",
+		"hooksInstall": "pwsh -NoProfile -File scripts/repo-control.ps1 hooks:install",
+		"hooksDoctor": "pwsh -NoProfile -File scripts/repo-control.ps1 hooks:doctor"
+	},
+	"requiredTools": [
+		"git",
+		"cargo",
+		"cargo-nextest",
+		"cargo-deny",
+		"cargo-audit",
+		"cargo-machete",
+		"cargo-coupling",
+		"cargo-clippy",
+		"rustup"
+	],
+	"optionalTools": ["cargo-llvm-cov", "cargo-criterion"],
+	"managedFiles": [
+		".repo-control-plane/manifest.json",
+		".repo-control-plane/hook-lanes.json",
+		".repo-control-plane/static-gates/artifact-policy.json",
+		".repo-control-plane/cache/.gitkeep",
+		".repo-control-plane/runtime/.gitkeep",
+		"scripts/repo-control.ps1",
+		".githooks/pre-commit",
+		".githooks/pre-push",
+		".github/workflows/ci.yml",
+		".gitignore",
+		"AGENTS.md",
+		"CLAUDE.md",
+		"docs/DEV_STANDARDS.md"
+	]
+}

@@ -1,0 +1,31 @@
+{
+	"schemaVersion": 1,
+	"description": "WinDivert runtime artifact policy for etwarden.",
+	"artifacts": [
+		{
+			"name": "WinDivert.dll",
+			"required": false,
+			"ignore": true,
+			"doc": "WinDivert user-mode DLL. Not vendored. Must be in workspace or PATH for --divert."
+		},
+		{
+			"name": "WinDivert32.sys",
+			"required": false,
+			"ignore": true,
+			"doc": "WinDivert 32-bit kernel driver."
+		},
+		{
+			"name": "WinDivert64.sys",
+			"required": false,
+			"ignore": true,
+			"doc": "WinDivert 64-bit kernel driver."
+		}
+	],
+	"localArtifacts": [
+		{ "name": "etwarden-mitm-ca.crt", "ignore": true },
+		{ "name": "etwarden-mitm-ca.key", "ignore": true },
+		{ "name": "*.log", "ignore": true },
+		{ "name": "spawn_test*.txt", "ignore": true }
+	],
+	"policy": "Runtime artifacts are gitignored. WinDivert binary vendoring requires a license/provenance decision before any release packaging change."
+}

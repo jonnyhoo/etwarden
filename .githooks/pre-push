@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# etwarden repo pre-push hook
+# Repo-specific supply-chain, coupling, test, doc gates.
+# No fmt, no clippy — global-fortress pre-push owns those.
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+if [ -z "$REPO_ROOT" ]; then
+    exit 0
+fi
+
+# Supply chain
+cargo audit --no-fetch --stale
+cargo deny check --disable-fetch
+
+# Dependency hygiene
+cargo machete
+cargo coupling --check --no-git --max-circular 5
+
+# Tests (nextest preferred, cargo test fallback)
+if command -v cargo-nextest >/dev/null 2>&1; then
+    cargo nextest run
+else
+    cargo test
+fi
+
+# Doctests (nextest does not run these)
+cargo test --doc
+
+# Doc build
+cargo doc --no-deps

@@ -13,6 +13,7 @@
 | rustc nightly | `rustup toolchain install nightly --component rustfmt` | Formatting only (unstable rustfmt features) |
 | rustfmt | rustup component | Format |
 | clippy | rustup component | Lint |
+| cargo-nextest | `cargo install cargo-nextest --locked` | Test runner (canonical, replaces `cargo test`) |
 | cargo-deny | `cargo install cargo-deny` | License + supply chain |
 | cargo-audit | `cargo install cargo-audit` | CVE advisory scan |
 | cargo-machete | `cargo install cargo-machete` | Unused dependency cleanup |
@@ -28,23 +29,35 @@ Use `&&` between commands so the gate stops on first failure. Do not use
 PowerShell `;` for gate chains; it can hide an earlier failure behind a later
 success.
 
+Hook lane dedup: global fortress pre-push owns `fmt` + `clippy`. Repo hooks do
+not duplicate those. See `.repo-control-plane/hook-lanes.json` for full ownership.
+
+Test runner: `cargo nextest run` is canonical. Fallback to `cargo test` only
+when nextest is absent. Doctests require separate `cargo test --doc`.
+
+Control plane commands (preferred):
+```
+pwsh -NoProfile -File scripts/repo-control.ps1 verify:focused
+pwsh -NoProfile -File scripts/repo-control.ps1 verify:full
+```
+
 Focused gate for small slices:
 ```
-cargo +nightly fmt --check && cargo test -p etwarden <module-or-filter> && cargo clippy --all-targets -- -D warnings
+cargo +nightly fmt --check && cargo nextest run -p etwarden <module-or-filter> && cargo clippy --all-targets -- -D warnings
 ```
 
 Full static gate before commit:
 ```
-cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo test && cargo doc --no-deps && git diff --check && git status --short
+cargo +nightly fmt --check && cargo clippy --all-targets -- -D warnings && cargo audit --no-fetch --stale && cargo deny check --disable-fetch && cargo machete && cargo coupling --check --no-git --max-circular 5 && cargo nextest run && cargo test --doc && cargo doc --no-deps && git diff --check && git status --short
 ```
 
 `cargo audit --no-fetch --stale` and `cargo deny check --disable-fetch` use the local RustSec advisory DB. Update `~/.cargo/advisory-db` separately when network is available; do not let transient advisory DB fetch failures block unrelated local commits.
 
 Admin/release gate:
 ```
-cargo test --features integration       # requires admin runner
-cargo llvm-cov --summary-only           # coverage report
-cargo bench --no-run                    # bench compile check
+cargo nextest run --features integration       # requires admin runner
+cargo llvm-cov --summary-only                  # coverage report
+cargo bench --no-run                           # bench compile check
 ```
 
 No merge unless the relevant focused gate and full static gate pass. Admin/release

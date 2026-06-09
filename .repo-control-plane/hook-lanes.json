@@ -1,0 +1,75 @@
+{
+	"schemaVersion": 1,
+	"lanes": [
+		{
+			"id": "global-pre-commit",
+			"layer": "global",
+			"phases": ["pre-commit"],
+			"owner": "global-fortress",
+			"runs": ["generic-text-guards", "cargo fmt (auto-fix)", "language-lanes"],
+			"dedupRule": "Repo hooks must not duplicate any gate family listed here."
+		},
+		{
+			"id": "global-pre-push",
+			"layer": "global",
+			"phases": ["pre-push"],
+			"owner": "global-fortress",
+			"runs": ["generic-text-guards", "cargo fmt --check", "cargo clippy"],
+			"dedupRule": "Repo hooks must not duplicate fmt or clippy."
+		},
+		{
+			"id": "repo-pre-commit",
+			"layer": "repo",
+			"phases": ["pre-commit"],
+			"owner": "repo",
+			"runs": ["check-control-plane", "check-docs", "git diff --check"],
+			"dedupRule": "Lightweight only. No fmt, no clippy, no test."
+		},
+		{
+			"id": "repo-pre-push",
+			"layer": "repo",
+			"phases": ["pre-push"],
+			"owner": "repo",
+			"runs": [
+				"cargo audit --no-fetch --stale",
+				"cargo deny check --disable-fetch",
+				"cargo machete",
+				"cargo coupling --check --no-git --max-circular 5",
+				"cargo nextest run",
+				"cargo test --doc",
+				"cargo doc --no-deps"
+			],
+			"dedupRule": "No fmt, no clippy. Those are global-pre-push owned."
+		},
+		{
+			"id": "ci-full",
+			"layer": "ci",
+			"phases": ["ci"],
+			"owner": "ci",
+			"runs": [
+				"cargo +nightly fmt --check",
+				"cargo clippy --all-targets -- -D warnings",
+				"cargo audit --no-fetch --stale",
+				"cargo deny check --disable-fetch",
+				"cargo machete",
+				"cargo coupling --check --no-git --max-circular 5",
+				"cargo nextest run",
+				"cargo test --doc",
+				"cargo doc --no-deps"
+			],
+			"dedupRule": "CI is self-contained. Does not assume local hooks ran."
+		},
+		{
+			"id": "admin-release",
+			"layer": "ci",
+			"phases": ["ci"],
+			"owner": "ci",
+			"runs": [
+				"cargo nextest run --features integration",
+				"cargo llvm-cov --summary-only",
+				"cargo bench --no-run"
+			],
+			"dedupRule": "Requires admin runner. Never in pre-commit or pre-push."
+		}
+	]
+}
