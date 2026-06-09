@@ -241,7 +241,10 @@ fn looks_http(bytes: &[u8]) -> bool {
 }
 
 fn looks_tls(bytes: &[u8]) -> bool {
-    bytes.len() >= 5 && bytes[0] == 0x16 && bytes[1] == 0x03 && (0x01..=0x03).contains(&bytes[2])
+    bytes.len() >= 5
+        && (0x14..=0x17).contains(&bytes[0])
+        && bytes[1] == 0x03
+        && (0x01..=0x04).contains(&bytes[2])
 }
 
 #[cfg(test)]
@@ -263,5 +266,10 @@ mod tests {
 
         assert!(parsed.headers_base64.is_none());
         assert!(parsed.payload_base64.is_some());
+    }
+
+    #[test]
+    fn tls_application_data_looks_encrypted() {
+        assert!(looks_tls(&[0x17, 0x03, 0x03, 0, 1, 0]));
     }
 }
