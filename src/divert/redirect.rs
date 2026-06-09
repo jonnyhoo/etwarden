@@ -1,14 +1,14 @@
 //! # `divert::redirect`
 //!
 //! **Purpose**: Three-layer WinDivert redirect using SOCKET + FLOW + NETWORK handles.
-//!   FLOW handle tracks which flows belong to target PIDs.
-//!   NETWORK handle intercepts matching SYN packets and redirects to MITM proxy.
+//!   SOCKET/FLOW handles track which flows belong to target PIDs.
+//!   NETWORK handle intercepts matching IPv4 SYN packets, including loopback.
 //! **Public API**: `DivertConfig`, `DivertHandle`, `start_divert`
 //! **Dependencies**: `divert::ffi`, `divert::packet`, `divert::redirect_map`,
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 532 / 570
+//! **Line budget**: 544 / 590
 
 use std::{
     collections::{HashMap, HashSet},
@@ -120,7 +120,7 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
             .map_err(|e| EtwardenError::Divert(format!("FLOW handle: {e}")))?,
     );
 
-    // Open NETWORK handle: intercepts outbound SYN not to proxy/loopback.
+    // Open NETWORK handle: intercepts outbound SYN for target flows, including loopback.
     let net_filter = build_network_filter(proxy_port, &config.include_ports, &config.exclude_ports);
     diagnostic::info(format_args!("WinDivert NETWORK filter: {net_filter}"));
     let network_handle = Arc::new(
@@ -400,6 +400,7 @@ fn redirect_loop(
         if parsed.src_port == proxy_port {
             if let Some(dest) = config.redirect_map.get(parsed.dst_port) {
                 if dest.ip == parsed.dst_ip {
+                    let loopback = dest.local_ip.is_loopback() && dest.ip.is_loopback();
                     let mut pkt = packet.to_vec();
                     if rewrite_tcp_addrs(
                         &mut pkt,
@@ -409,7 +410,9 @@ fn redirect_loop(
                         parsed.dst_port,
                         parsed.ip_header_len,
                     ) {
-                        addr.set_outbound(false);
+                        if !loopback {
+                            addr.set_outbound(false);
+                        }
                         handle.calc_checksums(&mut pkt, &addr, 0);
                         let _ = handle.send(&pkt, &addr);
                         continue;
@@ -420,6 +423,7 @@ fn redirect_loop(
 
         if let Some(dest) = config.redirect_map.get(parsed.src_port) {
             if dest.ip == parsed.dst_ip && dest.port == parsed.dst_port {
+                let loopback = dest.local_ip.is_loopback() && dest.ip.is_loopback();
                 let mut pkt = packet.to_vec();
                 if rewrite_tcp_addrs(
                     &mut pkt,
@@ -429,7 +433,9 @@ fn redirect_loop(
                     proxy_port,
                     parsed.ip_header_len,
                 ) {
-                    addr.set_outbound(false);
+                    if !loopback {
+                        addr.set_outbound(false);
+                    }
                     handle.calc_checksums(&mut pkt, &addr, 0);
                     let _ = handle.send(&pkt, &addr);
                     continue;
@@ -500,6 +506,7 @@ fn redirect_loop(
         );
 
         // Reflect outbound client SYN into inbound server SYN for local proxy.
+        let loopback = parsed.src_ip.is_loopback() && parsed.dst_ip.is_loopback();
         let mut pkt = packet.to_vec();
         if !rewrite_tcp_addrs(
             &mut pkt,
@@ -513,7 +520,9 @@ fn redirect_loop(
             let _ = handle.send(&pkt, &addr);
             continue;
         }
-        addr.set_outbound(false);
+        if !loopback {
+            addr.set_outbound(false);
+        }
 
         // Recalculate checksums.
         handle.calc_checksums(&mut pkt, &addr, 0);
@@ -583,8 +592,8 @@ fn flow_key_from_tuple(tuple: &FiveTuple) -> Option<FlowKey> {
 fn build_network_filter(proxy_port: u16, include_ports: &[u16], exclude_ports: &[u16]) -> String {
     let mut parts = vec![
         "outbound".to_string(),
+        "ip".to_string(),
         "tcp".to_string(),
-        "ip.DstAddr != 127.0.0.1".to_string(),
         format!("tcp.DstPort != {proxy_port}"),
     ];
     if !include_ports.is_empty() {
@@ -647,9 +656,18 @@ mod tests {
     fn network_filter_supports_port_include_and_exclude() {
         let filter = build_network_filter(3003, &[80, 443], &[16669]);
 
+        assert!(filter.contains("ip"));
         assert!(filter.contains("tcp.DstPort == 80"));
         assert!(filter.contains("tcp.DstPort == 443"));
         assert!(filter.contains("tcp.DstPort != 16669"));
         assert!(filter.contains("tcp.SrcPort == 3003"));
+    }
+
+    #[test]
+    fn network_filter_keeps_loopback_eligible() {
+        let filter = build_network_filter(3003, &[], &[]);
+
+        assert!(!filter.contains("127.0.0.1"));
+        assert!(filter.contains("tcp.DstPort != 3003"));
     }
 }

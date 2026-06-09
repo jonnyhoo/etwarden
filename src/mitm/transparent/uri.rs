@@ -5,7 +5,7 @@
 //! **Dependencies**: `mitm`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 82 / 100
+//! **Line budget**: 77 / 100
 
 use http_mitm_proxy::hyper::{
     body::Incoming,
@@ -20,22 +20,12 @@ use http_mitm_proxy::hyper::{
 use super::TransparentUpstream;
 use crate::error::{EtwardenError, Result};
 
-pub(super) const fn scheme_for_port(port: u16, tls_mitm: bool) -> &'static str {
-    if port == 80 {
-        "http"
-    } else if port == 443 && tls_mitm {
-        "https"
-    } else {
-        "tcp"
-    }
-}
-
 pub(super) fn transparent_uri(
     req: &Request<Incoming>,
     upstream: &TransparentUpstream,
 ) -> Result<Uri> {
     let mut parts = req.uri().clone().into_parts();
-    parts.scheme = Some(if upstream.scheme == "https" {
+    parts.scheme = Some(if upstream.protocol.uri_scheme() == "https" {
         Scheme::HTTPS
     } else {
         Scheme::HTTP
@@ -60,7 +50,7 @@ pub(super) fn transparent_authority(
         })
         .or_else(|| upstream.host_hint.clone())
         .unwrap_or_else(|| upstream.dest.ip.to_string());
-    let value = if upstream.dest.port == default_port_for_scheme(upstream.scheme) {
+    let value = if upstream.dest.port == upstream.protocol.default_port() {
         host
     } else {
         format!("{host}:{}", upstream.dest.port)
@@ -68,12 +58,4 @@ pub(super) fn transparent_authority(
     value
         .parse()
         .map_err(|e| EtwardenError::MitmProxy(format!("transparent authority build failed: {e}")))
-}
-
-fn default_port_for_scheme(scheme: &str) -> u16 {
-    if scheme == "https" {
-        443
-    } else {
-        80
-    }
 }

@@ -5,15 +5,14 @@
 //! **Dependencies**: `mitm::transparent`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 100 / 120
+//! **Line budget**: 97 / 120
 
 use bytes::Bytes;
 use http_body_util::Full;
 use http_mitm_proxy::hyper::{header::HOST, http::HeaderMap, Request};
 
 use super::{
-    upstream::strip_request_authority,
-    uri::{scheme_for_port, transparent_authority},
+    protocol::TransparentProtocol, upstream::strip_request_authority, uri::transparent_authority,
     TransparentUpstream,
 };
 use crate::{divert::OriginalDest, mitm::header_value};
@@ -22,7 +21,7 @@ use crate::{divert::OriginalDest, mitm::header_value};
 fn transparent_authority_uses_host_header_for_default_port() {
     let mut headers = HeaderMap::new();
     headers.insert(HOST, "example.com".parse().expect("host header"));
-    let upstream = transparent_test_upstream(443, "https");
+    let upstream = transparent_test_upstream(443, TransparentProtocol::Tls);
 
     let authority =
         transparent_authority(&"/".parse().expect("uri"), &headers, &upstream).expect("authority");
@@ -34,7 +33,7 @@ fn transparent_authority_uses_host_header_for_default_port() {
 fn transparent_authority_keeps_non_default_port() {
     let mut headers = HeaderMap::new();
     headers.insert(HOST, "example.com".parse().expect("host header"));
-    let upstream = transparent_test_upstream(8443, "https");
+    let upstream = transparent_test_upstream(8443, TransparentProtocol::Tls);
 
     let authority =
         transparent_authority(&"/".parse().expect("uri"), &headers, &upstream).expect("authority");
@@ -45,7 +44,7 @@ fn transparent_authority_keeps_non_default_port() {
 #[test]
 fn transparent_authority_falls_back_to_original_ip() {
     let headers = HeaderMap::new();
-    let upstream = transparent_test_upstream(8080, "http");
+    let upstream = transparent_test_upstream(8080, TransparentProtocol::Http);
 
     let authority =
         transparent_authority(&"/".parse().expect("uri"), &headers, &upstream).expect("authority");
@@ -58,7 +57,7 @@ fn transparent_authority_uses_tls_sni_hint_without_host_header() {
     let headers = HeaderMap::new();
     let upstream = TransparentUpstream {
         host_hint: Some("example.com".into()),
-        ..transparent_test_upstream(443, "https")
+        ..transparent_test_upstream(443, TransparentProtocol::Tls)
     };
 
     let authority =
@@ -80,15 +79,7 @@ fn strip_request_authority_leaves_origin_form() {
     assert_eq!(header_value(req.headers(), HOST), Some("example.com:443"));
 }
 
-#[test]
-fn transparent_scheme_only_mitms_plain_http_by_default() {
-    assert_eq!(scheme_for_port(80, false), "http");
-    assert_eq!(scheme_for_port(443, false), "tcp");
-    assert_eq!(scheme_for_port(16_669, false), "tcp");
-    assert_eq!(scheme_for_port(443, true), "https");
-}
-
-fn transparent_test_upstream(port: u16, scheme: &'static str) -> TransparentUpstream {
+fn transparent_test_upstream(port: u16, protocol: TransparentProtocol) -> TransparentUpstream {
     TransparentUpstream {
         dest: OriginalDest {
             local_ip: "192.168.1.100".parse().expect("ip"),
@@ -96,7 +87,7 @@ fn transparent_test_upstream(port: u16, scheme: &'static str) -> TransparentUpst
             port,
             pid: 4242,
         },
-        scheme,
+        protocol,
         host_hint: None,
     }
 }

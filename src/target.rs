@@ -5,7 +5,7 @@
 //! **Dependencies**: `etwarden::cli`, `etwarden::filter`, `etwarden::process`, `ctrlc`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 145 / 180
+//! **Line budget**: 135 / 180
 
 use std::{
     collections::HashSet,
@@ -54,30 +54,18 @@ pub fn resolve(cli: &Cli, process_cache: &ProcessTreeCache) -> anyhow::Result<Re
     install_ctrlc_handler(&stop_signal)?;
 
     match target_spec(cli)? {
-        TargetSpec::Pid(pid) => {
-            let mut capture_pids = HashSet::from([pid]);
-            // Walk ancestor chain so WinDivert can intercept parent-process
-            // connections (e.g. claude.exe delegates HTTPS to node.exe).
-            let mut current = pid;
-            for _ in 0..32 {
-                let Some(info) = process_cache.get_info(current) else {
-                    break;
-                };
-                let Some(parent_pid) = info.ppid.filter(|&p| p != 0 && p != current) else {
-                    break;
-                };
-                capture_pids.insert(parent_pid);
-                current = parent_pid;
-            }
-            Ok(ResolvedTarget {
-                pid,
-                root_pid: pid,
-                capture_pids,
-                is_spawned: false,
-                stop_signal,
-            })
-        }
+        TargetSpec::Pid(pid) => Ok(pid_target(pid, stop_signal)),
         TargetSpec::Spawn(spec) => spawn_target(&spec, &stop_signal, process_cache),
+    }
+}
+
+fn pid_target(pid: u32, stop_signal: Arc<AtomicBool>) -> ResolvedTarget {
+    ResolvedTarget {
+        pid,
+        root_pid: pid,
+        capture_pids: HashSet::from([pid]),
+        is_spawned: false,
+        stop_signal,
     }
 }
 

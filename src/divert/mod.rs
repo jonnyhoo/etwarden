@@ -1,6 +1,6 @@
 //! # `divert`
 //!
-//! **Purpose**: WinDivert-based active TCP redirect for experimental hot-attach MITM interception.
+//! **Purpose**: WinDivert-based active TCP redirect for process-first hot-attach HTTP capture.
 //! **Public API**: `DivertConfig`, `DivertHandle`, `start_divert`, `RedirectMap`,
 //!   `OriginalDest`
 //! **Dependencies**: `output::diagnostic`, `error`
@@ -8,21 +8,20 @@
 //! **Privilege**: `requires-admin`
 //! **Line budget**: 25 / 40
 //!
-//! ## Architecture (two-layer)
+//! ## Architecture (three-layer)
 //!
 //! ```text
-//! FLOW handle (layer 2):
-//!   Filter: outbound TCP for target PIDs (process.id == PID1 or ...)
-//!   On FLOW_ESTABLISHED: record (local_port, remote_ip, remote_port) in FlowTable
-//!   On FLOW_DELETED:     remove from FlowTable
+//! SOCKET/FLOW handles:
+//!   Observe connect/flow metadata for target PIDs.
+//!   Record (local_port, remote_ip, remote_port) in FlowTable.
 //!
-//! NETWORK handle (layer 0):
-//!   Filter: outbound TCP, not loopback, not to proxy port
+//! NETWORK handle:
+//!   Filter: outbound IPv4 TCP, including loopback, not to proxy port
 //!   On SYN: check if (src_port, dst_ip, dst_port) matches FlowTable
 //!     → match: rewrite dst to 127.0.0.1:PROXY_PORT, store origin in RedirectMap
 //!     → no match: reinject unchanged
 //!
-//! Transparent upstream resolution is not complete yet; keep `--divert` experimental.
+//! Transparent proxy then sniffs client bytes to choose HTTP, TLS MITM, or raw TCP.
 //! ```
 
 pub mod ffi;

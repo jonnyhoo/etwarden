@@ -1,11 +1,11 @@
 //! # `mitm::transparent::connection`
 //!
-//! **Purpose**: Accepts transparent HTTP/TLS client sockets and injects original destination.
+//! **Purpose**: Accepts transparent sockets, sniffs protocol, and injects original destination.
 //! **Public API**: module-private connection spawner
 //! **Dependencies**: `mitm`, `transparent::{cert, uri}`, `tokio`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 138 / 160
+//! **Line budget**: 152 / 180
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -19,7 +19,11 @@ use tokio::net::TcpStream;
 use tokio_rustls::{rustls, LazyConfigAcceptor};
 
 use super::{
-    cert::server_config_for_host, tcp::tunnel_tcp, uri::transparent_uri, TransparentUpstream,
+    cert::server_config_for_host,
+    protocol::{detect_stream_protocol, TransparentProtocol},
+    tcp::tunnel_tcp,
+    uri::transparent_uri,
+    TransparentUpstream,
 };
 use crate::{
     error::{EtwardenError, Result},
@@ -46,13 +50,24 @@ async fn handle_connection(
     state: Arc<ProxyState>,
     upstream: TransparentUpstream,
 ) -> Result<()> {
-    match upstream.scheme {
-        "https" => handle_tls_connection(stream, remote_addr, state, upstream).await,
-        "http" => handle_http_connection(stream, remote_addr, state, upstream).await,
-        "tcp" => tunnel_tcp(stream, remote_addr, state, upstream).await,
-        scheme => Err(EtwardenError::MitmProxy(format!(
-            "unknown transparent scheme: {scheme}"
-        ))),
+    let protocol = match upstream.protocol {
+        TransparentProtocol::Detect => {
+            detect_stream_protocol(&stream, state.divert_tls_mitm).await?
+        }
+        protocol => protocol,
+    };
+    let upstream = upstream.with_protocol(protocol);
+    match protocol {
+        TransparentProtocol::Detect => Err(EtwardenError::MitmProxy(
+            "transparent protocol remained undetected".into(),
+        )),
+        TransparentProtocol::Http => {
+            handle_http_connection(stream, remote_addr, state, upstream).await
+        }
+        TransparentProtocol::Tls => {
+            handle_tls_connection(stream, remote_addr, state, upstream).await
+        }
+        TransparentProtocol::Tcp => tunnel_tcp(stream, remote_addr, state, upstream).await,
     }
 }
 

@@ -5,7 +5,7 @@
 //! **Dependencies**: `target`, `clap`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 100 / 130
+//! **Line budget**: 108 / 130
 
 use clap::Parser;
 
@@ -80,6 +80,18 @@ fn target_spec_rejects_spawn_output_paths_for_pid_target() {
     assert!(
         matches!(target_spec(&cli), Err(err) if err.to_string().contains("require a spawn target"))
     );
+}
+
+#[test]
+fn pid_target_captures_only_selected_process() {
+    let stop_signal = Arc::new(AtomicBool::new(false));
+
+    let target = pid_target(42, stop_signal);
+
+    assert_eq!(target.pid, 42);
+    assert_eq!(target.root_pid, 42);
+    assert_eq!(target.capture_pids, HashSet::from([42]));
+    assert!(!target.is_spawned);
 }
 
 #[test]

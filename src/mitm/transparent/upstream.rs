@@ -5,7 +5,7 @@
 //! **Dependencies**: `mitm`, `tokio-rustls`, `webpki-roots`, `http-mitm-proxy`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 138 / 150
+//! **Line budget**: 141 / 160
 
 use std::{net::SocketAddrV4, sync::Arc};
 
@@ -24,7 +24,7 @@ use hyper_util::rt::TokioIo;
 use tokio::net::TcpStream;
 use tokio_rustls::{rustls, TlsConnector};
 
-use super::{TransparentUpstream, UpstreamResponse};
+use super::{protocol::TransparentProtocol, TransparentUpstream, UpstreamResponse};
 use crate::{
     error::{EtwardenError, Result},
     output::diagnostic,
@@ -43,10 +43,12 @@ pub(super) async fn send_transparent_upstream(
     .map_err(|e| EtwardenError::MitmProxy(format!("transparent upstream connect failed: {e}")))?;
     let _ = stream.set_nodelay(true);
 
-    if upstream.scheme == "https" {
-        send_transparent_tls_upstream(req, &uri, stream).await
-    } else {
-        send_transparent_http_upstream(req, stream).await
+    match upstream.protocol {
+        TransparentProtocol::Tls => send_transparent_tls_upstream(req, &uri, stream).await,
+        TransparentProtocol::Http => send_transparent_http_upstream(req, stream).await,
+        TransparentProtocol::Detect | TransparentProtocol::Tcp => Err(EtwardenError::MitmProxy(
+            "transparent upstream requires HTTP protocol".into(),
+        )),
     }
 }
 

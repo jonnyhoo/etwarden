@@ -1,14 +1,15 @@
 //! # `mitm::transparent`
 //!
-//! **Purpose**: Routes transparent WinDivert MITM sockets to origin-aware helpers.
+//! **Purpose**: Routes transparent WinDivert sockets by sniffed protocol.
 //! **Public API**: module-private transparent redirect helpers
 //! **Dependencies**: `mitm`, `transparent::{connection, upstream, uri}`, `divert`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 72 / 100
+//! **Line budget**: 86 / 110
 
 mod cert;
 mod connection;
+mod protocol;
 mod tcp;
 #[cfg(test)]
 mod tests;
@@ -19,6 +20,7 @@ use bytes::Bytes;
 pub(super) use connection::spawn_connection;
 use http_body_util::Full;
 use http_mitm_proxy::hyper::{body::Incoming, Request, Response};
+use protocol::TransparentProtocol;
 
 use super::ProxyState;
 use crate::{
@@ -34,8 +36,15 @@ pub(super) type UpstreamResponse = (Response<Incoming>, Option<UpgradeTask>);
 #[derive(Clone)]
 pub(super) struct TransparentUpstream {
     pub(super) dest: OriginalDest,
-    pub(super) scheme: &'static str,
-    pub(super) host_hint: Option<String>,
+    protocol: TransparentProtocol,
+    host_hint: Option<String>,
+}
+
+impl TransparentUpstream {
+    const fn with_protocol(mut self, protocol: TransparentProtocol) -> Self {
+        self.protocol = protocol;
+        self
+    }
 }
 
 pub(super) fn upstream_from_map(
@@ -47,7 +56,7 @@ pub(super) fn upstream_from_map(
         .as_ref()?
         .get(destination_port(remote_addr))?;
     Some(TransparentUpstream {
-        scheme: uri::scheme_for_port(dest.port, state.divert_tls_mitm),
+        protocol: TransparentProtocol::Detect,
         dest,
         host_hint: None,
     })
