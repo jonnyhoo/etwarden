@@ -60,7 +60,7 @@ pub struct Cli {
     pub mitm_ca_key: PathBuf,
 
     /// Max decoded body bytes emitted into NDJSON per decrypted HTTP event.
-    #[arg(long, default_value = "65536")]
+    #[arg(long, default_value = "1048576")]
     pub mitm_body_limit: usize,
 
     /// Max body bytes buffered from the proxy before forwarding.
@@ -200,6 +200,14 @@ mod tests {
         assert!(!cli.no_mitm);
         assert_eq!(cli.mitm_listen.port(), 4000);
         assert_eq!(cli.mitm_body_limit, 1024);
+    }
+
+    #[test]
+    fn cli_default_mitm_body_limit_handles_agent_payloads() {
+        let cli = Cli::try_parse_from(["etwarden", "--pid", "1234"]).expect("parse");
+
+        assert_eq!(cli.mitm_body_limit, 1_048_576);
+        assert_eq!(cli.mitm_body_limit, cli.mitm_max_body_bytes);
     }
 
     #[test]

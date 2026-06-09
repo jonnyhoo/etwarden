@@ -9,8 +9,31 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::parser::types::Protocol;
+
+/// One HTTP header in original wire/order-preserving form.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HttpHeaderLine {
+    /// Header field name.
+    pub name: String,
+    /// Header field value.
+    pub value: String,
+}
+
+/// One Server-Sent Events item decoded from a plaintext HTTP response body.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct HttpSseEventLine {
+    /// SSE event type, when an `event:` line was present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub event: Option<String>,
+    /// Joined SSE `data:` payload lines.
+    pub data: String,
+    /// Parsed JSON form of `data` when valid JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data_json: Option<Value>,
+}
 
 /// A single NDJSON event line in the agent contract.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -120,6 +143,9 @@ pub struct HttpEventLine {
     /// Base64-encoded bounded HTTP headers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers_base64: Option<String>,
+    /// Decoded HTTP headers as ordered name/value pairs.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub headers: Vec<HttpHeaderLine>,
     /// Whether `headers_base64` was truncated by the capture limit.
     #[serde(default, skip_serializing_if = "is_false")]
     pub headers_truncated: bool,
@@ -147,6 +173,18 @@ pub struct HttpEventLine {
     /// Base64-encoded bounded HTTP body bytes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body_base64: Option<String>,
+    /// Body representation: `json`, `sse`, `text`, or `base64`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_format: Option<String>,
+    /// UTF-8 body text when captured bytes are plaintext.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_text: Option<String>,
+    /// Parsed JSON body when captured body text is valid JSON.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body_json: Option<Value>,
+    /// Parsed SSE events when response content is `text/event-stream`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sse_events: Vec<HttpSseEventLine>,
     /// Whether `body_base64` was truncated by the capture limit.
     #[serde(default, skip_serializing_if = "is_false")]
     pub body_truncated: bool,

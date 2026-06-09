@@ -10,6 +10,7 @@
 mod dns;
 mod dpi;
 mod event;
+mod http_payload;
 mod network;
 mod process;
 

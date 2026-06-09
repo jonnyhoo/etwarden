@@ -9,7 +9,7 @@
 
 use chrono::{DateTime, Utc};
 
-use super::process::ProcessFields;
+use super::{http_payload::project_http_payload, process::ProcessFields};
 use crate::output::schema::{HttpEventLine, OutputLine, TlsEventLine, TunnelDataEventLine};
 
 #[expect(
@@ -38,6 +38,7 @@ pub(super) fn http_request_line(
         tree_path,
     } = process_fields;
 
+    let payload = project_http_payload(headers_base64, None, false, content_type);
     OutputLine::HttpEvent(HttpEventLine {
         timestamp,
         pid,
@@ -49,6 +50,7 @@ pub(super) fn http_request_line(
         status_line: None,
         version: version.to_owned(),
         headers_base64: headers_base64.map(str::to_owned),
+        headers: payload.headers,
         headers_truncated,
         status_code: None,
         host: host.map(str::to_owned),
@@ -58,6 +60,10 @@ pub(super) fn http_request_line(
         content_encoding: None,
         decoded: false,
         body_base64: None,
+        body_format: payload.body_format,
+        body_text: payload.body_text,
+        body_json: payload.body_json,
+        sse_events: payload.sse_events,
         body_truncated: false,
         process_name: name,
         ppid,
@@ -92,6 +98,7 @@ pub(super) fn http_response_line(
         tree_path,
     } = process_fields;
 
+    let payload = project_http_payload(headers_base64, None, false, content_type);
     OutputLine::HttpEvent(HttpEventLine {
         timestamp,
         pid,
@@ -103,6 +110,7 @@ pub(super) fn http_response_line(
         status_line: Some(status_line.to_owned()),
         version: version.to_owned(),
         headers_base64: headers_base64.map(str::to_owned),
+        headers: payload.headers,
         headers_truncated,
         status_code: Some(status_code),
         host: host.map(str::to_owned),
@@ -112,6 +120,10 @@ pub(super) fn http_response_line(
         content_encoding: None,
         decoded: false,
         body_base64: None,
+        body_format: payload.body_format,
+        body_text: payload.body_text,
+        body_json: payload.body_json,
+        sse_events: payload.sse_events,
         body_truncated: false,
         process_name: name,
         ppid,
@@ -150,6 +162,7 @@ pub(super) fn decrypted_http_request_line(
         tree_path,
     } = process_fields;
 
+    let payload = project_http_payload(headers_base64, body_base64, body_truncated, content_type);
     OutputLine::HttpEvent(HttpEventLine {
         timestamp,
         pid,
@@ -161,6 +174,7 @@ pub(super) fn decrypted_http_request_line(
         status_line: None,
         version: version.to_owned(),
         headers_base64: headers_base64.map(str::to_owned),
+        headers: payload.headers,
         headers_truncated,
         status_code: None,
         host: host.map(str::to_owned),
@@ -170,6 +184,10 @@ pub(super) fn decrypted_http_request_line(
         content_encoding: content_encoding.map(str::to_owned),
         decoded,
         body_base64: body_base64.map(str::to_owned),
+        body_format: payload.body_format,
+        body_text: payload.body_text,
+        body_json: payload.body_json,
+        sse_events: payload.sse_events,
         body_truncated,
         process_name: name,
         ppid,
@@ -208,6 +226,7 @@ pub(super) fn decrypted_http_response_line(
         tree_path,
     } = process_fields;
 
+    let payload = project_http_payload(headers_base64, body_base64, body_truncated, content_type);
     OutputLine::HttpEvent(HttpEventLine {
         timestamp,
         pid,
@@ -219,6 +238,7 @@ pub(super) fn decrypted_http_response_line(
         status_line: Some(status_line.to_owned()),
         version: version.to_owned(),
         headers_base64: headers_base64.map(str::to_owned),
+        headers: payload.headers,
         headers_truncated,
         status_code: Some(status_code),
         host: host.map(str::to_owned),
@@ -228,6 +248,10 @@ pub(super) fn decrypted_http_response_line(
         content_encoding: content_encoding.map(str::to_owned),
         decoded,
         body_base64: body_base64.map(str::to_owned),
+        body_format: payload.body_format,
+        body_text: payload.body_text,
+        body_json: payload.body_json,
+        sse_events: payload.sse_events,
         body_truncated,
         process_name: name,
         ppid,

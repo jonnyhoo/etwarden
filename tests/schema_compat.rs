@@ -8,6 +8,7 @@
 //! **Privilege**: `none`
 //! **Line budget**: 224 / 260
 
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use chrono::{TimeZone, Utc};
 use etwarden::{
     output::schema::{event_to_line, ErrorLine, OutputLine, SummaryLine},
@@ -122,6 +123,56 @@ fn http_response_event() -> NetEvent {
     }
 }
 
+fn decrypted_http_request_event() -> NetEvent {
+    NetEvent::DecryptedHttpRequest {
+        timestamp: ts(),
+        pid: 13832,
+        src: "127.0.0.1:49270".into(),
+        dst: "127.0.0.1:37144".into(),
+        method: "POST".into(),
+        path: "/v1/messages?beta=true".into(),
+        host: Some("127.0.0.1:37144".into()),
+        version: "HTTP/1.1".into(),
+        headers_base64: Some(
+            STANDARD.encode(b"host: 127.0.0.1:37144\r\ncontent-type: application/json\r\n"),
+        ),
+        headers_truncated: false,
+        content_type: Some("application/json".into()),
+        content_length: Some(56),
+        content_encoding: None,
+        decoded: false,
+        body_base64: Some(
+            STANDARD.encode(br#"{"model":"glm-5.1","messages":[{"role":"user","content":"hi"}]}"#),
+        ),
+        body_truncated: false,
+    }
+}
+
+fn decrypted_http_response_event() -> NetEvent {
+    NetEvent::DecryptedHttpResponse {
+        timestamp: ts(),
+        pid: 13832,
+        src: "127.0.0.1:37144".into(),
+        dst: "127.0.0.1:49270".into(),
+        status_line: "HTTP/1.1 200 OK".into(),
+        host: Some("127.0.0.1".into()),
+        version: "HTTP/1.1".into(),
+        status_code: 200,
+        headers_base64: Some(STANDARD.encode(
+            b"content-type: text/event-stream; charset=utf-8\r\ncache-control: no-cache\r\n",
+        )),
+        headers_truncated: false,
+        content_type: Some("text/event-stream; charset=utf-8".into()),
+        content_length: Some(52),
+        content_encoding: None,
+        decoded: false,
+        body_base64: Some(
+            STANDARD.encode("event: message_start\ndata: {\"type\":\"message_start\"}\n\n"),
+        ),
+        body_truncated: false,
+    }
+}
+
 fn tls_hello_event() -> NetEvent {
     NetEvent::TlsHello {
         timestamp: ts(),
@@ -207,6 +258,18 @@ fn snapshot_http_request_event_line() {
 fn snapshot_http_response_event_line() {
     let line = event_to_line(&http_response_event());
     insta::assert_json_snapshot!("http_response_event_line", line);
+}
+
+#[test]
+fn snapshot_decrypted_http_request_event_line() {
+    let line = event_to_line(&decrypted_http_request_event());
+    insta::assert_json_snapshot!("decrypted_http_request_event_line", line);
+}
+
+#[test]
+fn snapshot_decrypted_http_response_event_line() {
+    let line = event_to_line(&decrypted_http_response_event());
+    insta::assert_json_snapshot!("decrypted_http_response_event_line", line);
 }
 
 #[test]

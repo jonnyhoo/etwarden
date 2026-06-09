@@ -16,8 +16,8 @@ mod scope;
 
 pub use convert::{event_to_line, event_to_line_enriched, event_to_line_with_process_info};
 pub use line::{
-    DnsEventLine, ErrorLine, EventLine, HttpEventLine, OutputLine, RuleHitEventLine, SummaryLine,
-    TlsEventLine, TunnelDataEventLine,
+    DnsEventLine, ErrorLine, EventLine, HttpEventLine, HttpHeaderLine, HttpSseEventLine,
+    OutputLine, RuleHitEventLine, SummaryLine, TlsEventLine, TunnelDataEventLine,
 };
 
 #[cfg(test)]

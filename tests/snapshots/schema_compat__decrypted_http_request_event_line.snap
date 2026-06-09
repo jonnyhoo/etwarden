@@ -1,0 +1,41 @@
+---
+source: tests/schema_compat.rs
+expression: line
+---
+{
+  "t": "2025-01-15T12:00:00Z",
+  "pid": 13832,
+  "event": "decrypted_http_request",
+  "src": "127.0.0.1:49270",
+  "dst": "127.0.0.1:37144",
+  "method": "POST",
+  "path": "/v1/messages?beta=true",
+  "version": "HTTP/1.1",
+  "headers_base64": "aG9zdDogMTI3LjAuMC4xOjM3MTQ0DQpjb250ZW50LXR5cGU6IGFwcGxpY2F0aW9uL2pzb24NCg==",
+  "headers": [
+    {
+      "name": "host",
+      "value": "127.0.0.1:37144"
+    },
+    {
+      "name": "content-type",
+      "value": "application/json"
+    }
+  ],
+  "host": "127.0.0.1:37144",
+  "content_type": "application/json",
+  "content_length": 56,
+  "decrypted": true,
+  "body_base64": "eyJtb2RlbCI6ImdsbS01LjEiLCJtZXNzYWdlcyI6W3sicm9sZSI6InVzZXIiLCJjb250ZW50IjoiaGkifV19",
+  "body_format": "json",
+  "body_text": "{\"model\":\"glm-5.1\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+  "body_json": {
+    "messages": [
+      {
+        "content": "hi",
+        "role": "user"
+      }
+    ],
+    "model": "glm-5.1"
+  }
+}

@@ -10,6 +10,7 @@
 - Claude hot-attach validation no longer breaks `claude.exe` network when non-HTTP/TLS traffic is transparently tunneled instead of actively parsed.
 - Request/response data capture is implemented:
   - decrypted HTTP events include bounded base64 request/response headers and payloads.
+  - decrypted HTTP events also expose agent-friendly plaintext fields: `headers[]`, `body_format`, `body_text`, `body_json`, and `sse_events[]` when bytes are UTF-8/JSON/SSE.
   - raw transparent TCP tunnels emit bounded `tunnel_data` request/response payload chunks.
   - default HTTPS tunnel payloads are encrypted TLS bytes; true HTTP headers/payloads require `--divert-tls-mitm` plus trusted MITM CA.
 - Full static gate and admin/release gate passed locally in the previous handoff.
@@ -26,6 +27,8 @@
 - `src/main.rs`
   - MITM system proxy is disabled by default.
   - Active redirect only runs when MITM is enabled and `--divert` is set.
+- `src/cli.rs`
+  - Default `--mitm-body-limit` is `1048576` bytes so large agent request bodies such as Claude/ccs JSON can be emitted and parsed into `body_json` by default.
 - `src/target.rs`
   - PID targets now capture only the selected PID. This prevents `--pid claude.exe` from drifting to parent/delegated `node.exe` upstream TLS flows when the useful plaintext flow is `claude.exe` loopback HTTP.
   - Spawn targets still use the discovered process tree because command launch wrappers may hide the real network child.
@@ -47,6 +50,9 @@
   - Emits bounded base64 `headers_base64` and payload fields for decrypted HTTP request/response events.
 - `src/mitm/body.rs`
   - Adds bounded raw-byte base64 capture helper shared by HTTP and tunnel capture.
+- `src/output/schema/convert/http_payload.rs`
+  - Projects captured HTTP `headers_base64` / `body_base64` into agent-friendly plaintext structure where possible.
+  - Adds ordered `headers[]`, UTF-8 `body_text`, parsed JSON `body_json`, and parsed SSE `sse_events[]` while preserving base64 compatibility fields.
 - `src/mitm/transparent.rs` and `src/mitm/transparent/`
   - Sniff redirected client bytes before choosing transparent handling.
   - Handle HTTP directly on any destination port, including loopback local-agent proxies such as `http://127.0.0.1:<port>/v1/messages?beta=true`.
@@ -139,6 +145,20 @@ Claude/ccs architectural correction:
 - Follow-up TCP inventory showed `claude.exe` PID `13832` only had `0.0.0.0:37149 Bound`, while ccs `node.exe` PID `18524` was listening on `127.0.0.1:37144`.
 - Interpretation: the new exact-PID path did not break Claude, but the run did not observe a fresh Claude -> ccs request during the capture window. Actual Claude/ccs proof still needs a fresh prompt or Claude restart while capture is active.
 
+Actual Claude/ccs loopback HTTP validation is now complete:
+
+- Target: already-running `claude.exe` PID `13832`.
+- Packaged runtime: `dist/etwarden-windows-x64/etwarden.exe --pid 13832 --divert --mitm-listen 127.0.0.1:3003 --duration 600`.
+- WinDivert loaded from packaged `dist/etwarden-windows-x64/WinDivert.dll`.
+- Redirect active for exact PID list `[13832]`.
+- User sent a prompt while capture was active.
+- SOCKET saw target connect: `PID=13832 local:49270 -> remote:127.0.0.1:37144`.
+- NETWORK emitted redirect: `REDIRECT 127.0.0.1:49270 -> 127.0.0.1:37144 to proxy :3003`.
+- FLOW confirmed establishment: `FLOW + established PID=13832 local:49270 -> remote:127.0.0.1:37144`.
+- NDJSON emitted `decrypted_http_request` with `method=POST`, `path=/v1/messages?beta=true`, `host=127.0.0.1:37144`, `content_type=application/json`, and request `body_base64` present.
+- NDJSON emitted `decrypted_http_response` with `HTTP/1.1 200 OK`, `content_type=text/event-stream; charset=utf-8`, and SSE response `body_base64` present.
+- This matches the SunnyNet-observed plaintext interception point and validates that default Claude capture must stay on local loopback HTTP, not upstream TLS MITM.
+
 ## Release packaging decision
 
 Windows release packages must include WinDivert runtime files next to `etwarden.exe`; otherwise `--divert` breaks on a clean machine.
@@ -167,8 +187,9 @@ WinDivert is LGPLv3/GPLv2 dual-licensed. Package under LGPLv3 terms, keep the cu
 ## Remaining validation
 
 1. Verify protocol edge cases:
-   - Actual Claude/ccs loopback HTTP: rerun with a fresh Claude prompt or Claude restart so `claude.exe -> 127.0.0.1:<dynamic-port>/v1/messages?beta=true` occurs while capture is active; expected output is decrypted HTTP request/response events without `--divert-tls-mitm`.
    - Controlled loopback HTTP selftest is already verified against packaged runtime with `STATUS=200` and decrypted request/response events.
+   - Actual Claude/ccs loopback HTTP is already verified with decrypted request/response events without `--divert-tls-mitm`.
+   - Agent-friendly plaintext HTTP output is covered by schema snapshots for JSON request bodies and SSE response bodies.
    - HTTP Host header reconstruction.
    - Explicit active HTTPS MITM opt-in with SNI + trusted generated CA remains experimental and must not be the default Claude path.
    - Non-default destination ports beyond the Claude/SSE-MCP case.
