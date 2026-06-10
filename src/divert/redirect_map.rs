@@ -5,7 +5,7 @@
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 92 / 110
+//! **Line budget**: 182 / 200
 
 use std::{collections::HashMap, net::Ipv4Addr, sync::RwLock};
 
@@ -71,11 +71,6 @@ impl RedirectMap {
             .iter()
             .find(|(_, dest)| {
                 dest.local_ip == local_ip && dest.ip == remote_ip && dest.port == remote_port
-            })
-            .or_else(|| {
-                inner
-                    .iter()
-                    .find(|(_, dest)| dest.ip == remote_ip && dest.port == remote_port)
             })
             .map(|(src_port, dest)| (*src_port, dest.clone()))
     }
@@ -164,5 +159,24 @@ mod tests {
             .expect("origin match");
         assert_eq!(src_port, 51000);
         assert_eq!(dest.ip, remote_ip);
+    }
+
+    #[test]
+    fn get_by_origin_rejects_wrong_local_ip() {
+        let map = RedirectMap::new();
+        let remote_ip = Ipv4Addr::new(93, 184, 216, 34);
+        map.insert(
+            51000,
+            OriginalDest {
+                local_ip: Ipv4Addr::new(192, 168, 1, 100),
+                ip: remote_ip,
+                port: 80,
+                pid: 1,
+            },
+        );
+
+        assert!(map
+            .get_by_origin(Ipv4Addr::new(192, 168, 1, 101), remote_ip, 80)
+            .is_none());
     }
 }
