@@ -6,7 +6,7 @@
 //!   `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 62 / 80
+//! **Line budget**: 63 / 80
 
 mod build;
 #[cfg(test)]
@@ -21,6 +21,7 @@ use crate::rules::{
 
 /// Config shape for one TCP or UDP socket block rule.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct SocketBlockRuleConfig {
     /// Whether this rule participates in evaluation.
     pub enable: bool,

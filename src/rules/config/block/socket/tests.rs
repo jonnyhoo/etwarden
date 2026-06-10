@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 121 / 140
+//! **Line budget**: 131 / 140
 
 use super::*;
 use crate::rules::{
@@ -117,4 +117,14 @@ fn invalid_socket_block_regex_is_rejected() {
         .expect_err("invalid regex");
 
     assert!(matches!(error, MatchError::RegexCompile(_)));
+}
+
+#[test]
+fn unknown_socket_block_rule_fields_are_rejected() {
+    let error = serde_json::from_str::<RulesConfig>(
+        r#"{"block_rules":{"tcp":[{"enable":true,"priority":1,"address_pattern":"10\\.0\\.0\\.7:443","address_match_typo":"Regex","action":"Disconnect"}]}}"#,
+    )
+    .expect_err("unknown socket block field");
+
+    assert!(error.to_string().contains("address_match_typo"));
 }
