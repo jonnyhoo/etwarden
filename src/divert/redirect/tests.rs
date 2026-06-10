@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect`, `rules`, `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 106 / 120
+//! **Line budget**: 114 / 120
 
 use super::*;
 use crate::{divert::redirect::flow::flow_keys_from_tuples, parser::types::Protocol};
@@ -102,4 +102,13 @@ fn network_filter_applies_udp_port_boundaries() {
     assert!(filter.contains("udp.DstPort == 53"));
     assert!(filter.contains("udp.DstPort == 443"));
     assert!(filter.contains("udp.DstPort != 123"));
+}
+
+#[test]
+fn socket_filter_includes_udp_only_when_requested() {
+    let tcp_only = build_socket_filter(false);
+    let with_udp = build_socket_filter(true);
+
+    assert_eq!(tcp_only, "outbound and tcp");
+    assert_eq!(with_udp, "outbound and (tcp or udp)");
 }

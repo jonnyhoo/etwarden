@@ -8,7 +8,7 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 572 / 590
+//! **Line budget**: 564 / 590
 
 mod filter;
 mod flow;
@@ -27,7 +27,7 @@ use std::{
     thread,
 };
 
-use filter::build_network_filter;
+use filter::{build_network_filter, build_socket_filter};
 use flow::{
     flow_table_from_tuples, pid_for_syn_from_inventory, protocol_from_number, wait_for_flow_match,
     FlowKey, FlowTable,
@@ -97,9 +97,13 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
     if !config.proxy_addr.is_ipv4() {
         return Err(EtwardenError::Divert("proxy addr must be IPv4".into()));
     }
+    let include_udp = config
+        .rule_set
+        .as_ref()
+        .is_some_and(|rules| !rules.udp_block.is_empty());
 
     // Open SOCKET handle: sees connect() before the packet SYN reaches NETWORK.
-    let socket_filter = "outbound and tcp";
+    let socket_filter = build_socket_filter(include_udp);
     let socket_flags = WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY;
     diagnostic::info(format_args!(
         "WinDivert SOCKET filter: {socket_filter}, flags=0x{socket_flags:04x}"
@@ -122,10 +126,6 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
     );
 
     // Open NETWORK handle: intercepts outbound SYN for target flows, including loopback.
-    let include_udp = config
-        .rule_set
-        .as_ref()
-        .is_some_and(|rules| !rules.udp_block.is_empty());
     let net_filter = build_network_filter(
         proxy_port,
         &config.include_ports,

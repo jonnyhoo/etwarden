@@ -5,7 +5,15 @@
 //! **Dependencies**: none
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 56 / 80
+//! **Line budget**: 63 / 80
+
+pub(super) const fn build_socket_filter(include_udp: bool) -> &'static str {
+    if include_udp {
+        "outbound and (tcp or udp)"
+    } else {
+        "outbound and tcp"
+    }
+}
 
 pub(super) fn build_network_filter(
     proxy_port: u16,
