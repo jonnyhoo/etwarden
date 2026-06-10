@@ -2,18 +2,21 @@
 //!
 //! **Purpose**: Decodes payload search queries into one or more byte needles.
 //! **Public API**: `SearchType`, `SearchError`
-//! **Dependencies**: `base64`, `thiserror`
+//! **Dependencies**: `base64`, `encoding_rs`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 173 / 200
+//! **Line budget**: 190 / 200
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
+use encoding_rs::GBK;
 
 /// Query encoding used when searching captured payload bytes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SearchType {
     /// Query text is UTF-8 and is searched as raw bytes.
     Utf8,
+    /// Query text is GBK and is searched as encoded bytes.
+    Gbk,
     /// Query text is hexadecimal; ASCII whitespace is ignored.
     Hex,
     /// Query text is base64.
@@ -67,6 +70,9 @@ pub enum SearchError {
         value: String,
         source: std::num::ParseFloatError,
     },
+    /// GBK encoding failed.
+    #[error("search query contains characters that cannot be encoded as GBK: '{value}'")]
+    InvalidGbk { value: String },
 }
 
 pub(super) fn decode_queries(
@@ -75,6 +81,7 @@ pub(super) fn decode_queries(
 ) -> Result<Vec<Vec<u8>>, SearchError> {
     match search_type {
         SearchType::Utf8 => Ok(vec![query.as_bytes().to_vec()]),
+        SearchType::Gbk => Ok(vec![decode_gbk(query)?]),
         SearchType::Hex => Ok(vec![decode_hex(query)?]),
         SearchType::Base64 => Ok(vec![STANDARD.decode(query)?]),
         SearchType::Int32 => int32_needles(query),
@@ -82,6 +89,16 @@ pub(super) fn decode_queries(
         SearchType::Float32 => float32_needles(query),
         SearchType::Float64 => float64_needles(query),
     }
+}
+
+fn decode_gbk(query: &str) -> Result<Vec<u8>, SearchError> {
+    let (bytes, _, had_errors) = GBK.encode(query);
+    if had_errors {
+        return Err(SearchError::InvalidGbk {
+            value: query.to_string(),
+        });
+    }
+    Ok(bytes.into_owned())
 }
 
 fn int32_needles(query: &str) -> Result<Vec<Vec<u8>>, SearchError> {

@@ -5,7 +5,7 @@
 //! **Dependencies**: `search`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 64 / 90
+//! **Line budget**: 79 / 90
 
 use super::*;
 
@@ -54,6 +54,21 @@ fn base64_search_decodes_query() {
         .expect("search");
 
     assert_eq!(results[0].offset, 7);
+}
+
+#[test]
+fn gbk_search_encodes_query() {
+    let results =
+        search_payload(&[0xD6, 0xD0, 0xCE, 0xC4], "中文", SearchType::Gbk, true).expect("search");
+
+    assert_eq!(results[0].offset, 0);
+}
+
+#[test]
+fn gbk_search_rejects_unencodable_query() {
+    let err = search_payload(b"abc", "😀", SearchType::Gbk, true).expect_err("gbk");
+
+    assert!(matches!(err, SearchError::InvalidGbk { .. }));
 }
 
 #[test]
