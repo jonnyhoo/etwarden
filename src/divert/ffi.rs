@@ -5,7 +5,7 @@
 //! **Dependencies**: `windows`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 443 / 450
+//! **Line budget**: 461 / 470
 
 #![expect(
     unsafe_code,
@@ -417,10 +417,28 @@ impl WinDivertHandle {
     }
 
     /// Recalculates IP and TCP checksums after packet modification.
-    pub fn calc_checksums(&self, packet: &mut [u8], addr: &WinDivertAddress, flags: u64) {
-        unsafe {
-            (self.dll.calc_checksums)(packet.as_mut_ptr(), packet.len() as u32, addr, flags);
+    ///
+    /// # Errors
+    /// Returns [`EtwardenError::Divert`] if the helper rejects the packet.
+    pub fn calc_checksums(
+        &self,
+        packet: &mut [u8],
+        addr: &WinDivertAddress,
+        flags: u64,
+    ) -> Result<()> {
+        let packet_len = u32::try_from(packet.len()).map_err(|_| {
+            EtwardenError::Divert(format!(
+                "WinDivertHelperCalcChecksums packet too large: {} bytes",
+                packet.len()
+            ))
+        })?;
+        let ok = unsafe { (self.dll.calc_checksums)(packet.as_mut_ptr(), packet_len, addr, flags) };
+        if ok == 0 {
+            return Err(EtwardenError::Divert(
+                "WinDivertHelperCalcChecksums failed".into(),
+            ));
         }
+        Ok(())
     }
 
     /// Signals shutdown to unblock a pending `recv`. Called from another thread

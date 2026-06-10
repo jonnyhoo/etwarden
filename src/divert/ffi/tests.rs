@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::ffi`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 171 / 180
+//! **Line budget**: 195 / 200
 
 use std::{
     ffi::c_void,
@@ -13,7 +13,7 @@ use std::{
 };
 
 use super::{
-    FnRecv, FnSend, WinDivertAddress, WinDivertDllShallow, WinDivertHandle,
+    FnCalcChecksums, FnRecv, FnSend, WinDivertAddress, WinDivertDllShallow, WinDivertHandle,
     WINDIVERT_EVENT_FLOW_ESTABLISHED, WINDIVERT_LAYER_FLOW,
 };
 
@@ -64,7 +64,7 @@ fn flow_accessors_use_win_divert_2_2_offsets() {
 
 #[test]
 fn recv_rejects_success_length_beyond_buffer() {
-    let handle = handle_with(recv_len_past_buffer, ok_send);
+    let handle = handle_with(recv_len_past_buffer, ok_send, ok_calc_checksums);
     let mut buf = [0_u8; 4];
 
     let err = handle
@@ -79,7 +79,7 @@ fn recv_rejects_success_length_beyond_buffer() {
 
 #[test]
 fn send_rejects_successful_partial_packet_write() {
-    let handle = handle_with(ok_recv, partial_send);
+    let handle = handle_with(ok_recv, partial_send, ok_calc_checksums);
 
     let err = handle
         .send(&[1, 2, 3, 4], &WinDivertAddress::zeroed())
@@ -88,7 +88,21 @@ fn send_rejects_successful_partial_packet_write() {
     assert!(err.to_string().contains("WinDivertSend wrote 3 of 4 bytes"));
 }
 
-fn handle_with(recv: FnRecv, send: FnSend) -> WinDivertHandle {
+#[test]
+fn calc_checksums_reports_helper_failure() {
+    let mut packet = [0_u8; 20];
+    let handle = handle_with(ok_recv, ok_send, fail_calc_checksums);
+
+    let err = handle
+        .calc_checksums(&mut packet, &WinDivertAddress::zeroed(), 0)
+        .expect_err("checksum failure should fail");
+
+    assert!(err
+        .to_string()
+        .contains("WinDivertHelperCalcChecksums failed"));
+}
+
+fn handle_with(recv: FnRecv, send: FnSend, calc_checksums: FnCalcChecksums) -> WinDivertHandle {
     WinDivertHandle {
         handle: std::ptr::NonNull::<c_void>::dangling().as_ptr(),
         dll: WinDivertDllShallow {
@@ -96,7 +110,7 @@ fn handle_with(recv: FnRecv, send: FnSend) -> WinDivertHandle {
             send,
             close: ok_close,
             shutdown: ok_shutdown,
-            calc_checksums: ok_calc_checksums,
+            calc_checksums,
         },
     }
 }
@@ -168,4 +182,13 @@ unsafe extern "system" fn ok_calc_checksums(
     _flags: u64,
 ) -> u32 {
     1
+}
+
+unsafe extern "system" fn fail_calc_checksums(
+    _packet: *mut u8,
+    _packet_len: u32,
+    _addr: *const WinDivertAddress,
+    _flags: u64,
+) -> u32 {
+    0
 }

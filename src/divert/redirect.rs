@@ -8,7 +8,7 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 584 / 590
+//! **Line budget**: 598 / 600
 
 mod filter;
 mod flow;
@@ -437,8 +437,12 @@ fn redirect_loop(
                 if !loopback {
                     addr.set_outbound(false);
                 }
-                handle.calc_checksums(&mut pkt, &addr, 0);
-                let _ = handle.send(&pkt, &addr);
+                match handle.calc_checksums(&mut pkt, &addr, 0) {
+                    Ok(()) => {
+                        let _ = handle.send(&pkt, &addr);
+                    }
+                    Err(e) => diagnostic::warn(format_args!("WinDivert checksum failed: {e}")),
+                }
                 continue;
             }
         }
@@ -457,8 +461,12 @@ fn redirect_loop(
                 if !loopback {
                     addr.set_outbound(false);
                 }
-                handle.calc_checksums(&mut pkt, &addr, 0);
-                let _ = handle.send(&pkt, &addr);
+                match handle.calc_checksums(&mut pkt, &addr, 0) {
+                    Ok(()) => {
+                        let _ = handle.send(&pkt, &addr);
+                    }
+                    Err(e) => diagnostic::warn(format_args!("WinDivert checksum failed: {e}")),
+                }
                 continue;
             }
         }
@@ -556,9 +564,15 @@ fn redirect_loop(
             addr.set_outbound(false);
         }
 
-        // Recalculate checksums.
-        handle.calc_checksums(&mut pkt, &addr, 0);
-        let _ = handle.send(&pkt, &addr);
+        match handle.calc_checksums(&mut pkt, &addr, 0) {
+            Ok(()) => {
+                let _ = handle.send(&pkt, &addr);
+            }
+            Err(e) => {
+                config.redirect_map.take(parsed.src_port);
+                diagnostic::warn(format_args!("WinDivert checksum failed: {e}"));
+            }
+        }
     }
 
     diagnostic::info(format_args!("WinDivert NETWORK redirect stopped"));
