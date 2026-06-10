@@ -26,7 +26,7 @@ pub struct ReplaceRuleConfig {
     /// Target bytes/body, encoded using `encoding`.
     pub target: String,
     /// Encoding used for `source` and `target`.
-    #[serde(default)]
+    #[serde(default, alias = "value_type")]
     pub encoding: RuleValueEncoding,
 }
 
