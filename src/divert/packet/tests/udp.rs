@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::packet`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 48 / 80
+//! **Line budget**: 59 / 80
 
 use std::net::SocketAddrV4;
 
@@ -43,6 +43,16 @@ fn udp_length_cannot_exceed_ipv4_total_length() {
     let mut pkt = build_udp_packet(&src, &dst);
     pkt.extend_from_slice(&[0, 0, 0, 0]);
     pkt[24..26].copy_from_slice(&12u16.to_be_bytes());
+
+    assert!(parse_ipv4_udp(&pkt).is_none());
+}
+
+#[test]
+fn udp_fragment_is_not_parsed() {
+    let src = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 100), 51000);
+    let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 53);
+    let mut pkt = build_udp_packet(&src, &dst);
+    pkt[6..8].copy_from_slice(&0x2000u16.to_be_bytes());
 
     assert!(parse_ipv4_udp(&pkt).is_none());
 }

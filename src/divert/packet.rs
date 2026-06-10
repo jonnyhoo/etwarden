@@ -5,7 +5,7 @@
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 188 / 190
+//! **Line budget**: 189 / 190
 
 use std::net::Ipv4Addr;
 
@@ -118,13 +118,13 @@ fn parse_ipv4_header(packet: &[u8], expected_protocol: u8) -> Option<(u8, Ipv4Ad
     if protocol != expected_protocol {
         return None;
     }
+    let fragment = u16::from_be_bytes([packet[6], packet[7]]);
+    if fragment & 0x3FFF != 0 {
+        return None;
+    }
 
-    let src_ip = Ipv4Addr::from(u32::from_be_bytes([
-        packet[12], packet[13], packet[14], packet[15],
-    ]));
-    let dst_ip = Ipv4Addr::from(u32::from_be_bytes([
-        packet[16], packet[17], packet[18], packet[19],
-    ]));
+    let src_ip = Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]);
+    let dst_ip = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
 
     Some((ip_header_len, src_ip, dst_ip))
 }
