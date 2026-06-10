@@ -6,11 +6,13 @@
 //! **Dependencies**: `rules::config::block::{build, http, socket, websocket}`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 39 / 80
+//! **Line budget**: 40 / 80
 
 mod build;
 mod http;
 mod socket;
+#[cfg(test)]
+mod strict_tests;
 mod websocket;
 
 pub use http::HttpBlockRuleConfig;
@@ -20,6 +22,7 @@ pub use websocket::WebSocketBlockRuleConfig;
 
 /// Config shape for grouped block rules.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct BlockRulesConfig {
     /// Ordered HTTP block rules.
     #[serde(default)]
