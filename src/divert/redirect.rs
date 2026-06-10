@@ -8,17 +8,27 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 544 / 590
+//! **Line budget**: 562 / 590
+
+mod flow;
+mod socket_block;
+#[cfg(test)]
+mod tests;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     net::{Ipv4Addr, SocketAddr},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex,
+        Arc,
     },
     thread,
 };
+
+use flow::{
+    flow_table_from_tuples, pid_for_syn_from_inventory, wait_for_flow_match, FlowKey, FlowTable,
+};
+use socket_block::tcp_syn_block_action;
 
 use super::{
     ffi::{
@@ -33,25 +43,9 @@ use super::{
 use crate::{
     error::{EtwardenError, Result},
     output::diagnostic,
-    parser::types::{FiveTuple, Protocol},
-    process::current_tcp_connections_for_pid,
+    parser::types::FiveTuple,
+    rules::ruleset::RuleSet,
 };
-
-// ---------------------------------------------------------------------------
-// FlowTable — shared between FLOW and NETWORK threads
-// ---------------------------------------------------------------------------
-
-/// Key identifying a tracked flow: (local_port, remote_ip, remote_port).
-/// FLOW layer gives us these in host byte order — matches packet parser output.
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct FlowKey {
-    local_port: u16,
-    remote_ip: [u8; 4],
-    remote_port: u16,
-}
-
-/// Thread-safe map of active flows belonging to target PIDs: flow key → PID.
-type FlowTable = Arc<Mutex<HashMap<FlowKey, u32>>>;
 
 // ---------------------------------------------------------------------------
 // Config & handle
@@ -73,6 +67,8 @@ pub struct DivertConfig {
     pub exclude_ports: Vec<u16>,
     /// Stop signal (shared with capture event loop).
     pub stop_signal: Option<Arc<AtomicBool>>,
+    /// Optional compiled rules used for active socket blocking.
+    pub rule_set: Option<Arc<RuleSet>>,
 }
 
 /// Running WinDivert redirect threads.
@@ -128,9 +124,7 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
             .map_err(|e| EtwardenError::Divert(format!("NETWORK handle: {e}")))?,
     );
 
-    let initial_flows = flow_keys_from_tuples(&config.existing_flows);
-    let seeded_count = initial_flows.len();
-    let flow_table: FlowTable = Arc::new(Mutex::new(initial_flows));
+    let (flow_table, seeded_count) = flow_table_from_tuples(&config.existing_flows);
     if seeded_count > 0 {
         diagnostic::info(format_args!(
             "WinDivert FLOW table bootstrapped with {seeded_count} existing TCP flow(s)"
@@ -489,6 +483,16 @@ fn redirect_loop(
             continue;
         };
 
+        if let Some(action) =
+            tcp_syn_block_action(config.rule_set.as_deref(), parsed.dst_ip, parsed.dst_port)
+        {
+            diagnostic::warn(format_args!(
+                "SOCKET block {:?} PID={pid} {}:{} -> {}:{}",
+                action, parsed.src_ip, parsed.src_port, parsed.dst_ip, parsed.dst_port,
+            ));
+            continue;
+        }
+
         // Target flow matched — redirect to local proxy.
         diagnostic::info(format_args!(
             "REDIRECT {}:{} -> {}:{} to proxy :{proxy_port}",
@@ -536,59 +540,6 @@ fn redirect_loop(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn flow_keys_from_tuples(tuples: &[FiveTuple]) -> HashMap<FlowKey, u32> {
-    tuples
-        .iter()
-        .filter_map(flow_key_from_tuple)
-        .map(|key| (key, 0))
-        .collect()
-}
-
-fn wait_for_flow_match(flow_table: &FlowTable, lookup: &FlowKey) -> Option<u32> {
-    for _ in 0..FLOW_MATCH_POLLS {
-        std::thread::sleep(FLOW_MATCH_SLEEP);
-        let matched_pid = {
-            let table = flow_table
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            table.get(lookup).copied()
-        };
-        if matched_pid.is_some() {
-            return matched_pid;
-        }
-    }
-    None
-}
-
-fn pid_for_syn_from_inventory(target_pids: &HashSet<u32>, lookup: &FlowKey) -> Option<u32> {
-    let mut sorted_pids: Vec<u32> = target_pids.iter().copied().collect();
-    sorted_pids.sort_unstable();
-    for pid in sorted_pids {
-        let Ok(tuples) = current_tcp_connections_for_pid(pid) else {
-            continue;
-        };
-        if tuples
-            .iter()
-            .filter_map(flow_key_from_tuple)
-            .any(|key| &key == lookup)
-        {
-            return Some(pid);
-        }
-    }
-    None
-}
-
-fn flow_key_from_tuple(tuple: &FiveTuple) -> Option<FlowKey> {
-    if tuple.protocol != Protocol::Tcp {
-        return None;
-    }
-    Some(FlowKey {
-        local_port: tuple.src_port,
-        remote_ip: tuple.dst_ip.parse::<Ipv4Addr>().ok()?.octets(),
-        remote_port: tuple.dst_port,
-    })
-}
-
 fn build_network_filter(proxy_port: u16, include_ports: &[u16], exclude_ports: &[u16]) -> String {
     let mut parts = vec![
         "outbound".to_string(),
@@ -608,66 +559,4 @@ fn build_network_filter(proxy_port: u16, include_ports: &[u16], exclude_ports: &
         parts.push(format!("tcp.DstPort != {port}"));
     }
     parts.join(" and ")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn tuple(src_port: u16, dst_ip: &str, dst_port: u16, protocol: Protocol) -> FiveTuple {
-        FiveTuple {
-            src_ip: "192.168.1.100".into(),
-            src_port,
-            dst_ip: dst_ip.into(),
-            dst_port,
-            protocol,
-        }
-    }
-
-    #[test]
-    fn existing_ipv4_tcp_tuple_seeds_flow_key() {
-        let tuple = tuple(51_000, "93.184.216.34", 443, Protocol::Tcp);
-
-        let keys = flow_keys_from_tuples(&[tuple]);
-
-        assert!(keys.contains_key(&FlowKey {
-            local_port: 51_000,
-            remote_ip: [93, 184, 216, 34],
-            remote_port: 443,
-        }));
-    }
-
-    #[test]
-    fn non_ipv4_or_non_tcp_tuple_is_not_seeded() {
-        let tuples = [
-            tuple(
-                51_000,
-                "2606:2800:220:1:248:1893:25c8:1946",
-                443,
-                Protocol::Tcp,
-            ),
-            tuple(51_001, "93.184.216.34", 53, Protocol::Udp),
-        ];
-
-        assert!(flow_keys_from_tuples(&tuples).is_empty());
-    }
-
-    #[test]
-    fn network_filter_supports_port_include_and_exclude() {
-        let filter = build_network_filter(3003, &[80, 443], &[16669]);
-
-        assert!(filter.contains("ip"));
-        assert!(filter.contains("tcp.DstPort == 80"));
-        assert!(filter.contains("tcp.DstPort == 443"));
-        assert!(filter.contains("tcp.DstPort != 16669"));
-        assert!(filter.contains("tcp.SrcPort == 3003"));
-    }
-
-    #[test]
-    fn network_filter_keeps_loopback_eligible() {
-        let filter = build_network_filter(3003, &[], &[]);
-
-        assert!(!filter.contains("127.0.0.1"));
-        assert!(filter.contains("tcp.DstPort != 3003"));
-    }
 }

@@ -5,11 +5,13 @@
 //! **Dependencies**: `parser`, `filter`, `output`, `error`, `pcap`, `chrono`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 187 / 210
+//! **Line budget**: 208 / 210
 
 pub mod event_loop;
 pub mod provider;
 pub mod session;
+#[cfg(test)]
+mod tests;
 mod timestamp;
 
 use std::{
@@ -134,6 +136,7 @@ pub fn run_capture(config: &mut CaptureConfig) -> Result<SummaryLine> {
                     include_ports: config.divert_ports.clone(),
                     exclude_ports: config.divert_exclude_ports.clone(),
                     stop_signal: config.stop_signal.clone(),
+                    rule_set: config.rule_set.clone(),
                 })
             })
         })
@@ -201,23 +204,5 @@ fn bootstrap_pids(target_pid: u32, capture_pids: &HashSet<u32>) -> HashSet<u32> 
         HashSet::from([target_pid])
     } else {
         capture_pids.clone()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bootstrap_pids_falls_back_to_target_pid() {
-        assert_eq!(bootstrap_pids(42, &HashSet::new()), HashSet::from([42]));
-    }
-
-    #[test]
-    fn bootstrap_pids_uses_capture_pid_set() {
-        assert_eq!(
-            bootstrap_pids(42, &HashSet::from([42, 99])),
-            HashSet::from([42, 99])
-        );
     }
 }
