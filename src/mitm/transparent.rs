@@ -9,12 +9,16 @@
 
 mod cert;
 mod connection;
+#[cfg(test)]
+mod map_tests;
 mod protocol;
 mod tcp;
 #[cfg(test)]
 mod tests;
 mod upstream;
 mod uri;
+
+use std::net::{IpAddr, SocketAddr};
 
 use bytes::Bytes;
 pub(super) use connection::spawn_connection;
@@ -24,7 +28,7 @@ use protocol::TransparentProtocol;
 
 use super::ProxyState;
 use crate::{
-    divert::OriginalDest,
+    divert::{OriginalDest, RedirectMap},
     error::{EtwardenError, Result},
 };
 
@@ -49,12 +53,9 @@ impl TransparentUpstream {
 
 pub(super) fn upstream_from_map(
     state: &ProxyState,
-    remote_addr: std::net::SocketAddr,
+    remote_addr: SocketAddr,
 ) -> Option<TransparentUpstream> {
-    let dest = state
-        .redirect_map
-        .as_ref()?
-        .get(destination_port(remote_addr))?;
+    let dest = redirect_dest_from_peer(state.redirect_map.as_ref()?, remote_addr)?;
     Some(TransparentUpstream {
         protocol: TransparentProtocol::Detect,
         dest,
@@ -62,8 +63,9 @@ pub(super) fn upstream_from_map(
     })
 }
 
-const fn destination_port(remote_addr: std::net::SocketAddr) -> u16 {
-    remote_addr.port()
+fn redirect_dest_from_peer(map: &RedirectMap, remote_addr: SocketAddr) -> Option<OriginalDest> {
+    let dest = map.get(remote_addr.port())?;
+    (remote_addr.ip() == IpAddr::V4(dest.ip)).then_some(dest)
 }
 
 pub(super) async fn send_upstream_request(
