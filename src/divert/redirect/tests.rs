@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect`, `rules`, `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 114 / 120
+//! **Line budget**: 117 / 120
 
 use super::*;
 use crate::{divert::redirect::flow::flow_keys_from_tuples, parser::types::Protocol};
@@ -105,10 +105,12 @@ fn network_filter_applies_udp_port_boundaries() {
 }
 
 #[test]
-fn socket_filter_includes_udp_only_when_requested() {
-    let tcp_only = build_socket_filter(false);
-    let with_udp = build_socket_filter(true);
+fn socket_and_flow_filters_are_ipv4_bounded() {
+    let tcp_socket = build_socket_filter(false);
+    let udp_socket = build_socket_filter(true);
 
-    assert_eq!(tcp_only, "outbound and tcp");
-    assert_eq!(with_udp, "outbound and (tcp or udp)");
+    assert_eq!(tcp_socket, "outbound and ip and tcp");
+    assert_eq!(udp_socket, "outbound and ip and (tcp or udp)");
+    assert_eq!(build_flow_filter(false), "ip and tcp");
+    assert_eq!(build_flow_filter(true), "ip and (tcp or udp)");
 }

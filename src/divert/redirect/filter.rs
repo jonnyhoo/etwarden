@@ -5,13 +5,21 @@
 //! **Dependencies**: none
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 63 / 80
+//! **Line budget**: 71 / 80
 
 pub(super) const fn build_socket_filter(include_udp: bool) -> &'static str {
     if include_udp {
-        "outbound and (tcp or udp)"
+        "outbound and ip and (tcp or udp)"
     } else {
-        "outbound and tcp"
+        "outbound and ip and tcp"
+    }
+}
+
+pub(super) const fn build_flow_filter(include_udp: bool) -> &'static str {
+    if include_udp {
+        "ip and (tcp or udp)"
+    } else {
+        "ip and tcp"
     }
 }
 

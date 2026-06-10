@@ -27,7 +27,7 @@ use std::{
     thread,
 };
 
-use filter::{build_network_filter, build_socket_filter};
+use filter::{build_flow_filter, build_network_filter, build_socket_filter};
 use flow::{
     flow_table_from_tuples, pid_for_syn_from_inventory, protocol_from_number, wait_for_flow_match,
     FlowKey, FlowTable,
@@ -115,7 +115,7 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
 
     // Open FLOW handle: tracks flows for target PIDs.
     // FLOW layer requires SNIFF | RECV_ONLY flags (cannot block/inject flows).
-    let flow_filter = "true";
+    let flow_filter = build_flow_filter(include_udp);
     let flow_flags = WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY;
     diagnostic::info(format_args!(
         "WinDivert FLOW filter: {flow_filter}, flags=0x{flow_flags:04x}"
