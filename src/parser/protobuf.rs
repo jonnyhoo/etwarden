@@ -1,15 +1,17 @@
 //! # `parser::protobuf`
 //!
 //! **Purpose**: Dynamic Protobuf descriptor import and binary-to-JSON decoding.
-//! **Public API**: `ProtobufSchema`, `ProtobufError`, `import_descriptor_set`,
-//!   `protobuf_to_json`
-//! **Dependencies**: `prost-reflect`, `serde_json`, `thiserror`
+//! **Public API**: `ProtobufSchema`, `ProtobufError`, `import_descriptor_file`,
+//!   `import_descriptor_set`, `protobuf_to_json`
+//! **Dependencies**: `prost-reflect`, `serde_json`, `std`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 108 / 200
+//! **Line budget**: 135 / 200
 
 #[cfg(test)]
 mod tests;
+
+use std::{fs, path::Path};
 
 use prost_reflect::{DescriptorPool, DynamicMessage};
 
@@ -23,6 +25,12 @@ pub struct ProtobufSchema {
 /// Protobuf descriptor import or decode error.
 #[derive(Debug, thiserror::Error)]
 pub enum ProtobufError {
+    /// Descriptor file could not be read.
+    #[error("failed to read protobuf descriptor file '{path}': {source}")]
+    DescriptorRead {
+        path: String,
+        source: std::io::Error,
+    },
     /// Descriptor set bytes could not be decoded or resolved.
     #[error("invalid protobuf descriptor set: {0}")]
     InvalidDescriptor(#[from] prost_reflect::DescriptorError),
@@ -38,6 +46,25 @@ pub enum ProtobufError {
     /// Decoded message could not be serialized to JSON.
     #[error("protobuf JSON serialization failed: {0}")]
     Json(#[from] serde_json::Error),
+}
+
+/// Imports a binary `FileDescriptorSet` from disk.
+///
+/// # Arguments
+/// * `path` — Path to a Protobuf-encoded `google.protobuf.FileDescriptorSet` file.
+///
+/// # Returns
+/// Imported schema with a dynamic descriptor pool and available message types.
+///
+/// # Errors
+/// Returns [`ProtobufError`] when the file cannot be read or descriptor bytes are invalid.
+pub fn import_descriptor_file(path: impl AsRef<Path>) -> Result<ProtobufSchema, ProtobufError> {
+    let path = path.as_ref();
+    let bytes = fs::read(path).map_err(|source| ProtobufError::DescriptorRead {
+        path: path.display().to_string(),
+        source,
+    })?;
+    import_descriptor_set(&bytes)
 }
 
 /// Imports a binary `FileDescriptorSet`.

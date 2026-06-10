@@ -2,10 +2,12 @@
 //!
 //! **Purpose**: Unit tests for dynamic Protobuf descriptor import and JSON decoding.
 //! **Public API**: test module only
-//! **Dependencies**: `parser::protobuf`, `prost`, `prost-types`, `serde_json`
+//! **Dependencies**: `parser::protobuf`, `prost`, `prost-types`, `serde_json`, `tempfile`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 95 / 200
+//! **Line budget**: 118 / 200
+
+use std::fs;
 
 use prost::Message as _;
 use prost_types::{
@@ -14,13 +16,34 @@ use prost_types::{
 };
 use serde_json::json;
 
-use super::{import_descriptor_set, protobuf_to_json, ProtobufError};
+use super::{import_descriptor_file, import_descriptor_set, protobuf_to_json, ProtobufError};
 
 #[test]
 fn descriptor_import_lists_message_types() {
     let schema = import_descriptor_set(&descriptor_set_bytes()).expect("descriptor");
 
     assert_eq!(schema.message_types(), &["demo.Sample".to_owned()]);
+}
+
+#[test]
+fn descriptor_file_import_lists_message_types() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("sample.descriptor");
+    fs::write(&path, descriptor_set_bytes()).expect("write descriptor");
+
+    let schema = import_descriptor_file(&path).expect("descriptor file");
+
+    assert_eq!(schema.message_types(), &["demo.Sample".to_owned()]);
+}
+
+#[test]
+fn descriptor_file_import_reports_missing_path() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("missing.descriptor");
+
+    let err = import_descriptor_file(&path).expect_err("missing descriptor");
+
+    assert!(matches!(err, ProtobufError::DescriptorRead { .. }));
 }
 
 #[test]
