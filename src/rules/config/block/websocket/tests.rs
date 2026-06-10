@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 94 / 100
+//! **Line budget**: 110 / 120
 
 use super::*;
 use crate::rules::{
@@ -25,7 +25,21 @@ fn json_config_builds_websocket_block_rule() {
                         "priority": 1,
                         "method": "GET",
                         "url_pattern": "ws\\.example\\.com",
-                        "action": "CloseConnection"
+                        "action": "断开连接"
+                    },
+                    {
+                        "enable": true,
+                        "priority": 2,
+                        "method": "GET",
+                        "url_pattern": "up\\.example\\.com",
+                        "action": "丢弃上行帧"
+                    },
+                    {
+                        "enable": true,
+                        "priority": 3,
+                        "method": "GET",
+                        "url_pattern": "down\\.example\\.com",
+                        "action": "丢弃下行帧"
                     }
                 ]
             }
@@ -44,8 +58,10 @@ fn json_config_builds_websocket_block_rule() {
         &rules,
     );
 
-    assert_eq!(rules.len(), 1);
+    assert_eq!(rules.len(), 3);
     assert_eq!(rules[0].url_operator, MatchOperator::Regex);
+    assert_eq!(rules[1].action, WebSocketBlockAction::DropUpstreamFrame);
+    assert_eq!(rules[2].action, WebSocketBlockAction::DropDownstreamFrame);
     assert_eq!(
         decision,
         WebSocketBlockDecision::Block {

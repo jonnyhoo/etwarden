@@ -6,7 +6,7 @@
 //! **Dependencies**: `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 159 / 170
+//! **Line budget**: 161 / 170
 
 #[cfg(test)]
 mod tests;
@@ -28,10 +28,13 @@ pub enum SocketProtocol {
 #[serde(rename_all = "PascalCase")]
 pub enum SocketBlockAction {
     /// Disconnect the matching socket flow.
+    #[serde(alias = "断开连接")]
     Disconnect,
     /// Drop outbound payloads or packets.
+    #[serde(alias = "丢弃上行")]
     DropUpstream,
     /// Drop inbound payloads or packets.
+    #[serde(alias = "丢弃下行")]
     DropDownstream,
 }
 

@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 114 / 120
+//! **Line budget**: 121 / 140
 
 use super::*;
 use crate::rules::{
@@ -24,7 +24,7 @@ fn json_config_builds_tcp_and_udp_block_rules() {
                         "enable": true,
                         "priority": 1,
                         "address_pattern": "10\\.0\\.0\\.7:443",
-                        "action": "Disconnect"
+                        "action": "断开连接"
                     }
                 ],
                 "udp": [
@@ -32,7 +32,13 @@ fn json_config_builds_tcp_and_udp_block_rules() {
                         "enable": true,
                         "priority": 2,
                         "address_pattern": "8\\.8\\.8\\.8:53",
-                        "action": "DropUpstream"
+                        "action": "丢弃上行"
+                    },
+                    {
+                        "enable": true,
+                        "priority": 3,
+                        "address_pattern": "1\\.1\\.1\\.1:53",
+                        "action": "丢弃下行"
                     }
                 ]
             }
@@ -59,6 +65,7 @@ fn json_config_builds_tcp_and_udp_block_rules() {
 
     assert_eq!(tcp_rules[0].address_operator, MatchOperator::Regex);
     assert_eq!(udp_rules[0].address_operator, MatchOperator::Regex);
+    assert_eq!(udp_rules[1].action, SocketBlockAction::DropDownstream);
     assert_eq!(
         tcp_decision,
         SocketBlockDecision::Block {

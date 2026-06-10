@@ -6,7 +6,7 @@
 //! **Dependencies**: `rules::block`, `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 149 / 170
+//! **Line budget**: 152 / 170
 
 #[cfg(test)]
 mod tests;
@@ -19,10 +19,13 @@ use crate::rules::matcher::{MatchError, MatchOperator, TextMatcher};
 #[serde(rename_all = "PascalCase")]
 pub enum WebSocketBlockAction {
     /// Close the WebSocket connection.
+    #[serde(alias = "断开连接")]
     CloseConnection,
     /// Drop a client-to-server frame.
+    #[serde(alias = "丢弃上行帧")]
     DropUpstreamFrame,
     /// Drop a server-to-client frame.
+    #[serde(alias = "丢弃下行帧")]
     DropDownstreamFrame,
 }
 

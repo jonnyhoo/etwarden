@@ -6,7 +6,7 @@
 //! **Dependencies**: `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 147 / 160
+//! **Line budget**: 149 / 160
 
 #[cfg(test)]
 mod tests;
@@ -19,8 +19,10 @@ use crate::rules::matcher::{MatchError, MatchOperator, TextMatcher};
 #[serde(rename_all = "PascalCase")]
 pub enum HttpBlockAction {
     /// Close the request before forwarding upstream.
+    #[serde(alias = "断开请求")]
     CloseRequest,
     /// Close the response before forwarding downstream.
+    #[serde(alias = "断开响应")]
     CloseResponse,
 }
 

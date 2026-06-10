@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 111 / 120
+//! **Line budget**: 119 / 120
 
 use super::*;
 use crate::rules::{
@@ -25,7 +25,14 @@ fn json_config_builds_http_block_rule() {
                         "priority": 1,
                         "method": "*",
                         "url_pattern": "tracker\\.ad\\.com",
-                        "action": "CloseRequest"
+                        "action": "断开请求"
+                    },
+                    {
+                        "enable": true,
+                        "priority": 2,
+                        "method": "POST",
+                        "url_pattern": "response\\.ad\\.com",
+                        "action": "断开响应"
                     }
                 ],
                 "websocket": [],
@@ -47,8 +54,9 @@ fn json_config_builds_http_block_rule() {
         &rules,
     );
 
-    assert_eq!(rules.len(), 1);
+    assert_eq!(rules.len(), 2);
     assert_eq!(rules[0].url_operator, MatchOperator::Regex);
+    assert_eq!(rules[1].action, HttpBlockAction::CloseResponse);
     assert_eq!(
         decision,
         HttpBlockDecision::Block {
