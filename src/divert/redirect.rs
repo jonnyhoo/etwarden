@@ -41,7 +41,7 @@ use udp::handle_udp_datagram;
 
 use super::{
     ffi::{
-        WinDivertDll, WinDivertHandle, WINDIVERT_EVENT_FLOW_DELETED,
+        WinDivertAddress, WinDivertDll, WinDivertHandle, WINDIVERT_EVENT_FLOW_DELETED,
         WINDIVERT_EVENT_FLOW_ESTABLISHED, WINDIVERT_EVENT_SOCKET_CONNECT, WINDIVERT_FLAG_RECV_ONLY,
         WINDIVERT_FLAG_SNIFF, WINDIVERT_LAYER_FLOW, WINDIVERT_LAYER_NETWORK,
         WINDIVERT_LAYER_SOCKET,
@@ -437,12 +437,7 @@ fn redirect_loop(
                 if !loopback {
                     addr.set_outbound(false);
                 }
-                match handle.calc_checksums(&mut pkt, &addr, 0) {
-                    Ok(()) => {
-                        let _ = handle.send(&pkt, &addr);
-                    }
-                    Err(e) => diagnostic::warn(format_args!("WinDivert checksum failed: {e}")),
-                }
+                let _ = send_modified_packet(handle.as_ref(), &mut pkt, &addr);
                 continue;
             }
         }
@@ -461,12 +456,7 @@ fn redirect_loop(
                 if !loopback {
                     addr.set_outbound(false);
                 }
-                match handle.calc_checksums(&mut pkt, &addr, 0) {
-                    Ok(()) => {
-                        let _ = handle.send(&pkt, &addr);
-                    }
-                    Err(e) => diagnostic::warn(format_args!("WinDivert checksum failed: {e}")),
-                }
+                let _ = send_modified_packet(handle.as_ref(), &mut pkt, &addr);
                 continue;
             }
         }
@@ -564,18 +554,29 @@ fn redirect_loop(
             addr.set_outbound(false);
         }
 
-        match handle.calc_checksums(&mut pkt, &addr, 0) {
-            Ok(()) => {
-                let _ = handle.send(&pkt, &addr);
-            }
-            Err(e) => {
-                config.redirect_map.take(parsed.src_port);
-                diagnostic::warn(format_args!("WinDivert checksum failed: {e}"));
-            }
+        if !send_modified_packet(handle.as_ref(), &mut pkt, &addr) {
+            config.redirect_map.take(parsed.src_port);
         }
     }
 
     diagnostic::info(format_args!("WinDivert NETWORK redirect stopped"));
+}
+
+fn send_modified_packet(
+    handle: &WinDivertHandle,
+    packet: &mut [u8],
+    addr: &WinDivertAddress,
+) -> bool {
+    match handle.calc_checksums(packet, addr, 0) {
+        Ok(()) => {
+            let _ = handle.send(packet, addr);
+            true
+        }
+        Err(e) => {
+            diagnostic::warn(format_args!("WinDivert checksum failed: {e}"));
+            false
+        }
+    }
 }
 
 fn proxy_reply_dest(
