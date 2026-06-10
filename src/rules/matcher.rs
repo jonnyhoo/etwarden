@@ -29,7 +29,7 @@ pub enum MatchOperator {
     #[serde(alias = "Prefix", alias = "prefix", alias = "前缀")]
     StartsWith,
     /// ASCII-case-insensitive suffix match.
-    #[serde(alias = "Suffix", alias = "suffix")]
+    #[serde(alias = "Suffix", alias = "suffix", alias = "后缀")]
     EndsWith,
 }
 

@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::matcher`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 81 / 120
+//! **Line budget**: 105 / 120
 
 use super::{MatchOperator, TextMatcher};
 
@@ -60,6 +60,30 @@ fn prefix_suffix_operator_aliases_deserialize() {
     );
     assert_eq!(
         serde_json::from_str::<MatchOperator>(r#""Suffix""#).expect("suffix alias"),
+        MatchOperator::EndsWith
+    );
+}
+
+#[test]
+fn roadmap_chinese_operator_aliases_deserialize() {
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""完全匹配""#).expect("equals alias"),
+        MatchOperator::Equals
+    );
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""包含""#).expect("contains alias"),
+        MatchOperator::Contains
+    );
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""正则""#).expect("regex alias"),
+        MatchOperator::Regex
+    );
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""前缀""#).expect("prefix alias"),
+        MatchOperator::StartsWith
+    );
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""后缀""#).expect("suffix alias"),
         MatchOperator::EndsWith
     );
 }
