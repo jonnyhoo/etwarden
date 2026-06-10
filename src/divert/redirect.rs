@@ -8,7 +8,7 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 574 / 590
+//! **Line budget**: 578 / 590
 
 mod filter;
 mod flow;
@@ -439,25 +439,23 @@ fn redirect_loop(
             }
         }
 
-        if let Some(dest) = config.redirect_map.get(parsed.src_port) {
-            if dest.ip == parsed.dst_ip && dest.port == parsed.dst_port {
-                let loopback = dest.local_ip.is_loopback() && dest.ip.is_loopback();
-                let mut pkt = packet.to_vec();
-                if rewrite_tcp_addrs(
-                    &mut pkt,
-                    parsed.dst_ip,
-                    parsed.src_port,
-                    parsed.src_ip,
-                    proxy_port,
-                    parsed.ip_header_len,
-                ) {
-                    if !loopback {
-                        addr.set_outbound(false);
-                    }
-                    handle.calc_checksums(&mut pkt, &addr, 0);
-                    let _ = handle.send(&pkt, &addr);
-                    continue;
+        if let Some(dest) = client_redirect_dest(&config.redirect_map, &parsed) {
+            let loopback = dest.local_ip.is_loopback() && dest.ip.is_loopback();
+            let mut pkt = packet.to_vec();
+            if rewrite_tcp_addrs(
+                &mut pkt,
+                parsed.dst_ip,
+                parsed.src_port,
+                parsed.src_ip,
+                proxy_port,
+                parsed.ip_header_len,
+            ) {
+                if !loopback {
+                    addr.set_outbound(false);
                 }
+                handle.calc_checksums(&mut pkt, &addr, 0);
+                let _ = handle.send(&pkt, &addr);
+                continue;
             }
         }
 
@@ -571,4 +569,10 @@ fn proxy_reply_dest(
     }
     let dest = map.get(parsed.dst_port)?;
     (parsed.src_ip == dest.local_ip && dest.ip == parsed.dst_ip).then_some(dest)
+}
+
+fn client_redirect_dest(map: &RedirectMap, parsed: &ParsedPacket) -> Option<OriginalDest> {
+    let dest = map.get(parsed.src_port)?;
+    (parsed.src_ip == dest.local_ip && dest.ip == parsed.dst_ip && dest.port == parsed.dst_port)
+        .then_some(dest)
 }
