@@ -16,6 +16,7 @@ use crate::rules::hosts::{HostsRule, HostsRuleError};
 
 /// Config shape for one host rewrite rule.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct HostsRuleConfig {
     /// Case-insensitive regex matched against URL hosts.
     pub pattern: String,

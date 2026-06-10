@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config`, `rules::hosts`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 54 / 80
+//! **Line budget**: 59 / 80
 
 use super::*;
 use crate::rules::{
@@ -45,4 +45,14 @@ fn invalid_hosts_regex_is_rejected() {
     let error = config.build_hosts_rules().expect_err("invalid regex");
 
     assert!(matches!(error, HostsRuleError::RegexCompile(_)));
+}
+
+#[test]
+fn unknown_hosts_rule_fields_are_rejected() {
+    let error = serde_json::from_str::<RulesConfig>(
+        r#"{"hosts_rules":[{"pattern":".*\\.example\\.com","target":"127.0.0.1","target_typo":"localhost"}]}"#,
+    )
+    .expect_err("unknown hosts field");
+
+    assert!(error.to_string().contains("target_typo"));
 }
