@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{config, replace}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 88 / 100
+//! **Line budget**: 106 / 120
 
 use crate::rules::{config::RulesConfig, replace::apply_all};
 
@@ -54,6 +54,24 @@ fn json_config_accepts_roadmap_value_type_field() {
         r#"{
             "replace_rules": [
                 { "rule_type": "Bytes", "source": "6f6c64", "target": "6e6577", "value_type": "HEX" }
+            ]
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config.build_replace_rules().expect("build replace rules");
+    let outcome = apply_all(b"old", &rules);
+
+    assert_eq!(outcome.payload, b"new");
+    assert_eq!(outcome.matched_rules, 1);
+}
+
+#[test]
+fn json_config_accepts_roadmap_string_value_type() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "replace_rules": [
+                { "rule_type": "Bytes", "source": "old", "target": "new", "value_type": "String" }
             ]
         }"#,
     )

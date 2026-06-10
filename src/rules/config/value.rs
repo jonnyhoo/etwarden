@@ -14,7 +14,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 pub enum RuleValueEncoding {
     /// UTF-8 string bytes.
-    #[serde(rename = "UTF8", alias = "utf8", alias = "Utf8")]
+    #[serde(rename = "UTF8", alias = "utf8", alias = "Utf8", alias = "String")]
     #[default]
     Utf8,
     /// Hexadecimal bytes. ASCII whitespace is ignored.
