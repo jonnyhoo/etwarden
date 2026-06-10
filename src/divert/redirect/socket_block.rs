@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block::socket, ruleset}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 69 / 80
+//! **Line budget**: 61 / 80
 
 #[cfg(test)]
 mod tests;
@@ -13,10 +13,7 @@ mod tests;
 use std::net::Ipv4Addr;
 
 use crate::rules::{
-    block::socket::{
-        evaluate_socket_first, SocketBlockAction, SocketBlockContext, SocketBlockDecision,
-        SocketProtocol,
-    },
+    block::socket::{SocketBlockAction, SocketBlockContext, SocketBlockRule, SocketProtocol},
     ruleset::RuleSet,
 };
 
@@ -40,7 +37,7 @@ pub(super) fn udp_datagram_block_action(
 
 fn socket_block_action(
     protocol: SocketProtocol,
-    rules: &[crate::rules::block::socket::SocketBlockRule],
+    rules: &[SocketBlockRule],
     dst_ip: Ipv4Addr,
     dst_port: u16,
 ) -> Option<SocketBlockAction> {
@@ -49,15 +46,16 @@ fn socket_block_action(
         protocol,
         address: &address,
     };
-    match evaluate_socket_first(&context, rules) {
-        SocketBlockDecision::Block {
-            action: action @ (SocketBlockAction::Disconnect | SocketBlockAction::DropUpstream),
-            ..
-        } => Some(action),
-        SocketBlockDecision::Block {
-            action: SocketBlockAction::DropDownstream,
-            ..
-        }
-        | SocketBlockDecision::Allow => None,
-    }
+    rules
+        .iter()
+        .enumerate()
+        .filter(|(_, rule)| rule.matches(&context))
+        .filter(|(_, rule)| {
+            matches!(
+                rule.action,
+                SocketBlockAction::Disconnect | SocketBlockAction::DropUpstream
+            )
+        })
+        .min_by_key(|(rule_index, rule)| (rule.priority, *rule_index))
+        .map(|(_, rule)| rule.action)
 }

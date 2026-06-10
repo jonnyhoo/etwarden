@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect::socket_block`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 69 / 80
+//! **Line budget**: 79 / 80
 
 use super::*;
 use crate::rules::{
@@ -13,10 +13,10 @@ use crate::rules::{
     matcher::MatchOperator,
 };
 
-fn rule(protocol: SocketProtocol, action: SocketBlockAction) -> SocketBlockRule {
+fn rule(protocol: SocketProtocol, priority: u32, action: SocketBlockAction) -> SocketBlockRule {
     SocketBlockRule::new(
         true,
-        10,
+        priority,
         protocol,
         MatchOperator::Equals,
         "93.184.216.34:443",
@@ -28,15 +28,23 @@ fn rule(protocol: SocketProtocol, action: SocketBlockAction) -> SocketBlockRule 
 #[test]
 fn tcp_syn_block_action_enforces_disconnect_and_drop_upstream_only() {
     let blocked = RuleSet {
-        tcp_block: vec![rule(SocketProtocol::Tcp, SocketBlockAction::Disconnect)],
+        tcp_block: vec![rule(SocketProtocol::Tcp, 10, SocketBlockAction::Disconnect)],
         ..RuleSet::default()
     };
     let upstream = RuleSet {
-        tcp_block: vec![rule(SocketProtocol::Tcp, SocketBlockAction::DropUpstream)],
+        tcp_block: vec![rule(
+            SocketProtocol::Tcp,
+            10,
+            SocketBlockAction::DropUpstream,
+        )],
         ..RuleSet::default()
     };
     let deferred = RuleSet {
-        tcp_block: vec![rule(SocketProtocol::Tcp, SocketBlockAction::DropDownstream)],
+        tcp_block: vec![rule(
+            SocketProtocol::Tcp,
+            10,
+            SocketBlockAction::DropDownstream,
+        )],
         ..RuleSet::default()
     };
 
@@ -57,7 +65,10 @@ fn tcp_syn_block_action_enforces_disconnect_and_drop_upstream_only() {
 #[test]
 fn udp_datagram_block_action_uses_udp_rules() {
     let rules = RuleSet {
-        udp_block: vec![rule(SocketProtocol::Udp, SocketBlockAction::DropUpstream)],
+        udp_block: vec![
+            rule(SocketProtocol::Udp, 1, SocketBlockAction::DropDownstream),
+            rule(SocketProtocol::Udp, 10, SocketBlockAction::DropUpstream),
+        ],
         ..RuleSet::default()
     };
 
