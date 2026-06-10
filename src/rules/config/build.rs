@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config`, `rules::{hosts, intercept, matcher, replace}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 66 / 80
+//! **Line budget**: 78 / 80
 
 use super::{
     DecodedReplaceRuleConfig, HostsRuleConfig, InterceptRuleConfig, ReplaceRuleConfig,

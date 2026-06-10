@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::block::http`, `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 63 / 80
+//! **Line budget**: 64 / 80
 
 #[cfg(test)]
 mod strict_tests;

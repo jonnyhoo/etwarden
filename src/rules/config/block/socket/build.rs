@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config::block::socket`, `rules::block::socket`, `rules::matcher`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 43 / 80
+//! **Line budget**: 44 / 80
 
 use super::SocketBlockRuleConfig;
 use crate::rules::{
