@@ -5,7 +5,10 @@
 //! **Dependencies**: `base64`, `serde_json`, `output::schema`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 128 / 160
+//! **Line budget**: 155 / 160
+
+#[cfg(test)]
+mod tests;
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::Value;
@@ -35,7 +38,7 @@ pub(super) fn project_http_payload(
         .as_deref()
         .filter(|_| !body_truncated)
         .and_then(parse_json_body);
-    let sse_events = if is_sse(content_type) {
+    let sse_events = if is_sse(content_type) && !body_truncated {
         body_text.as_deref().map_or_else(Vec::new, parse_sse_events)
     } else {
         Vec::new()
@@ -147,47 +150,5 @@ fn body_format(
         Some("base64".into())
     } else {
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use base64::{engine::general_purpose::STANDARD, Engine as _};
-
-    use super::*;
-
-    #[test]
-    fn projects_json_body_for_agents() {
-        let body = STANDARD.encode(br#"{"ok":true}"#);
-        let projected = project_http_payload(None, Some(&body), false, Some("application/json"));
-
-        assert_eq!(projected.body_format.as_deref(), Some("json"));
-        assert_eq!(projected.body_text.as_deref(), Some(r#"{"ok":true}"#));
-        assert_eq!(projected.body_json.expect("json")["ok"], true);
-    }
-
-    #[test]
-    fn keeps_truncated_json_as_text_fragment() {
-        let body = STANDARD.encode(br#"{"ok""#);
-        let projected = project_http_payload(None, Some(&body), true, Some("application/json"));
-
-        assert_eq!(projected.body_format.as_deref(), Some("text"));
-        assert_eq!(projected.body_json, None);
-    }
-
-    #[test]
-    fn projects_sse_data_json() {
-        let body = STANDARD.encode("event: message_start\ndata: {\"type\":\"message_start\"}\n\n");
-        let projected = project_http_payload(None, Some(&body), false, Some("text/event-stream"));
-
-        assert_eq!(projected.body_format.as_deref(), Some("sse"));
-        assert_eq!(
-            projected.sse_events[0].event.as_deref(),
-            Some("message_start")
-        );
-        assert_eq!(
-            projected.sse_events[0].data_json.as_ref().expect("json")["type"],
-            "message_start"
-        );
     }
 }
