@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::packet`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 106 / 120
+//! **Line budget**: 117 / 120
 
 use std::net::SocketAddrV4;
 
@@ -80,6 +80,18 @@ fn rewrite_changes_dst() {
     assert_eq!(parsed.dst_port, 3003);
     assert_eq!(parsed.src_ip, *src.ip());
     assert_eq!(parsed.src_port, src.port());
+}
+
+#[test]
+fn rewrite_rejects_tcp_header_outside_ipv4_total_length() {
+    let src = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 100), 51000);
+    let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 443);
+    let mut pkt = build_syn_packet(&src, &dst);
+    pkt[2..4].copy_from_slice(&22u16.to_be_bytes());
+    let before = pkt.clone();
+
+    assert!(!rewrite_tcp_dst(&mut pkt, Ipv4Addr::LOCALHOST, 3003, 20));
+    assert_eq!(pkt, before);
 }
 
 #[test]

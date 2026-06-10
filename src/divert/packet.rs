@@ -5,7 +5,7 @@
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 192 / 200
+//! **Line budget**: 199 / 200
 
 use std::net::Ipv4Addr;
 
@@ -146,10 +146,9 @@ pub fn rewrite_tcp_dst(
     new_dst_port: u16,
     ip_header_len: u8,
 ) -> bool {
-    let ip_hl = ip_header_len as usize;
-    if packet.len() < ip_hl + 20 {
+    let Some(ip_hl) = tcp_rewrite_offset(packet, ip_header_len) else {
         return false;
-    }
+    };
 
     // Rewrite destination IP (bytes 16-19 of IP header).
     let octets = new_dst_ip.octets();
@@ -175,10 +174,9 @@ pub fn rewrite_tcp_addrs(
     new_dst_port: u16,
     ip_header_len: u8,
 ) -> bool {
-    let ip_hl = ip_header_len as usize;
-    if packet.len() < ip_hl + 20 {
+    let Some(ip_hl) = tcp_rewrite_offset(packet, ip_header_len) else {
         return false;
-    }
+    };
 
     packet[12..16].copy_from_slice(&new_src_ip.octets());
     packet[16..20].copy_from_slice(&new_dst_ip.octets());
@@ -186,6 +184,15 @@ pub fn rewrite_tcp_addrs(
     packet[ip_hl + 2..ip_hl + 4].copy_from_slice(&new_dst_port.to_be_bytes());
 
     true
+}
+
+fn tcp_rewrite_offset(packet: &[u8], ip_header_len: u8) -> Option<usize> {
+    let ip_hl = ip_header_len as usize;
+    if packet.len() < 20 || ip_hl < 20 {
+        return None;
+    }
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    (total_len >= ip_hl + 20 && packet.len() >= total_len).then_some(ip_hl)
 }
 
 #[cfg(test)]
