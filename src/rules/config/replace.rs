@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config::value`, `rules::replace`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 86 / 120
+//! **Line budget**: 92 / 120
 
 #[cfg(test)]
 mod tests;
@@ -19,7 +19,7 @@ use crate::rules::replace::ReplaceRule;
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct ReplaceRuleConfig {
     /// Replacement behavior.
-    #[serde(rename = "type")]
+    #[serde(rename = "type", alias = "rule_type")]
     pub rule_type: ReplacementRuleKind,
     /// Source pattern to match, encoded using `encoding`.
     pub source: String,
