@@ -5,7 +5,7 @@
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 187 / 190
+//! **Line budget**: 188 / 190
 
 use std::net::Ipv4Addr;
 
@@ -45,7 +45,8 @@ pub fn parse_ipv4_tcp(packet: &[u8]) -> Option<ParsedPacket> {
     let (ip_header_len, src_ip, dst_ip) = parse_ipv4_header(packet, IP_PROTO_TCP)?;
 
     let tcp_offset = ip_header_len as usize;
-    if packet.len() < tcp_offset + 20 {
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if total_len < tcp_offset + 20 || packet.len() < total_len {
         return None;
     }
 
@@ -53,7 +54,7 @@ pub fn parse_ipv4_tcp(packet: &[u8]) -> Option<ParsedPacket> {
     let dst_port = u16::from_be_bytes([packet[tcp_offset + 2], packet[tcp_offset + 3]]);
     let tcp_flags = packet[tcp_offset + 13];
     let data_offset = (packet[tcp_offset + 12] >> 4) * 4;
-    if data_offset < 20 || packet.len() < tcp_offset + usize::from(data_offset) {
+    if data_offset < 20 || tcp_offset + usize::from(data_offset) > total_len {
         return None;
     }
 

@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::packet`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 103 / 120
+//! **Line budget**: 115 / 120
 
 use std::net::SocketAddrV4;
 
@@ -17,6 +17,7 @@ mod udp;
 fn build_syn_packet(src: &SocketAddrV4, dst: &SocketAddrV4) -> Vec<u8> {
     let mut pkt = vec![0u8; 40];
     pkt[0] = 0x45;
+    pkt[2..4].copy_from_slice(&40u16.to_be_bytes());
     pkt[9] = IP_PROTO_TCP;
     pkt[12..16].copy_from_slice(&src.ip().octets());
     pkt[16..20].copy_from_slice(&dst.ip().octets());
@@ -60,6 +61,18 @@ fn parse_truncated_tcp_options_returns_none() {
     let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 443);
     let mut pkt = build_syn_packet(&src, &dst);
     pkt[32] = 0xF0;
+
+    assert!(parse_ipv4_tcp(&pkt).is_none());
+}
+
+#[test]
+fn tcp_header_cannot_exceed_ipv4_total_length() {
+    let src = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 100), 51000);
+    let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 443);
+    let mut pkt = build_syn_packet(&src, &dst);
+    pkt[2..4].copy_from_slice(&40u16.to_be_bytes());
+    pkt.extend_from_slice(&[0, 0, 0, 0]);
+    pkt[32] = 0x60;
 
     assert!(parse_ipv4_tcp(&pkt).is_none());
 }
