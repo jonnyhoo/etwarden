@@ -2,16 +2,22 @@
 //!
 //! **Purpose**: Loads sandboxed Lua scripts and runs traffic callbacks.
 //! **Public API**: `ScriptEngine`
-//! **Dependencies**: `mlua`, `script::types`
+//! **Dependencies**: `mlua`, `script::{http, types}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 192 / 200
+//! **Line budget**: 133 / 200
 
-use mlua::{Lua, LuaOptions, StdLib, Table, Value};
+use mlua::{Function, Lua, LuaOptions, StdLib, Value};
 
-use super::{HttpScriptDecision, HttpScriptRequest, ScriptError};
+use super::{
+    http::{
+        request_to_table, response_to_table, update_request_from_table, update_response_from_table,
+    },
+    HttpScriptDecision, HttpScriptRequest, HttpScriptResponse, ScriptError,
+};
 
 const HTTP_REQUEST_CALLBACK: &str = "on_http_request";
+const HTTP_RESPONSE_CALLBACK: &str = "on_http_response";
 const SCRIPT_CHUNK_NAME: &str = "=etwarden-script";
 
 /// Sandboxed Lua script engine.
@@ -51,9 +57,12 @@ impl ScriptEngine {
         &self,
         request: &mut HttpScriptRequest,
     ) -> Result<HttpScriptDecision, ScriptError> {
-        let callback = self.lua.globals().get::<Value>(HTTP_REQUEST_CALLBACK)?;
-        let Value::Function(callback) = callback else {
-            return callback_decision(callback, HTTP_REQUEST_CALLBACK);
+        let Some(callback) = optional_callback(
+            self.lua.globals().get::<Value>(HTTP_REQUEST_CALLBACK)?,
+            HTTP_REQUEST_CALLBACK,
+        )?
+        else {
+            return Ok(HttpScriptDecision::Continue);
         };
 
         let table = request_to_table(&self.lua, request)?;
@@ -64,6 +73,33 @@ impl ScriptEngine {
         } else {
             HttpScriptDecision::Continue
         })
+    }
+
+    /// Runs `on_http_response(req, resp)` when defined.
+    ///
+    /// # Arguments
+    /// * `request` — HTTP request view to expose to Lua.
+    /// * `response` — Mutable HTTP response view to expose to Lua.
+    ///
+    /// # Errors
+    /// Returns [`ScriptError`] when callback lookup, callback execution, or field conversion fails.
+    pub fn on_http_response(
+        &self,
+        request: &HttpScriptRequest,
+        response: &mut HttpScriptResponse,
+    ) -> Result<(), ScriptError> {
+        let Some(callback) = optional_callback(
+            self.lua.globals().get::<Value>(HTTP_RESPONSE_CALLBACK)?,
+            HTTP_RESPONSE_CALLBACK,
+        )?
+        else {
+            return Ok(());
+        };
+
+        let request_table = request_to_table(&self.lua, request)?;
+        let response_table = response_to_table(&self.lua, response)?;
+        callback.call::<()>((request_table, response_table.clone()))?;
+        update_response_from_table(response, &response_table)
     }
 }
 
@@ -85,108 +121,13 @@ fn install_sandbox_globals(lua: &Lua) -> Result<(), mlua::Error> {
     Ok(())
 }
 
-fn callback_decision(value: Value, name: &'static str) -> Result<HttpScriptDecision, ScriptError> {
+fn optional_callback(value: Value, name: &'static str) -> Result<Option<Function>, ScriptError> {
     match value {
-        Value::Nil => Ok(HttpScriptDecision::Continue),
+        Value::Nil => Ok(None),
+        Value::Function(function) => Ok(Some(function)),
         other => Err(ScriptError::InvalidCallback {
             name,
             actual: other.type_name(),
         }),
-    }
-}
-
-fn request_to_table(lua: &Lua, request: &HttpScriptRequest) -> Result<Table, mlua::Error> {
-    let table = lua.create_table()?;
-    table.set("method", request.method.as_str())?;
-    table.set("url", request.url.as_str())?;
-    table.set("headers", headers_to_table(lua, &request.headers)?)?;
-    table.set("body", lua.create_string(&request.body)?)?;
-    table.set("drop", request.drop)?;
-    Ok(table)
-}
-
-fn headers_to_table(
-    lua: &Lua,
-    headers: &std::collections::BTreeMap<String, String>,
-) -> Result<Table, mlua::Error> {
-    let table = lua.create_table()?;
-    for (name, value) in headers {
-        table.set(name.as_str(), value.as_str())?;
-    }
-    Ok(table)
-}
-
-fn update_request_from_table(
-    request: &mut HttpScriptRequest,
-    table: &Table,
-) -> Result<(), ScriptError> {
-    request.method = string_field(table, "method")?;
-    request.url = string_field(table, "url")?;
-    request.headers = headers_field(table)?;
-    request.body = body_field(table)?;
-    request.drop = bool_field(table, "drop")?;
-    Ok(())
-}
-
-fn string_field(table: &Table, field: &'static str) -> Result<String, ScriptError> {
-    match table.get::<Value>(field)? {
-        Value::String(value) => Ok(value.to_str()?.to_owned()),
-        other => Err(invalid_type(field, "string", other.type_name())),
-    }
-}
-
-fn headers_field(table: &Table) -> Result<std::collections::BTreeMap<String, String>, ScriptError> {
-    match table.get::<Value>("headers")? {
-        Value::Nil => Ok(std::collections::BTreeMap::new()),
-        Value::Table(headers) => headers_from_table(&headers),
-        other => Err(invalid_type("headers", "table or nil", other.type_name())),
-    }
-}
-
-fn headers_from_table(
-    table: &Table,
-) -> Result<std::collections::BTreeMap<String, String>, ScriptError> {
-    let mut headers = std::collections::BTreeMap::new();
-    for pair in table.pairs::<Value, Value>() {
-        let (key, value) = pair?;
-        let key = lua_string(key, "headers.<key>")?;
-        let value = lua_string(value, "headers.<value>")?;
-        headers.insert(key, value);
-    }
-    Ok(headers)
-}
-
-fn body_field(table: &Table) -> Result<Vec<u8>, ScriptError> {
-    match table.get::<Value>("body")? {
-        Value::Nil => Ok(Vec::new()),
-        Value::String(value) => Ok(value.as_bytes().to_vec()),
-        other => Err(invalid_type("body", "string or nil", other.type_name())),
-    }
-}
-
-fn bool_field(table: &Table, field: &'static str) -> Result<bool, ScriptError> {
-    match table.get::<Value>(field)? {
-        Value::Nil => Ok(false),
-        Value::Boolean(value) => Ok(value),
-        other => Err(invalid_type(field, "boolean or nil", other.type_name())),
-    }
-}
-
-fn lua_string(value: Value, field: &'static str) -> Result<String, ScriptError> {
-    match value {
-        Value::String(value) => Ok(value.to_str()?.to_owned()),
-        other => Err(invalid_type(field, "string", other.type_name())),
-    }
-}
-
-fn invalid_type(
-    field: impl Into<String>,
-    expected: &'static str,
-    actual: &'static str,
-) -> ScriptError {
-    ScriptError::InvalidFieldType {
-        field: field.into(),
-        expected,
-        actual,
     }
 }
