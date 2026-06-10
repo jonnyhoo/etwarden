@@ -6,7 +6,7 @@
 //! **Dependencies**: `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 99 / 120
+//! **Line budget**: 104 / 120
 
 /// Flow direction for intercept rule matching.
 #[derive(Debug, Clone, Copy, Default, serde::Deserialize, PartialEq, Eq)]
@@ -44,10 +44,13 @@ pub enum InterceptTarget {
 #[serde(rename_all = "PascalCase")]
 pub enum InterceptAction {
     /// Drop the matching payload or frame.
+    #[serde(alias = "丢弃")]
     Drop,
     /// Disconnect the matching flow.
+    #[serde(alias = "断开")]
     Disconnect,
     /// Pause processing for debugger/UI intervention.
+    #[serde(alias = "断点暂停")]
     Pause,
 }
 

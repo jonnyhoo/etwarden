@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{config, intercept, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 74 / 100
+//! **Line budget**: 98 / 120
 
 use super::*;
 use crate::rules::{
@@ -54,6 +54,28 @@ fn json_config_builds_intercept_rule() {
             action: InterceptAction::Drop,
         }
     );
+}
+
+#[test]
+fn json_config_accepts_roadmap_intercept_action_names() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "intercept_rules": [
+                { "enable": true, "direction": "Both", "target": "URL", "operator": "Contains", "value": "drop.example", "action": "丢弃" },
+                { "enable": true, "direction": "Both", "target": "URL", "operator": "Contains", "value": "disconnect.example", "action": "断开" },
+                { "enable": true, "direction": "Both", "target": "URL", "operator": "Contains", "value": "pause.example", "action": "断点暂停" }
+            ]
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config
+        .build_intercept_rules()
+        .expect("build intercept rules");
+
+    assert_eq!(rules[0].action, InterceptAction::Drop);
+    assert_eq!(rules[1].action, InterceptAction::Disconnect);
+    assert_eq!(rules[2].action, InterceptAction::Pause);
 }
 
 #[test]
