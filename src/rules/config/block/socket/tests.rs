@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 95 / 120
+//! **Line budget**: 114 / 120
 
 use super::*;
 use crate::rules::{
@@ -75,6 +75,24 @@ fn json_config_builds_tcp_and_udp_block_rules() {
             action: SocketBlockAction::DropUpstream,
         }
     );
+}
+
+#[test]
+fn json_config_accepts_socket_address_alias() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "block_rules": {
+                "tcp": [
+                    { "enable": true, "priority": 1, "address": "10.0.0.7:443", "action": "Disconnect" }
+                ]
+            }
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config.build_tcp_block_rules().expect("build TCP rules");
+
+    assert_eq!(rules[0].address_pattern, "10.0.0.7:443");
 }
 
 #[test]

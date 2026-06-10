@@ -30,6 +30,7 @@ pub struct SocketBlockRuleConfig {
     #[serde(default = "default_address_operator")]
     pub address_operator: MatchOperator,
     /// Address pattern used by `address_operator`.
+    #[serde(alias = "address")]
     pub address_pattern: String,
     /// Action emitted on match.
     pub action: SocketBlockAction,
