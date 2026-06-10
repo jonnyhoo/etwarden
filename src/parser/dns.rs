@@ -6,7 +6,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `cross-platform`
 //! **Privilege**: `none`
-//! **Line budget**: 300 / 360
+//! **Line budget**: 328 / 360
 
 mod name;
 mod records;
@@ -299,6 +299,24 @@ mod tests {
             0x00, 0x00, // NSCOUNT
             0x00, 0x00, // ARCOUNT
             0x01, 0xFF, // invalid UTF-8 label
+            0x00, // root label
+            0x00, 0x01, // QTYPE A
+            0x00, 0x01, // QCLASS IN
+        ];
+
+        assert!(analyze_dns(&pkt).is_none());
+    }
+
+    #[test]
+    fn control_character_question_label_returns_none() {
+        let pkt = vec![
+            0x00, 0x01, // ID
+            0x01, 0x00, // flags: standard query
+            0x00, 0x01, // QDCOUNT
+            0x00, 0x00, // ANCOUNT
+            0x00, 0x00, // NSCOUNT
+            0x00, 0x00, // ARCOUNT
+            0x01, 0x1F, // ASCII control label
             0x00, // root label
             0x00, 0x01, // QTYPE A
             0x00, 0x01, // QCLASS IN

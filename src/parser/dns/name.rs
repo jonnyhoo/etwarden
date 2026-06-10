@@ -5,7 +5,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `cross-platform`
 //! **Privilege**: `none`
-//! **Line budget**: 70 / 110
+//! **Line budget**: 75 / 110
 
 /// Maximum DNS name length per RFC 1035 §2.3.4.
 const MAX_DNS_NAME_LEN: usize = 253;
@@ -65,6 +65,9 @@ pub(super) fn parse_dns_name(
             return None;
         }
         let label = std::str::from_utf8(&payload[offset + 1..next]).ok()?;
+        if label.bytes().any(|byte| byte.is_ascii_control()) {
+            return None;
+        }
         name.push_str(label);
         offset = next;
     }
