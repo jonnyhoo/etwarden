@@ -5,13 +5,14 @@
 //! **Dependencies**: (none — facade only)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 22 / 80
+//! **Line budget**: 21 / 80
 
 pub mod dns;
 pub mod dns_codes;
 pub mod dpi;
 pub(crate) mod endpoint;
 pub mod ndis;
+pub mod protobuf;
 mod registry;
 pub mod tcp_state;
 pub mod tcpip;

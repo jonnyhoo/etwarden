@@ -40,6 +40,9 @@ flate2      = "1.1"
 http-body-util = "0.1"
 http-mitm-proxy = { version = "0.18", default-features = false, features = ["rustls-client"] }
 hyper-util  = { version = "0.1", features = ["tokio"] }
+prost       = "0.14"
+prost-reflect = { version = "0.16", features = ["serde"] }
+prost-types = "0.14"
 rcgen       = { version = "0.14", features = ["pem", "x509-parser"] }
 regex       = "1.12"
 tokio       = { version = "1.44", features = ["macros", "rt", "rt-multi-thread", "time", "net", "io-util", "sync"] }
