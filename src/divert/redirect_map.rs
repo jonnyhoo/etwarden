@@ -5,7 +5,7 @@
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 182 / 200
+//! **Line budget**: 198 / 200
 
 use std::{collections::HashMap, net::Ipv4Addr, sync::RwLock};
 
@@ -48,6 +48,21 @@ impl RedirectMap {
             .write()
             .expect("redirect map lock poisoned")
             .remove(&src_port)
+    }
+
+    /// Removes a source-port entry only when its full origin tuple still matches.
+    pub fn take_if_origin(
+        &self,
+        src_port: u16,
+        local_ip: Ipv4Addr,
+        remote_ip: Ipv4Addr,
+        remote_port: u16,
+    ) -> Option<OriginalDest> {
+        let mut inner = self.inner.write().expect("redirect map lock poisoned");
+        let matches = inner.get(&src_port).is_some_and(|dest| {
+            dest.local_ip == local_ip && dest.ip == remote_ip && dest.port == remote_port
+        });
+        matches.then(|| inner.remove(&src_port)).flatten()
     }
 
     /// Looks up the original destination without removing it.

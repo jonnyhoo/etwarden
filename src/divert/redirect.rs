@@ -8,7 +8,7 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 583 / 590
+//! **Line budget**: 584 / 590
 
 mod filter;
 mod flow;
@@ -33,8 +33,8 @@ use std::{
 
 use filter::{build_flow_filter, build_network_filter, build_socket_filter};
 use flow::{
-    flow_table_from_tuples, pid_for_syn_from_inventory, protocol_from_number, wait_for_flow_match,
-    FlowKey, FlowTable,
+    flow_table_from_tuples, pid_for_syn_from_inventory, protocol_from_number,
+    remove_redirect_for_flow_deleted, wait_for_flow_match, FlowKey, FlowTable,
 };
 use socket_block::tcp_syn_block_action;
 use udp::handle_udp_datagram;
@@ -172,9 +172,18 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
     let ft = Arc::clone(&flow_table);
     let target_pids = config.target_pids.clone();
     let flow_worker_handle = Arc::clone(&flow_handle);
+    let flow_redirect_map = Arc::clone(&config.redirect_map);
     let flow_thread = thread::Builder::new()
         .name("etwarden-flow".into())
-        .spawn(move || flow_monitor_loop(flow_worker_handle, ft, &target_pids, stop.as_deref()))
+        .spawn(move || {
+            flow_monitor_loop(
+                flow_worker_handle,
+                ft,
+                flow_redirect_map,
+                &target_pids,
+                stop.as_deref(),
+            );
+        })
         .map_err(|e| EtwardenError::Divert(format!("failed to spawn flow thread: {e}")))?;
 
     // Spawn NETWORK redirect thread.
@@ -252,10 +261,6 @@ impl Drop for DivertHandle {
     }
 }
 
-// ---------------------------------------------------------------------------
-// SOCKET monitor thread
-// ---------------------------------------------------------------------------
-
 fn socket_monitor_loop(
     handle: Arc<WinDivertHandle>,
     flow_table: FlowTable,
@@ -310,13 +315,10 @@ fn socket_monitor_loop(
     diagnostic::info(format_args!("WinDivert SOCKET monitor stopped"));
 }
 
-// ---------------------------------------------------------------------------
-// FLOW monitor thread
-// ---------------------------------------------------------------------------
-
 fn flow_monitor_loop(
     handle: Arc<WinDivertHandle>,
     flow_table: FlowTable,
+    redirect_map: Arc<RedirectMap>,
     target_pids: &HashSet<u32>,
     stop_signal: Option<&AtomicBool>,
 ) {
@@ -370,15 +372,13 @@ fn flow_monitor_loop(
                 .lock()
                 .unwrap_or_else(std::sync::PoisonError::into_inner);
             table.remove(&key);
+            drop(table);
+            let _ = remove_redirect_for_flow_deleted(&redirect_map, &key);
         }
     }
 
     diagnostic::info(format_args!("WinDivert FLOW monitor stopped"));
 }
-
-// ---------------------------------------------------------------------------
-// NETWORK redirect thread
-// ---------------------------------------------------------------------------
 
 const PACKET_BUF_SIZE: usize = 65535;
 const FLOW_MATCH_POLLS: usize = 25;

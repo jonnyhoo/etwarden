@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::types`, `process::network`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 110 / 120
+//! **Line budget**: 120 / 120
 
 use std::{
     collections::{HashMap, HashSet},
@@ -15,15 +15,13 @@ use std::{
 
 use super::{FLOW_MATCH_POLLS, FLOW_MATCH_SLEEP};
 use crate::{
+    divert::RedirectMap,
     parser::types::{FiveTuple, Protocol},
     process::current_tcp_connections_for_pid,
 };
 
 const IPPROTO_TCP: u8 = 6;
 const IPPROTO_UDP: u8 = 17;
-
-/// Key identifying a tracked flow: (protocol, local_ip, local_port, remote_ip, remote_port).
-/// FLOW layer gives us these in host byte order — matches packet parser output.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub(super) struct FlowKey {
     pub(super) protocol: Protocol,
@@ -32,8 +30,6 @@ pub(super) struct FlowKey {
     pub(super) remote_ip: [u8; 4],
     pub(super) remote_port: u16,
 }
-
-/// Thread-safe map of active flows belonging to target PIDs: flow key → PID.
 pub(super) type FlowTable = Arc<Mutex<HashMap<FlowKey, u32>>>;
 
 pub(super) fn flow_table_from_tuples(tuples: &[FiveTuple]) -> (FlowTable, usize) {
@@ -86,6 +82,19 @@ pub(super) fn pid_for_syn_from_inventory(
         }
     }
     None
+}
+
+pub(super) fn remove_redirect_for_flow_deleted(map: &RedirectMap, key: &FlowKey) -> bool {
+    if key.protocol != Protocol::Tcp {
+        return false;
+    }
+    map.take_if_origin(
+        key.local_port,
+        Ipv4Addr::from(key.local_ip),
+        Ipv4Addr::from(key.remote_ip),
+        key.remote_port,
+    )
+    .is_some()
 }
 
 pub(super) const fn protocol_from_number(protocol: u8) -> Option<Protocol> {
