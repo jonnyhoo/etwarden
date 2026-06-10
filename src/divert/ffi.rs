@@ -5,7 +5,7 @@
 //! **Dependencies**: `windows`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 318 / 340
+//! **Line budget**: 417 / 420
 
 #![expect(
     unsafe_code,
@@ -87,7 +87,7 @@ pub const WINDIVERT_EVENT_SOCKET_CONNECT: u8 = 4;
 
 /// Packet metadata returned by `WinDivertRecv`.
 /// Stored as a raw 80-byte buffer matching WinDivert 2.2 `WINDIVERT_ADDRESS`.
-#[repr(C)]
+#[repr(C, align(8))]
 #[derive(Clone, Copy)]
 pub struct WinDivertAddress {
     buf: [u8; 80],
@@ -179,6 +179,9 @@ impl WinDivertAddress {
         self.buf[72]
     }
 }
+
+#[cfg(test)]
+mod tests;
 
 // ---------------------------------------------------------------------------
 // FFI function pointer types
