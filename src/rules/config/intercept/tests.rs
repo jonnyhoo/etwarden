@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{config, intercept, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 98 / 120
+//! **Line budget**: 120 / 140
 
 use super::*;
 use crate::rules::{
@@ -76,6 +76,28 @@ fn json_config_accepts_roadmap_intercept_action_names() {
     assert_eq!(rules[0].action, InterceptAction::Drop);
     assert_eq!(rules[1].action, InterceptAction::Disconnect);
     assert_eq!(rules[2].action, InterceptAction::Pause);
+}
+
+#[test]
+fn json_config_accepts_roadmap_direction_names() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "intercept_rules": [
+                { "enable": true, "direction": "上行", "target": "URL", "operator": "Contains", "value": "upload.example", "action": "Drop" },
+                { "enable": true, "direction": "下行", "target": "URL", "operator": "Contains", "value": "download.example", "action": "Drop" },
+                { "enable": true, "direction": "双向", "target": "URL", "operator": "Contains", "value": "both.example", "action": "Drop" }
+            ]
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config
+        .build_intercept_rules()
+        .expect("build intercept rules");
+
+    assert_eq!(rules[0].direction, InterceptDirection::Upstream);
+    assert_eq!(rules[1].direction, InterceptDirection::Downstream);
+    assert_eq!(rules[2].direction, InterceptDirection::Both);
 }
 
 #[test]

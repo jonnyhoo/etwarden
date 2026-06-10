@@ -6,18 +6,21 @@
 //! **Dependencies**: `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 104 / 120
+//! **Line budget**: 107 / 120
 
 /// Flow direction for intercept rule matching.
 #[derive(Debug, Clone, Copy, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum InterceptDirection {
     /// Client-to-server traffic.
+    #[serde(alias = "上行")]
     Upstream,
     /// Server-to-client traffic.
+    #[serde(alias = "下行")]
     Downstream,
     /// Either direction.
     #[default]
+    #[serde(alias = "双向")]
     Both,
 }
 
