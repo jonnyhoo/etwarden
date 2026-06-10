@@ -10,10 +10,12 @@
 //! **Privilege**: `requires-admin`
 //! **Line budget**: 572 / 590
 
+mod filter;
 mod flow;
 mod socket_block;
 #[cfg(test)]
 mod tests;
+mod udp;
 
 use std::{
     collections::HashSet,
@@ -25,11 +27,13 @@ use std::{
     thread,
 };
 
+use filter::build_network_filter;
 use flow::{
     flow_table_from_tuples, pid_for_syn_from_inventory, protocol_from_number, wait_for_flow_match,
     FlowKey, FlowTable,
 };
 use socket_block::tcp_syn_block_action;
+use udp::handle_udp_datagram;
 
 use super::{
     ffi::{
@@ -118,7 +122,16 @@ pub fn start_divert(config: DivertConfig) -> Result<DivertHandle> {
     );
 
     // Open NETWORK handle: intercepts outbound SYN for target flows, including loopback.
-    let net_filter = build_network_filter(proxy_port, &config.include_ports, &config.exclude_ports);
+    let include_udp = config
+        .rule_set
+        .as_ref()
+        .is_some_and(|rules| !rules.udp_block.is_empty());
+    let net_filter = build_network_filter(
+        proxy_port,
+        &config.include_ports,
+        &config.exclude_ports,
+        include_udp,
+    );
     diagnostic::info(format_args!("WinDivert NETWORK filter: {net_filter}"));
     let network_handle = Arc::new(
         dll.open(&net_filter, WINDIVERT_LAYER_NETWORK, 0, 0)
@@ -394,6 +407,10 @@ fn redirect_loop(
         };
 
         let packet = &buf[..len];
+        if handle_udp_datagram(packet, handle.as_ref(), &addr, &flow_table, &config) {
+            continue;
+        }
+
         let Some(parsed) = parse_ipv4_tcp(packet) else {
             let pkt = packet.to_vec();
             let _ = handle.send(&pkt, &addr);
@@ -544,29 +561,4 @@ fn redirect_loop(
     }
 
     diagnostic::info(format_args!("WinDivert NETWORK redirect stopped"));
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn build_network_filter(proxy_port: u16, include_ports: &[u16], exclude_ports: &[u16]) -> String {
-    let mut parts = vec![
-        "outbound".to_string(),
-        "ip".to_string(),
-        "tcp".to_string(),
-        format!("tcp.DstPort != {proxy_port}"),
-    ];
-    if !include_ports.is_empty() {
-        let include = include_ports
-            .iter()
-            .map(|port| format!("tcp.DstPort == {port}"))
-            .collect::<Vec<_>>()
-            .join(" or ");
-        parts.push(format!("(tcp.SrcPort == {proxy_port} or {include})"));
-    }
-    for port in exclude_ports {
-        parts.push(format!("tcp.DstPort != {port}"));
-    }
-    parts.join(" and ")
 }

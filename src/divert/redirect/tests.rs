@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect`, `rules`, `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 87 / 120
+//! **Line budget**: 96 / 120
 
 use super::*;
 use crate::{divert::redirect::flow::flow_keys_from_tuples, parser::types::Protocol};
@@ -69,7 +69,7 @@ fn non_ipv4_or_non_tcp_tuple_is_not_seeded() {
 
 #[test]
 fn network_filter_supports_port_include_and_exclude() {
-    let filter = build_network_filter(3003, &[80, 443], &[16669]);
+    let filter = build_network_filter(3003, &[80, 443], &[16669], false);
 
     assert!(filter.contains("ip"));
     assert!(filter.contains("tcp.DstPort == 80"));
@@ -80,8 +80,17 @@ fn network_filter_supports_port_include_and_exclude() {
 
 #[test]
 fn network_filter_keeps_loopback_eligible() {
-    let filter = build_network_filter(3003, &[], &[]);
+    let filter = build_network_filter(3003, &[], &[], false);
 
     assert!(!filter.contains("127.0.0.1"));
     assert!(filter.contains("tcp.DstPort != 3003"));
+}
+
+#[test]
+fn network_filter_includes_udp_only_when_requested() {
+    let tcp_only = build_network_filter(3003, &[], &[], false);
+    let with_udp = build_network_filter(3003, &[], &[], true);
+
+    assert!(!tcp_only.contains("udp"));
+    assert!(with_udp.contains("udp"));
 }

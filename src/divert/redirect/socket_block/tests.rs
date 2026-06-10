@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect::socket_block`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 55 / 80
+//! **Line budget**: 69 / 80
 
 use super::*;
 use crate::rules::{
@@ -13,11 +13,11 @@ use crate::rules::{
     matcher::MatchOperator,
 };
 
-fn rule(action: SocketBlockAction) -> SocketBlockRule {
+fn rule(protocol: SocketProtocol, action: SocketBlockAction) -> SocketBlockRule {
     SocketBlockRule::new(
         true,
         10,
-        SocketProtocol::Tcp,
+        protocol,
         MatchOperator::Equals,
         "93.184.216.34:443",
         action,
@@ -28,15 +28,15 @@ fn rule(action: SocketBlockAction) -> SocketBlockRule {
 #[test]
 fn tcp_syn_block_action_enforces_disconnect_and_drop_upstream_only() {
     let blocked = RuleSet {
-        tcp_block: vec![rule(SocketBlockAction::Disconnect)],
+        tcp_block: vec![rule(SocketProtocol::Tcp, SocketBlockAction::Disconnect)],
         ..RuleSet::default()
     };
     let upstream = RuleSet {
-        tcp_block: vec![rule(SocketBlockAction::DropUpstream)],
+        tcp_block: vec![rule(SocketProtocol::Tcp, SocketBlockAction::DropUpstream)],
         ..RuleSet::default()
     };
     let deferred = RuleSet {
-        tcp_block: vec![rule(SocketBlockAction::DropDownstream)],
+        tcp_block: vec![rule(SocketProtocol::Tcp, SocketBlockAction::DropDownstream)],
         ..RuleSet::default()
     };
 
@@ -51,5 +51,18 @@ fn tcp_syn_block_action_enforces_disconnect_and_drop_upstream_only() {
     assert_eq!(
         tcp_syn_block_action(Some(&deferred), Ipv4Addr::new(93, 184, 216, 34), 443),
         None,
+    );
+}
+
+#[test]
+fn udp_datagram_block_action_uses_udp_rules() {
+    let rules = RuleSet {
+        udp_block: vec![rule(SocketProtocol::Udp, SocketBlockAction::DropUpstream)],
+        ..RuleSet::default()
+    };
+
+    assert_eq!(
+        udp_datagram_block_action(Some(&rules), Ipv4Addr::new(93, 184, 216, 34), 443),
+        Some(SocketBlockAction::DropUpstream),
     );
 }
