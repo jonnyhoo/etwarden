@@ -5,7 +5,7 @@
 //! **Dependencies**: `std`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 189 / 190
+//! **Line budget**: 192 / 200
 
 use std::net::Ipv4Addr;
 
@@ -37,16 +37,17 @@ pub struct ParsedUdpPacket {
 pub const TCP_SYN: u8 = 0x02;
 pub const TCP_ACK: u8 = 0x10;
 
+type ParsedIpv4Header = (u8, usize, Ipv4Addr, Ipv4Addr);
+
 /// Parses an IPv4+TCP packet and extracts the 5-tuple + header lengths.
 ///
 /// Returns `None` if the packet is too short, not IPv4, not TCP, or has
 /// truncated headers.
 pub fn parse_ipv4_tcp(packet: &[u8]) -> Option<ParsedPacket> {
-    let (ip_header_len, src_ip, dst_ip) = parse_ipv4_header(packet, IP_PROTO_TCP)?;
+    let (ip_header_len, total_len, src_ip, dst_ip) = parse_ipv4_header(packet, IP_PROTO_TCP)?;
 
     let tcp_offset = ip_header_len as usize;
-    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
-    if total_len < tcp_offset + 20 || packet.len() < total_len {
+    if total_len < tcp_offset + 20 {
         return None;
     }
 
@@ -74,10 +75,9 @@ pub fn parse_ipv4_tcp(packet: &[u8]) -> Option<ParsedPacket> {
 /// Returns `None` if the packet is too short, not IPv4, not UDP, or has a
 /// truncated UDP datagram.
 pub fn parse_ipv4_udp(packet: &[u8]) -> Option<ParsedUdpPacket> {
-    let (ip_header_len, src_ip, dst_ip) = parse_ipv4_header(packet, IP_PROTO_UDP)?;
+    let (ip_header_len, total_len, src_ip, dst_ip) = parse_ipv4_header(packet, IP_PROTO_UDP)?;
     let udp_offset = ip_header_len as usize;
-    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
-    if total_len < udp_offset + 8 || packet.len() < total_len {
+    if total_len < udp_offset + 8 {
         return None;
     }
 
@@ -99,7 +99,7 @@ pub fn parse_ipv4_udp(packet: &[u8]) -> Option<ParsedUdpPacket> {
     })
 }
 
-fn parse_ipv4_header(packet: &[u8], expected_protocol: u8) -> Option<(u8, Ipv4Addr, Ipv4Addr)> {
+fn parse_ipv4_header(packet: &[u8], expected_protocol: u8) -> Option<ParsedIpv4Header> {
     if packet.len() < 20 {
         return None;
     }
@@ -111,6 +111,10 @@ fn parse_ipv4_header(packet: &[u8], expected_protocol: u8) -> Option<(u8, Ipv4Ad
     }
     let ip_header_len = (version_ihl & 0x0F) * 4;
     if ip_header_len < 20 || packet.len() < ip_header_len as usize {
+        return None;
+    }
+    let total_len = usize::from(u16::from_be_bytes([packet[2], packet[3]]));
+    if total_len < ip_header_len as usize || packet.len() < total_len {
         return None;
     }
 
@@ -126,7 +130,7 @@ fn parse_ipv4_header(packet: &[u8], expected_protocol: u8) -> Option<(u8, Ipv4Ad
     let src_ip = Ipv4Addr::new(packet[12], packet[13], packet[14], packet[15]);
     let dst_ip = Ipv4Addr::new(packet[16], packet[17], packet[18], packet[19]);
 
-    Some((ip_header_len, src_ip, dst_ip))
+    Some((ip_header_len, total_len, src_ip, dst_ip))
 }
 
 /// Rewrites the destination IP and port in an IPv4+TCP packet buffer.

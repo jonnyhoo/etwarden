@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::packet`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 96 / 120
+//! **Line budget**: 106 / 120
 
 use std::net::SocketAddrV4;
 
@@ -46,6 +46,16 @@ fn parse_valid_syn() {
 #[test]
 fn parse_too_short_returns_none() {
     assert!(parse_ipv4_tcp(&[0x45; 10]).is_none());
+}
+
+#[test]
+fn ipv4_header_rejects_total_length_beyond_capture() {
+    let src = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 100), 51000);
+    let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 443);
+    let mut pkt = build_syn_packet(&src, &dst);
+    pkt[2..4].copy_from_slice(&44u16.to_be_bytes());
+
+    assert!(parse_ipv4_header(&pkt, IP_PROTO_TCP).is_none());
 }
 
 #[test]
