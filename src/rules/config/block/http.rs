@@ -5,8 +5,10 @@
 //! **Dependencies**: `rules::block::http`, `rules::matcher`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 61 / 80
+//! **Line budget**: 63 / 80
 
+#[cfg(test)]
+mod strict_tests;
 #[cfg(test)]
 mod tests;
 
@@ -19,6 +21,7 @@ use crate::rules::{
 
 /// Config shape for one HTTP block rule.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct HttpBlockRuleConfig {
     /// Whether this rule participates in evaluation.
     pub enable: bool,
