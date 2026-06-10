@@ -8,10 +8,12 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 564 / 590
+//! **Line budget**: 574 / 590
 
 mod filter;
 mod flow;
+#[cfg(test)]
+mod map_tests;
 mod socket_block;
 #[cfg(test)]
 mod tests;
@@ -42,7 +44,7 @@ use super::{
         WINDIVERT_FLAG_SNIFF, WINDIVERT_LAYER_FLOW, WINDIVERT_LAYER_NETWORK,
         WINDIVERT_LAYER_SOCKET,
     },
-    packet::{parse_ipv4_tcp, rewrite_tcp_addrs, TCP_ACK, TCP_SYN},
+    packet::{parse_ipv4_tcp, rewrite_tcp_addrs, ParsedPacket, TCP_ACK, TCP_SYN},
     redirect_map::{OriginalDest, RedirectMap},
 };
 use crate::{
@@ -417,27 +419,23 @@ fn redirect_loop(
             continue;
         };
 
-        if parsed.src_port == proxy_port {
-            if let Some(dest) = config.redirect_map.get(parsed.dst_port) {
-                if dest.ip == parsed.dst_ip {
-                    let loopback = dest.local_ip.is_loopback() && dest.ip.is_loopback();
-                    let mut pkt = packet.to_vec();
-                    if rewrite_tcp_addrs(
-                        &mut pkt,
-                        dest.ip,
-                        dest.port,
-                        dest.local_ip,
-                        parsed.dst_port,
-                        parsed.ip_header_len,
-                    ) {
-                        if !loopback {
-                            addr.set_outbound(false);
-                        }
-                        handle.calc_checksums(&mut pkt, &addr, 0);
-                        let _ = handle.send(&pkt, &addr);
-                        continue;
-                    }
+        if let Some(dest) = proxy_reply_dest(&config.redirect_map, &parsed, proxy_port) {
+            let loopback = dest.local_ip.is_loopback() && dest.ip.is_loopback();
+            let mut pkt = packet.to_vec();
+            if rewrite_tcp_addrs(
+                &mut pkt,
+                dest.ip,
+                dest.port,
+                dest.local_ip,
+                parsed.dst_port,
+                parsed.ip_header_len,
+            ) {
+                if !loopback {
+                    addr.set_outbound(false);
                 }
+                handle.calc_checksums(&mut pkt, &addr, 0);
+                let _ = handle.send(&pkt, &addr);
+                continue;
             }
         }
 
@@ -561,4 +559,16 @@ fn redirect_loop(
     }
 
     diagnostic::info(format_args!("WinDivert NETWORK redirect stopped"));
+}
+
+fn proxy_reply_dest(
+    map: &RedirectMap,
+    parsed: &ParsedPacket,
+    proxy_port: u16,
+) -> Option<OriginalDest> {
+    if parsed.src_port != proxy_port {
+        return None;
+    }
+    let dest = map.get(parsed.dst_port)?;
+    (parsed.src_ip == dest.local_ip && dest.ip == parsed.dst_ip).then_some(dest)
 }
