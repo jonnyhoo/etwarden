@@ -5,11 +5,17 @@
 //! **Dependencies**: `divert::ffi`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 58 / 80
+//! **Line budget**: 171 / 180
 
-use std::mem::{align_of, size_of};
+use std::{
+    ffi::c_void,
+    mem::{align_of, size_of},
+};
 
-use super::{WinDivertAddress, WINDIVERT_EVENT_FLOW_ESTABLISHED, WINDIVERT_LAYER_FLOW};
+use super::{
+    FnRecv, FnSend, WinDivertAddress, WinDivertDllShallow, WinDivertHandle,
+    WINDIVERT_EVENT_FLOW_ESTABLISHED, WINDIVERT_LAYER_FLOW,
+};
 
 #[test]
 fn windivert_address_abi_matches_c_layout() {
@@ -54,4 +60,112 @@ fn flow_accessors_use_win_divert_2_2_offsets() {
     assert_eq!(addr.flow_local_port(), 49152);
     assert_eq!(addr.flow_remote_port(), 443);
     assert_eq!(addr.flow_protocol(), 6);
+}
+
+#[test]
+fn recv_rejects_success_length_beyond_buffer() {
+    let handle = handle_with(recv_len_past_buffer, ok_send);
+    let mut buf = [0_u8; 4];
+
+    let err = handle
+        .recv(&mut buf)
+        .err()
+        .expect("recv accepted oversized reported length");
+
+    assert!(err
+        .to_string()
+        .contains("WinDivertRecv returned length 5 beyond buffer 4"));
+}
+
+#[test]
+fn send_rejects_successful_partial_packet_write() {
+    let handle = handle_with(ok_recv, partial_send);
+
+    let err = handle
+        .send(&[1, 2, 3, 4], &WinDivertAddress::zeroed())
+        .expect_err("partial send should fail");
+
+    assert!(err.to_string().contains("WinDivertSend wrote 3 of 4 bytes"));
+}
+
+fn handle_with(recv: FnRecv, send: FnSend) -> WinDivertHandle {
+    WinDivertHandle {
+        handle: std::ptr::NonNull::<c_void>::dangling().as_ptr(),
+        dll: WinDivertDllShallow {
+            recv,
+            send,
+            close: ok_close,
+            shutdown: ok_shutdown,
+            calc_checksums: ok_calc_checksums,
+        },
+    }
+}
+
+unsafe extern "system" fn recv_len_past_buffer(
+    _handle: *mut c_void,
+    _packet: *mut u8,
+    packet_len: u32,
+    recv_len: *mut u32,
+    _addr: *mut WinDivertAddress,
+) -> i32 {
+    unsafe {
+        *recv_len = packet_len + 1;
+    }
+    1
+}
+
+unsafe extern "system" fn ok_recv(
+    _handle: *mut c_void,
+    _packet: *mut u8,
+    _packet_len: u32,
+    recv_len: *mut u32,
+    _addr: *mut WinDivertAddress,
+) -> i32 {
+    unsafe {
+        *recv_len = 0;
+    }
+    1
+}
+
+unsafe extern "system" fn partial_send(
+    _handle: *mut c_void,
+    _packet: *const u8,
+    packet_len: u32,
+    send_len: *mut u32,
+    _addr: *const WinDivertAddress,
+) -> i32 {
+    unsafe {
+        *send_len = packet_len.saturating_sub(1);
+    }
+    1
+}
+
+unsafe extern "system" fn ok_send(
+    _handle: *mut c_void,
+    _packet: *const u8,
+    packet_len: u32,
+    send_len: *mut u32,
+    _addr: *const WinDivertAddress,
+) -> i32 {
+    unsafe {
+        *send_len = packet_len;
+    }
+    1
+}
+
+unsafe extern "system" fn ok_close(_handle: *mut c_void) -> i32 {
+    1
+}
+
+unsafe extern "system" fn ok_shutdown(_handle: *mut c_void, _how: u32) -> i32 {
+    1
+}
+
+unsafe extern "system" fn ok_calc_checksums(
+    _packet: *mut u8,
+    _packet_len: u32,
+    _addr: *const WinDivertAddress,
+    _flags: u64,
+) -> u32 {
+    1
 }

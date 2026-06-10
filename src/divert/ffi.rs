@@ -5,7 +5,7 @@
 //! **Dependencies**: `windows`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 417 / 420
+//! **Line budget**: 443 / 450
 
 #![expect(
     unsafe_code,
@@ -352,13 +352,19 @@ impl WinDivertHandle {
     /// # Errors
     /// Returns [`EtwardenError::Divert`] on WinDivert error or shutdown.
     pub fn recv(&self, buf: &mut [u8]) -> Result<(usize, WinDivertAddress)> {
+        let packet_len = u32::try_from(buf.len()).map_err(|_| {
+            EtwardenError::Divert(format!(
+                "WinDivertRecv buffer too large: {} bytes",
+                buf.len()
+            ))
+        })?;
         let mut recv_len: u32 = 0;
         let mut addr = WinDivertAddress::zeroed();
         let ok = unsafe {
             (self.dll.recv)(
                 self.handle,
                 buf.as_mut_ptr(),
-                buf.len() as u32,
+                packet_len,
                 &mut recv_len,
                 &mut addr,
             )
@@ -366,7 +372,14 @@ impl WinDivertHandle {
         if ok == 0 {
             return Err(EtwardenError::Divert("WinDivertRecv failed".into()));
         }
-        Ok((recv_len as usize, addr))
+        let len = recv_len as usize;
+        if len > buf.len() {
+            return Err(EtwardenError::Divert(format!(
+                "WinDivertRecv returned length {len} beyond buffer {}",
+                buf.len()
+            )));
+        }
+        Ok((len, addr))
     }
 
     /// Sends (re-injects) a modified packet.
@@ -374,18 +387,31 @@ impl WinDivertHandle {
     /// # Errors
     /// Returns [`EtwardenError::Divert`] on WinDivert error.
     pub fn send(&self, packet: &[u8], addr: &WinDivertAddress) -> Result<()> {
+        let packet_len = u32::try_from(packet.len()).map_err(|_| {
+            EtwardenError::Divert(format!(
+                "WinDivertSend packet too large: {} bytes",
+                packet.len()
+            ))
+        })?;
         let mut send_len: u32 = 0;
         let ok = unsafe {
             (self.dll.send)(
                 self.handle,
                 packet.as_ptr(),
-                packet.len() as u32,
+                packet_len,
                 &mut send_len,
                 addr,
             )
         };
         if ok == 0 {
             return Err(EtwardenError::Divert("WinDivertSend failed".into()));
+        }
+        let sent = send_len as usize;
+        if sent != packet.len() {
+            return Err(EtwardenError::Divert(format!(
+                "WinDivertSend wrote {sent} of {} bytes",
+                packet.len()
+            )));
         }
         Ok(())
     }
