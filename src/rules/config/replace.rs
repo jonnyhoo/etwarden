@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config::value`, `rules::replace`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 92 / 120
+//! **Line budget**: 94 / 120
 
 #[cfg(test)]
 mod tests;
@@ -46,8 +46,10 @@ pub struct DecodedReplaceRuleConfig {
 #[serde(rename_all = "PascalCase")]
 pub enum ReplacementRuleKind {
     /// Replace matching bytes in the payload.
+    #[serde(alias = "字节替换")]
     Bytes,
     /// Replace the whole payload with configured bytes.
+    #[serde(alias = "文件替换")]
     File,
 }
 

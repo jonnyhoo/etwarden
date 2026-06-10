@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{config, replace}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 50 / 80
+//! **Line budget**: 70 / 100
 
 use crate::rules::{config::RulesConfig, replace::apply_all};
 
@@ -46,4 +46,24 @@ fn json_config_accepts_roadmap_rule_type_field() {
 
     assert_eq!(outcome.payload, b"new");
     assert_eq!(outcome.matched_rules, 1);
+}
+
+#[test]
+fn json_config_accepts_roadmap_replace_kind_names() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "replace_rules": [
+                { "rule_type": "字节替换", "source": "old", "target": "new" },
+                { "rule_type": "文件替换", "source": "/download", "target": "file" }
+            ]
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config.build_replace_rules().expect("build replace rules");
+    let outcome = apply_all(b"/download old", &rules);
+
+    assert_eq!(outcome.payload, b"file");
+    assert_eq!(outcome.matched_rules, 2);
+    assert!(outcome.file_replaced);
 }
