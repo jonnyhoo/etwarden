@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 80 / 100
+//! **Line budget**: 94 / 100
 
 use super::*;
 use crate::rules::{
@@ -54,6 +54,26 @@ fn json_config_builds_websocket_block_rule() {
             action: WebSocketBlockAction::CloseConnection,
         }
     );
+}
+
+#[test]
+fn json_config_accepts_roadmap_url_match_type_alias() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "block_rules": {
+                "websocket": [
+                    { "enable": true, "priority": 1, "method": "GET", "url_match_type": "前缀", "url_pattern": "wss://ws.example.com", "action": "CloseConnection" }
+                ]
+            }
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config
+        .build_websocket_block_rules()
+        .expect("build WebSocket block rules");
+
+    assert_eq!(rules[0].url_operator, MatchOperator::StartsWith);
 }
 
 #[test]

@@ -5,7 +5,7 @@
 //! **Dependencies**: `regex`, `serde`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 124 / 160
+//! **Line budget**: 127 / 160
 
 #[cfg(test)]
 mod tests;
@@ -17,13 +17,16 @@ use regex::{Regex, RegexBuilder};
 #[serde(rename_all = "PascalCase")]
 pub enum MatchOperator {
     /// ASCII-case-insensitive equality.
+    #[serde(alias = "完全匹配")]
     Equals,
     /// ASCII-case-insensitive substring match.
+    #[serde(alias = "包含")]
     Contains,
     /// Case-insensitive regular expression match.
+    #[serde(alias = "正则")]
     Regex,
     /// ASCII-case-insensitive prefix match.
-    #[serde(alias = "Prefix", alias = "prefix")]
+    #[serde(alias = "Prefix", alias = "prefix", alias = "前缀")]
     StartsWith,
     /// ASCII-case-insensitive suffix match.
     #[serde(alias = "Suffix", alias = "suffix")]

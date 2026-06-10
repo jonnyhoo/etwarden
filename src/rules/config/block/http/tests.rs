@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{block, config, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 77 / 100
+//! **Line budget**: 111 / 120
 
 use super::*;
 use crate::rules::{
@@ -56,6 +56,40 @@ fn json_config_builds_http_block_rule() {
             priority: 1,
             action: HttpBlockAction::CloseRequest,
         }
+    );
+}
+
+#[test]
+fn json_config_accepts_roadmap_url_match_type_names() {
+    let config: RulesConfig = serde_json::from_str(
+        r#"{
+            "block_rules": {
+                "http": [
+                    { "enable": true, "priority": 1, "method": "*", "url_match_type": "包含", "url_pattern": "tracker", "action": "CloseRequest" },
+                    { "enable": true, "priority": 2, "method": "*", "url_match_type": "前缀", "url_pattern": "https://", "action": "CloseRequest" },
+                    { "enable": true, "priority": 3, "method": "*", "url_match_type": "正则", "url_pattern": "ad\\d+", "action": "CloseRequest" },
+                    { "enable": true, "priority": 4, "method": "*", "url_match_type": "完全匹配", "url_pattern": "https://exact.example/", "action": "CloseRequest" }
+                ]
+            }
+        }"#,
+    )
+    .expect("parse rules config");
+
+    let rules = config
+        .build_http_block_rules()
+        .expect("build HTTP block rules");
+
+    assert_eq!(
+        rules
+            .iter()
+            .map(|rule| rule.url_operator)
+            .collect::<Vec<_>>(),
+        vec![
+            MatchOperator::Contains,
+            MatchOperator::StartsWith,
+            MatchOperator::Regex,
+            MatchOperator::Equals,
+        ]
     );
 }
 
