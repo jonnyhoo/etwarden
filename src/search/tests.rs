@@ -5,13 +5,14 @@
 //! **Dependencies**: `search`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 81 / 90
+//! **Line budget**: 82 / 90
 
 use super::*;
 
 mod all;
 mod numeric;
 mod protobuf;
+mod traffic;
 
 fn offsets(r: &[SearchResult]) -> Vec<usize> {
     r.iter().map(|hit| hit.offset).collect()
