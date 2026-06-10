@@ -5,7 +5,7 @@
 //! **Dependencies**: `search`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 60 / 80
+//! **Line budget**: 81 / 90
 
 use super::*;
 
@@ -51,6 +51,26 @@ fn base64_search_decodes_query() {
         .expect("search");
 
     assert_eq!(results[0].offset, 7);
+}
+
+#[test]
+fn int32_search_finds_big_and_little_endian_encodings() {
+    let payload = [0, 0, 0, 42, 42, 0, 0, 0];
+
+    let results = search_payload(&payload, "42", SearchType::Int32, true).expect("search");
+
+    assert_eq!(
+        results.iter().map(|hit| hit.offset).collect::<Vec<_>>(),
+        vec![0, 4]
+    );
+    assert!(results.iter().all(|hit| hit.length == 4));
+}
+
+#[test]
+fn invalid_int32_query_is_rejected() {
+    let err = search_payload(b"abc", "not-an-int", SearchType::Int32, true).expect_err("int32");
+
+    assert!(matches!(err, SearchError::InvalidInt32 { .. }));
 }
 
 #[test]

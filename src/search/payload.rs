@@ -5,7 +5,7 @@
 //! **Dependencies**: `base64`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 158 / 200
+//! **Line budget**: 199 / 200
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -20,6 +20,8 @@ pub enum SearchType {
     Hex,
     /// Query text is base64.
     Base64,
+    /// Query text is a signed 32-bit integer searched as big- and little-endian bytes.
+    Int32,
 }
 
 /// Payload search decoding error.
@@ -37,6 +39,12 @@ pub enum SearchError {
     /// Base64 decoding failed.
     #[error("invalid base64 search query: {0}")]
     Base64Decode(#[from] base64::DecodeError),
+    /// Int32 parsing failed.
+    #[error("invalid int32 search query '{value}': {source}")]
+    InvalidInt32 {
+        value: String,
+        source: std::num::ParseIntError,
+    },
 }
 
 /// One match inside a captured payload.
@@ -69,31 +77,64 @@ pub fn search_payload(
     search_type: SearchType,
     case_sensitive: bool,
 ) -> Result<Vec<SearchResult>, SearchError> {
-    let needle = decode_query(query, search_type)?;
-    if needle.is_empty() {
+    let needles = decode_queries(query, search_type)?;
+    if needles.iter().any(Vec::is_empty) {
         return Err(SearchError::EmptyQuery);
     }
-    let matches = if case_sensitive || search_type != SearchType::Utf8 {
-        find_bytes(payload, &needle)
-    } else {
-        find_ascii_case_insensitive(payload, &needle)
-    };
-    Ok(matches
-        .into_iter()
-        .map(|offset| SearchResult {
-            offset,
-            length: needle.len(),
-            context: context_bytes(payload, offset, needle.len()),
-        })
-        .collect())
+    let mut results = Vec::new();
+    for needle in needles {
+        let matches = if case_sensitive || search_type != SearchType::Utf8 {
+            find_bytes(payload, &needle)
+        } else {
+            find_ascii_case_insensitive(payload, &needle)
+        };
+        for offset in matches {
+            push_unique_result(&mut results, payload, offset, needle.len());
+        }
+    }
+    results.sort_by_key(|hit| hit.offset);
+    Ok(results)
 }
 
-fn decode_query(query: &str, search_type: SearchType) -> Result<Vec<u8>, SearchError> {
+fn decode_queries(query: &str, search_type: SearchType) -> Result<Vec<Vec<u8>>, SearchError> {
     match search_type {
-        SearchType::Utf8 => Ok(query.as_bytes().to_vec()),
-        SearchType::Hex => decode_hex(query),
-        SearchType::Base64 => Ok(STANDARD.decode(query)?),
+        SearchType::Utf8 => Ok(vec![query.as_bytes().to_vec()]),
+        SearchType::Hex => Ok(vec![decode_hex(query)?]),
+        SearchType::Base64 => Ok(vec![STANDARD.decode(query)?]),
+        SearchType::Int32 => int32_needles(query),
     }
+}
+
+fn int32_needles(query: &str) -> Result<Vec<Vec<u8>>, SearchError> {
+    let value = query
+        .trim()
+        .parse::<i32>()
+        .map_err(|source| SearchError::InvalidInt32 {
+            value: query.to_string(),
+            source,
+        })?;
+    let be = value.to_be_bytes().to_vec();
+    let le = value.to_le_bytes().to_vec();
+    Ok(if be == le { vec![be] } else { vec![be, le] })
+}
+
+fn push_unique_result(
+    results: &mut Vec<SearchResult>,
+    payload: &[u8],
+    offset: usize,
+    length: usize,
+) {
+    if results
+        .iter()
+        .any(|hit| hit.offset == offset && hit.length == length)
+    {
+        return;
+    }
+    results.push(SearchResult {
+        offset,
+        length,
+        context: context_bytes(payload, offset, length),
+    });
 }
 
 fn find_bytes(payload: &[u8], needle: &[u8]) -> Vec<usize> {
