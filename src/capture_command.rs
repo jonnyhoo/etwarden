@@ -5,7 +5,7 @@
 //! **Dependencies**: `target`, `etwarden::capture`, `etwarden::mitm`, `etwarden::output`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin` for capture modes
-//! **Line budget**: 157 / 200
+//! **Line budget**: 199 / 200
 
 use std::sync::Arc;
 
@@ -99,15 +99,21 @@ fn load_rule_set(cli: &Cli) -> anyhow::Result<Option<Arc<RuleSet>>> {
         .map_err(|e| anyhow::anyhow!("failed to parse rules file {}: {e}", path.display()))?;
     let rule_set =
         RuleSet::build(&config).map_err(|e| anyhow::anyhow!("failed to build rules: {e}"))?;
-    etwarden::output::diagnostic::warn(format_args!(
-        "rules loaded: {} replace, {} intercept, {} hosts, {} http_block, {} websocket_block",
+    etwarden::output::diagnostic::warn(format_args!("{}", rules_loaded_message(&rule_set)));
+    Ok(Some(Arc::new(rule_set)))
+}
+
+fn rules_loaded_message(rule_set: &RuleSet) -> String {
+    format!(
+        "rules loaded: {} replace, {} intercept, {} hosts, {} http_block, {} websocket_block, {} tcp_block, {} udp_block",
         rule_set.replace.len(),
         rule_set.intercept.len(),
         rule_set.hosts.len(),
         rule_set.http_block.len(),
         rule_set.websocket_block.len(),
-    ));
-    Ok(Some(Arc::new(rule_set)))
+        rule_set.tcp_block.len(),
+        rule_set.udp_block.len(),
+    )
 }
 
 fn mitm_capture_config(cli: &Cli) -> Option<MitmCaptureConfig> {
