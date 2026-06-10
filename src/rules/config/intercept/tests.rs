@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{config, intercept, matcher}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 120 / 140
+//! **Line budget**: 130 / 140
 
 use super::*;
 use crate::rules::{
@@ -116,4 +116,14 @@ fn invalid_intercept_regex_is_rejected() {
     let error = config.build().expect_err("invalid regex");
 
     assert!(matches!(error, MatchError::RegexCompile(_)));
+}
+
+#[test]
+fn unknown_intercept_rule_fields_are_rejected() {
+    let error = serde_json::from_str::<RulesConfig>(
+        r#"{"intercept_rules":[{"enable":true,"direction":"Both","target":"URL","operator":"Contains","value":"ads.example","action_typo":"Drop","action":"Drop"}]}"#,
+    )
+    .expect_err("unknown intercept field");
+
+    assert!(error.to_string().contains("action_typo"));
 }

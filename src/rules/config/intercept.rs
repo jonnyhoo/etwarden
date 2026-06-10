@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{intercept, matcher}`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 69 / 100
+//! **Line budget**: 65 / 100
 
 #[cfg(test)]
 mod tests;
@@ -19,6 +19,7 @@ use crate::rules::{
 
 /// Config shape for one intercept rule.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct InterceptRuleConfig {
     /// Whether this rule participates in evaluation.
     pub enable: bool,
