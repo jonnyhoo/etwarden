@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 96 / 120
+//! **Line budget**: 110 / 120
 
 use super::*;
 
@@ -76,6 +76,20 @@ fn invalid_hex_reports_index() {
     let error = config.decode().expect_err("invalid hex");
 
     assert_eq!(error.to_string(), "invalid hex digit 'g' at index 1");
+}
+
+#[test]
+fn invalid_hex_reports_original_index_after_whitespace() {
+    let config = ReplaceRuleConfig {
+        rule_type: ReplacementRuleKind::Bytes,
+        source: "aa \n 4g".into(),
+        target: "00".into(),
+        encoding: RuleValueEncoding::Hex,
+    };
+
+    let error = config.decode().expect_err("invalid hex");
+
+    assert_eq!(error.to_string(), "invalid hex digit 'g' at index 6");
 }
 
 #[test]

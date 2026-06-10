@@ -5,7 +5,7 @@
 //! **Dependencies**: `base64`, `serde`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 85 / 120
+//! **Line budget**: 86 / 120
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde::Deserialize;
@@ -51,9 +51,10 @@ pub(super) fn decode_value(
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, RuleConfigError> {
-    let digits: Vec<u8> = value
+    let digits: Vec<(usize, u8)> = value
         .bytes()
-        .filter(|byte| !byte.is_ascii_whitespace())
+        .enumerate()
+        .filter(|entry| !entry.1.is_ascii_whitespace())
         .collect();
     if digits.len() & 1 == 1 {
         return Err(RuleConfigError::InvalidHexLength {
@@ -63,10 +64,9 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, RuleConfigError> {
 
     digits
         .chunks_exact(2)
-        .enumerate()
-        .map(|(pair_index, pair)| {
-            let high = hex_digit(pair[0], pair_index * 2)?;
-            let low = hex_digit(pair[1], pair_index * 2 + 1)?;
+        .map(|pair| {
+            let high = hex_digit(pair[0].1, pair[0].0)?;
+            let low = hex_digit(pair[1].1, pair[1].0)?;
             Ok((high << 4) | low)
         })
         .collect()
