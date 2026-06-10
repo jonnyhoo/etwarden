@@ -5,7 +5,7 @@
 //! **Dependencies**: (none)
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 140 / 180
+//! **Line budget**: 165 / 180
 
 #[derive(Default)]
 pub(super) struct ParsedExtensions {
@@ -107,6 +107,9 @@ fn extract_sni(data: &[u8]) -> Option<String> {
     ]));
     let hostname_start = entry_start + 3;
     let hostname_end = checked_end(hostname_start, entry_len, list_end)?;
+    if hostname_end != list_end {
+        return None;
+    }
     let hostname = data.get(hostname_start..hostname_end)?;
     if hostname.is_empty() {
         return None;

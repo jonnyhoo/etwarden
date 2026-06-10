@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::dpi::tls`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 208 / 240
+//! **Line budget**: 228 / 240
 
 use super::*;
 
@@ -87,6 +87,16 @@ fn tls_does_not_extract_sni_when_list_length_mismatches() {
 }
 
 #[test]
+fn tls_does_not_extract_sni_with_trailing_entry_bytes() {
+    let extensions = vec![(0u16, sni_extension_with_trailing_byte("example.com"))];
+    let payload = build_tls_client_hello_with_extensions(&extensions);
+
+    let result = analyze_tls_hello(&payload).expect("still valid tls");
+
+    assert!(result.sni.is_none());
+}
+
+#[test]
 fn tls_does_not_extract_non_hostname_sni_entry() {
     let mut payload = build_tls_client_hello("example.com");
     payload[58] = 1;
@@ -132,6 +142,16 @@ fn sni_extension(host: &str) -> Vec<u8> {
             .to_be_bytes(),
     );
     sni.extend_from_slice(host.as_bytes());
+    let list_len = u16::try_from(sni.len() - 2)
+        .expect("sni list length fits")
+        .to_be_bytes();
+    sni[0..2].copy_from_slice(&list_len);
+    sni
+}
+
+fn sni_extension_with_trailing_byte(host: &str) -> Vec<u8> {
+    let mut sni = sni_extension(host);
+    sni.push(0);
     let list_len = u16::try_from(sni.len() - 2)
         .expect("sni list length fits")
         .to_be_bytes();
