@@ -5,7 +5,7 @@
 //! **Dependencies**: `regex`, `serde`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 86 / 160
+//! **Line budget**: 124 / 160
 
 #[cfg(test)]
 mod tests;
@@ -23,8 +23,10 @@ pub enum MatchOperator {
     /// Case-insensitive regular expression match.
     Regex,
     /// ASCII-case-insensitive prefix match.
+    #[serde(alias = "Prefix", alias = "prefix")]
     StartsWith,
     /// ASCII-case-insensitive suffix match.
+    #[serde(alias = "Suffix", alias = "suffix")]
     EndsWith,
 }
 

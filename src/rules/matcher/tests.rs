@@ -1,4 +1,11 @@
 //! # `rules::matcher::tests`
+//!
+//! **Purpose**: Unit tests for text matcher behavior and config compatibility.
+//! **Public API**: test module only
+//! **Dependencies**: `rules::matcher`, `serde_json`
+//! **Platform**: `windows-only`
+//! **Privilege**: `none`
+//! **Line budget**: 81 / 120
 
 use super::{MatchOperator, TextMatcher};
 
@@ -43,6 +50,18 @@ fn invalid_regex_returns_error() {
     let error = TextMatcher::new(MatchOperator::Regex, "[").expect_err("invalid regex");
 
     assert!(error.to_string().contains("invalid regex pattern"));
+}
+
+#[test]
+fn prefix_suffix_operator_aliases_deserialize() {
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""Prefix""#).expect("prefix alias"),
+        MatchOperator::StartsWith
+    );
+    assert_eq!(
+        serde_json::from_str::<MatchOperator>(r#""Suffix""#).expect("suffix alias"),
+        MatchOperator::EndsWith
+    );
 }
 
 #[test]
