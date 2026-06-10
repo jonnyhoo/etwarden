@@ -1,8 +1,8 @@
 //! # `divert::redirect`
 //!
-//! **Purpose**: Three-layer WinDivert redirect using SOCKET + FLOW + NETWORK handles.
-//!   SOCKET/FLOW handles track which flows belong to target PIDs.
-//!   NETWORK handle intercepts matching IPv4 SYN packets, including loopback.
+//! **Purpose**: Three-layer WinDivert TCP redirect plus TCP/UDP socket-block enforcement.
+//!   SOCKET/FLOW handles track target-PID TCP/UDP flows by protocol-aware keys.
+//!   NETWORK handles TCP SYN redirect and targeted TCP/UDP socket-block drops.
 //! **Public API**: `DivertConfig`, `DivertHandle`, `start_divert`
 //! **Dependencies**: `divert::ffi`, `divert::packet`, `divert::redirect_map`,
 //!   `output::diagnostic`, `error`

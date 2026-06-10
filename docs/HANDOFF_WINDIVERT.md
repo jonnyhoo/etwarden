@@ -6,7 +6,7 @@
 - Default MITM config does **not** mutate Windows system proxy settings.
 - WinDivert redirect is implemented but experimental; it only runs with explicit `--divert`.
 - Transparent HTTP redirect is now live/admin verified against the packaged release folder.
-- Current redirect architecture is process-first: `--pid` targets the selected process exactly, WinDivert keeps loopback eligible, and the transparent proxy sniffs client bytes before choosing HTTP, TLS MITM, or raw TCP.
+- Current redirect architecture is process-first: `--pid` targets the selected process exactly, WinDivert keeps loopback eligible, TCP redirects into the transparent proxy, and UDP socket-block rules only drop matched target datagrams; UDP is not redirected or MITM'd.
 - Claude hot-attach validation no longer breaks `claude.exe` network when non-HTTP/TLS traffic is transparently tunneled instead of actively parsed.
 - Request/response data capture is implemented:
   - decrypted HTTP events include bounded base64 request/response headers and payloads.
@@ -50,10 +50,11 @@
   - Starts WinDivert only when `enable_divert` is true.
 - `src/divert/`
   - Added SOCKET + FLOW + NETWORK WinDivert implementation.
-  - SOCKET records target PID connect tuples before the NETWORK SYN race.
-  - FLOW tracks target PID TCP flows.
-  - NETWORK keeps loopback eligible, reflects matching outbound TCP packets into the local MITM proxy, and rewrites proxy replies back to the original destination tuple.
-  - FLOW/SOCKET attribution now preserves PID into `RedirectMap` entries.
+  - SOCKET/FLOW records target PID TCP/UDP tuples with protocol-aware flow keys.
+  - NETWORK keeps loopback eligible, redirects matching outbound TCP SYN packets into the local MITM proxy, and rewrites proxy replies back to the original destination tuple.
+  - TCP/UDP socket block rules drop only matched target flows for enforceable `Disconnect` / `DropUpstream` actions.
+  - UDP is block-only at NETWORK: matched datagrams can be dropped, but UDP is not redirected or MITM'd.
+  - FLOW/SOCKET attribution now preserves PID into `RedirectMap` entries for redirected TCP.
 - `src/process/network.rs`
   - Existing TCP inventory supports startup flow bootstrap.
 - `src/mitm/mod.rs`
