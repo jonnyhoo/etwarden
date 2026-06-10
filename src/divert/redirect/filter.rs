@@ -5,7 +5,7 @@
 //! **Dependencies**: none
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 34 / 80
+//! **Line budget**: 56 / 80
 
 pub(super) fn build_network_filter(
     proxy_port: u16,
@@ -13,25 +13,43 @@ pub(super) fn build_network_filter(
     exclude_ports: &[u16],
     include_udp: bool,
 ) -> String {
-    let mut tcp_parts = vec!["tcp".to_string(), format!("tcp.DstPort != {proxy_port}")];
-    if !include_ports.is_empty() {
-        let include = include_ports
-            .iter()
-            .map(|port| format!("tcp.DstPort == {port}"))
-            .collect::<Vec<_>>()
-            .join(" or ");
-        tcp_parts.push(format!("(tcp.SrcPort == {proxy_port} or {include})"));
-    }
-    for port in exclude_ports {
-        tcp_parts.push(format!("tcp.DstPort != {port}"));
-    }
-
-    let tcp_filter = tcp_parts.join(" and ");
+    let tcp_filter = build_transport_filter("tcp", proxy_port, include_ports, exclude_ports, true);
     let transport_filter = if include_udp {
-        format!("({tcp_filter} or udp)")
+        let udp_filter =
+            build_transport_filter("udp", proxy_port, include_ports, exclude_ports, false);
+        format!("({tcp_filter} or {udp_filter})")
     } else {
         tcp_filter
     };
 
     ["outbound".to_string(), "ip".to_string(), transport_filter].join(" and ")
+}
+
+fn build_transport_filter(
+    protocol: &str,
+    proxy_port: u16,
+    include_ports: &[u16],
+    exclude_ports: &[u16],
+    include_proxy_return: bool,
+) -> String {
+    let mut parts = vec![protocol.to_string()];
+    if include_proxy_return {
+        parts.push(format!("{protocol}.DstPort != {proxy_port}"));
+    }
+    if !include_ports.is_empty() {
+        let include = include_ports
+            .iter()
+            .map(|port| format!("{protocol}.DstPort == {port}"))
+            .collect::<Vec<_>>()
+            .join(" or ");
+        if include_proxy_return {
+            parts.push(format!("({protocol}.SrcPort == {proxy_port} or {include})"));
+        } else {
+            parts.push(format!("({include})"));
+        }
+    }
+    for port in exclude_ports {
+        parts.push(format!("{protocol}.DstPort != {port}"));
+    }
+    parts.join(" and ")
 }
