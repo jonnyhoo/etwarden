@@ -7,7 +7,7 @@
 //! **Dependencies**: `rules::config::{block, build, hosts, intercept, replace, value}`, `serde`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 45 / 80
+//! **Line budget**: 47 / 80
 
 mod block;
 mod build;
@@ -29,6 +29,7 @@ pub use value::{RuleConfigError, RuleValueEncoding};
 
 /// Top-level traffic-control rules config.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
 pub struct RulesConfig {
     /// Ordered replacement rules.
     #[serde(default)]

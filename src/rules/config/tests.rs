@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 110 / 120
+//! **Line budget**: 119 / 120
 
 use super::*;
 
@@ -107,4 +107,12 @@ fn odd_hex_length_reports_digit_count() {
         error.to_string(),
         "hex value must contain an even number of digits, got 3"
     );
+}
+
+#[test]
+fn unknown_top_level_fields_are_rejected() {
+    let error =
+        serde_json::from_str::<RulesConfig>(r#"{"replace_rulez":[]}"#).expect_err("unknown field");
+
+    assert!(error.to_string().contains("replace_rulez"));
 }
