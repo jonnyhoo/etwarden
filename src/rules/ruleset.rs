@@ -5,10 +5,13 @@
 //! **Dependencies**: `rules::{block, hosts, intercept, replace, config}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 72 / 120
+//! **Line budget**: 89 / 120
+
+#[cfg(test)]
+mod tests;
 
 use crate::rules::{
-    block::{http::HttpBlockRule, websocket::WebSocketBlockRule},
+    block::{http::HttpBlockRule, socket::SocketBlockRule, websocket::WebSocketBlockRule},
     config::RulesConfig,
     hosts::HostsRule,
     intercept::InterceptRule,
@@ -42,6 +45,10 @@ pub struct RuleSet {
     pub http_block: Vec<HttpBlockRule>,
     /// Ordered WebSocket block rules.
     pub websocket_block: Vec<WebSocketBlockRule>,
+    /// Ordered TCP block rules.
+    pub tcp_block: Vec<SocketBlockRule>,
+    /// Ordered UDP block rules.
+    pub udp_block: Vec<SocketBlockRule>,
 }
 
 impl RuleSet {
@@ -62,6 +69,8 @@ impl RuleSet {
             hosts: config.build_hosts_rules()?,
             http_block: config.build_http_block_rules()?,
             websocket_block: config.build_websocket_block_rules()?,
+            tcp_block: config.build_tcp_block_rules()?,
+            udp_block: config.build_udp_block_rules()?,
         })
     }
 
@@ -73,5 +82,7 @@ impl RuleSet {
             && self.hosts.is_empty()
             && self.http_block.is_empty()
             && self.websocket_block.is_empty()
+            && self.tcp_block.is_empty()
+            && self.udp_block.is_empty()
     }
 }
