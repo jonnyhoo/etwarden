@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::packet`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 103 / 120
+//! **Line budget**: 120 / 120
 
 use std::net::SocketAddrV4;
 
@@ -37,6 +37,25 @@ fn parse_valid_syn() {
     assert_eq!(parsed.src_port, src.port());
     assert_eq!(parsed.dst_port, dst.port());
     assert_eq!(parsed.tcp_flags, TCP_SYN);
+}
+
+#[test]
+fn parse_valid_udp_datagram() {
+    let src = SocketAddrV4::new(Ipv4Addr::new(192, 168, 1, 100), 51000);
+    let dst = SocketAddrV4::new(Ipv4Addr::new(93, 184, 216, 34), 53);
+    let mut pkt = vec![0u8; 28];
+    pkt[0] = 0x45;
+    pkt[9] = IP_PROTO_UDP;
+    pkt[12..16].copy_from_slice(&src.ip().octets());
+    pkt[16..20].copy_from_slice(&dst.ip().octets());
+    pkt[20..22].copy_from_slice(&src.port().to_be_bytes());
+    pkt[22..24].copy_from_slice(&dst.port().to_be_bytes());
+    pkt[24..26].copy_from_slice(&8u16.to_be_bytes());
+
+    let parsed = parse_ipv4_udp(&pkt).expect("should parse");
+
+    assert_eq!((parsed.src_ip, parsed.src_port), (*src.ip(), src.port()));
+    assert_eq!((parsed.dst_ip, parsed.dst_port), (*dst.ip(), dst.port()));
 }
 
 #[test]
