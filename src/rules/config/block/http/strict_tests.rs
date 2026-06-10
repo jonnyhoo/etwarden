@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::config`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 19 / 80
+//! **Line budget**: 21 / 80
 
 use crate::rules::config::RulesConfig;
 
