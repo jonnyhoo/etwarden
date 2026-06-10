@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect::udp`, `rules`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 76 / 80
+//! **Line budget**: 77 / 80
 
 use std::net::Ipv4Addr;
 
@@ -68,6 +68,7 @@ fn udp_datagram_plan_builds_flow_key_for_enforceable_rule() {
         plan.flow_key,
         FlowKey {
             protocol: Protocol::Udp,
+            local_ip: [192, 168, 1, 100],
             local_port: 51_000,
             remote_ip: [93, 184, 216, 34],
             remote_port: 443,

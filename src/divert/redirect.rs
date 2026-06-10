@@ -8,10 +8,12 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 578 / 590
+//! **Line budget**: 583 / 590
 
 mod filter;
 mod flow;
+#[cfg(test)]
+mod flow_tests;
 #[cfg(test)]
 mod map_tests;
 mod socket_block;
@@ -288,6 +290,7 @@ fn socket_monitor_loop(
         };
         let key = FlowKey {
             protocol,
+            local_ip: addr.flow_local_addr_v4(),
             local_port: addr.flow_local_port(),
             remote_ip: addr.flow_remote_addr_v4(),
             remote_port: addr.flow_remote_port(),
@@ -342,6 +345,7 @@ fn flow_monitor_loop(
         };
         let key = FlowKey {
             protocol,
+            local_ip: addr.flow_local_addr_v4(),
             local_port: addr.flow_local_port(),
             remote_ip: addr.flow_remote_addr_v4(),
             remote_port: addr.flow_remote_port(),
@@ -469,6 +473,7 @@ fn redirect_loop(
         // Check if this SYN matches a tracked flow.
         let lookup = FlowKey {
             protocol: Protocol::Tcp,
+            local_ip: parsed.src_ip.octets(),
             local_port: parsed.src_port,
             remote_ip: parsed.dst_ip.octets(),
             remote_port: parsed.dst_port,

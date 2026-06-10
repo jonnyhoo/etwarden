@@ -5,7 +5,7 @@
 //! **Dependencies**: `parser::types`, `process::network`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 108 / 120
+//! **Line budget**: 110 / 120
 
 use std::{
     collections::{HashMap, HashSet},
@@ -22,11 +22,12 @@ use crate::{
 const IPPROTO_TCP: u8 = 6;
 const IPPROTO_UDP: u8 = 17;
 
-/// Key identifying a tracked flow: (protocol, local_port, remote_ip, remote_port).
+/// Key identifying a tracked flow: (protocol, local_ip, local_port, remote_ip, remote_port).
 /// FLOW layer gives us these in host byte order — matches packet parser output.
 #[derive(Debug, Clone, Hash, Eq, PartialEq)]
 pub(super) struct FlowKey {
     pub(super) protocol: Protocol,
+    pub(super) local_ip: [u8; 4],
     pub(super) local_port: u16,
     pub(super) remote_ip: [u8; 4],
     pub(super) remote_port: u16,
@@ -101,6 +102,7 @@ fn flow_key_from_tuple(tuple: &FiveTuple) -> Option<FlowKey> {
     }
     Some(FlowKey {
         protocol: Protocol::Tcp,
+        local_ip: tuple.src_ip.parse::<Ipv4Addr>().ok()?.octets(),
         local_port: tuple.src_port,
         remote_ip: tuple.dst_ip.parse::<Ipv4Addr>().ok()?.octets(),
         remote_port: tuple.dst_port,

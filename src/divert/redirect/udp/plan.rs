@@ -28,6 +28,7 @@ pub(super) fn udp_datagram_plan(
     Some(UdpDatagramPlan {
         flow_key: FlowKey {
             protocol: Protocol::Udp,
+            local_ip: parsed.src_ip.octets(),
             local_port: parsed.src_port,
             remote_ip: parsed.dst_ip.octets(),
             remote_port: parsed.dst_port,

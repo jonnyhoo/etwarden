@@ -5,7 +5,7 @@
 //! **Dependencies**: `divert::redirect`, `rules`, `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 117 / 120
+//! **Line budget**: 119 / 120
 
 use super::*;
 use crate::{divert::redirect::flow::flow_keys_from_tuples, parser::types::Protocol};
@@ -28,6 +28,7 @@ fn existing_ipv4_tcp_tuple_seeds_flow_key() {
 
     assert!(keys.contains_key(&FlowKey {
         protocol: Protocol::Tcp,
+        local_ip: [192, 168, 1, 100],
         local_port: 51_000,
         remote_ip: [93, 184, 216, 34],
         remote_port: 443,
@@ -38,12 +39,14 @@ fn existing_ipv4_tcp_tuple_seeds_flow_key() {
 fn flow_key_includes_protocol_to_avoid_tcp_udp_collision() {
     let tcp = FlowKey {
         protocol: Protocol::Tcp,
+        local_ip: [192, 168, 1, 100],
         local_port: 51_000,
         remote_ip: [93, 184, 216, 34],
         remote_port: 443,
     };
     let udp = FlowKey {
         protocol: Protocol::Udp,
+        local_ip: [192, 168, 1, 100],
         local_port: 51_000,
         remote_ip: [93, 184, 216, 34],
         remote_port: 443,
