@@ -5,7 +5,10 @@
 //! **Dependencies**: `rules::{block::socket, ruleset}`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 42 / 80
+//! **Line budget**: 45 / 80
+
+#[cfg(test)]
+mod tests;
 
 use std::net::Ipv4Addr;
 

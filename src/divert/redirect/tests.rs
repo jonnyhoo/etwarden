@@ -5,18 +5,10 @@
 //! **Dependencies**: `divert::redirect`, `rules`, `parser`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 116 / 120
+//! **Line budget**: 87 / 120
 
 use super::*;
-use crate::{
-    divert::redirect::flow::flow_keys_from_tuples,
-    parser::types::Protocol,
-    rules::{
-        block::socket::{SocketBlockAction, SocketBlockRule, SocketProtocol},
-        matcher::MatchOperator,
-        ruleset::RuleSet,
-    },
-};
+use crate::{divert::redirect::flow::flow_keys_from_tuples, parser::types::Protocol};
 
 fn tuple(src_port: u16, dst_ip: &str, dst_port: u16, protocol: Protocol) -> FiveTuple {
     FiveTuple {
@@ -35,10 +27,29 @@ fn existing_ipv4_tcp_tuple_seeds_flow_key() {
     let keys = flow_keys_from_tuples(&[tuple]);
 
     assert!(keys.contains_key(&FlowKey {
+        protocol: Protocol::Tcp,
         local_port: 51_000,
         remote_ip: [93, 184, 216, 34],
         remote_port: 443,
     }));
+}
+
+#[test]
+fn flow_key_includes_protocol_to_avoid_tcp_udp_collision() {
+    let tcp = FlowKey {
+        protocol: Protocol::Tcp,
+        local_port: 51_000,
+        remote_ip: [93, 184, 216, 34],
+        remote_port: 443,
+    };
+    let udp = FlowKey {
+        protocol: Protocol::Udp,
+        local_port: 51_000,
+        remote_ip: [93, 184, 216, 34],
+        remote_port: 443,
+    };
+
+    assert_ne!(tcp, udp);
 }
 
 #[test]
@@ -73,44 +84,4 @@ fn network_filter_keeps_loopback_eligible() {
 
     assert!(!filter.contains("127.0.0.1"));
     assert!(filter.contains("tcp.DstPort != 3003"));
-}
-
-#[test]
-fn tcp_syn_block_action_enforces_disconnect_and_drop_upstream_only() {
-    let disconnect = SocketBlockRule::new(
-        true,
-        10,
-        SocketProtocol::Tcp,
-        MatchOperator::Equals,
-        "93.184.216.34:443",
-        SocketBlockAction::Disconnect,
-    )
-    .expect("rule");
-    let drop_downstream = SocketBlockRule::new(
-        true,
-        10,
-        SocketProtocol::Tcp,
-        MatchOperator::Equals,
-        "93.184.216.34:443",
-        SocketBlockAction::DropDownstream,
-    )
-    .expect("rule");
-
-    let blocked = RuleSet {
-        tcp_block: vec![disconnect],
-        ..RuleSet::default()
-    };
-    let deferred = RuleSet {
-        tcp_block: vec![drop_downstream],
-        ..RuleSet::default()
-    };
-
-    assert_eq!(
-        tcp_syn_block_action(Some(&blocked), Ipv4Addr::new(93, 184, 216, 34), 443),
-        Some(SocketBlockAction::Disconnect),
-    );
-    assert_eq!(
-        tcp_syn_block_action(Some(&deferred), Ipv4Addr::new(93, 184, 216, 34), 443),
-        None,
-    );
 }

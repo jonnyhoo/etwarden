@@ -8,7 +8,7 @@
 //!   `output::diagnostic`, `error`
 //! **Platform**: `windows-only`
 //! **Privilege**: `requires-admin`
-//! **Line budget**: 562 / 590
+//! **Line budget**: 572 / 590
 
 mod flow;
 mod socket_block;
@@ -26,7 +26,8 @@ use std::{
 };
 
 use flow::{
-    flow_table_from_tuples, pid_for_syn_from_inventory, wait_for_flow_match, FlowKey, FlowTable,
+    flow_table_from_tuples, pid_for_syn_from_inventory, protocol_from_number, wait_for_flow_match,
+    FlowKey, FlowTable,
 };
 use socket_block::tcp_syn_block_action;
 
@@ -43,7 +44,7 @@ use super::{
 use crate::{
     error::{EtwardenError, Result},
     output::diagnostic,
-    parser::types::FiveTuple,
+    parser::types::{FiveTuple, Protocol},
     rules::ruleset::RuleSet,
 };
 
@@ -267,7 +268,11 @@ fn socket_monitor_loop(
         if !target_pids.contains(&pid) {
             continue;
         }
+        let Some(protocol) = protocol_from_number(addr.flow_protocol()) else {
+            continue;
+        };
         let key = FlowKey {
+            protocol,
             local_port: addr.flow_local_port(),
             remote_ip: addr.flow_remote_addr_v4(),
             remote_port: addr.flow_remote_port(),
@@ -317,7 +322,11 @@ fn flow_monitor_loop(
         }
 
         let event = addr.event();
+        let Some(protocol) = protocol_from_number(addr.flow_protocol()) else {
+            continue;
+        };
         let key = FlowKey {
+            protocol,
             local_port: addr.flow_local_port(),
             remote_ip: addr.flow_remote_addr_v4(),
             remote_port: addr.flow_remote_port(),
@@ -446,6 +455,7 @@ fn redirect_loop(
 
         // Check if this SYN matches a tracked flow.
         let lookup = FlowKey {
+            protocol: Protocol::Tcp,
             local_port: parsed.src_port,
             remote_ip: parsed.dst_ip.octets(),
             remote_port: parsed.dst_port,
