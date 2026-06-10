@@ -5,7 +5,7 @@
 //! **Dependencies**: `base64`, `thiserror`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 133 / 200
+//! **Line budget**: 173 / 200
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -22,6 +22,10 @@ pub enum SearchType {
     Int32,
     /// Query text is a signed 64-bit integer searched as big- and little-endian bytes.
     Int64,
+    /// Query text is a 32-bit float searched as big- and little-endian bytes.
+    Float32,
+    /// Query text is a 64-bit float searched as big- and little-endian bytes.
+    Float64,
 }
 
 /// Payload search decoding error.
@@ -51,6 +55,18 @@ pub enum SearchError {
         value: String,
         source: std::num::ParseIntError,
     },
+    /// Float32 parsing failed.
+    #[error("invalid float32 search query '{value}': {source}")]
+    InvalidFloat32 {
+        value: String,
+        source: std::num::ParseFloatError,
+    },
+    /// Float64 parsing failed.
+    #[error("invalid float64 search query '{value}': {source}")]
+    InvalidFloat64 {
+        value: String,
+        source: std::num::ParseFloatError,
+    },
 }
 
 pub(super) fn decode_queries(
@@ -63,6 +79,8 @@ pub(super) fn decode_queries(
         SearchType::Base64 => Ok(vec![STANDARD.decode(query)?]),
         SearchType::Int32 => int32_needles(query),
         SearchType::Int64 => int64_needles(query),
+        SearchType::Float32 => float32_needles(query),
+        SearchType::Float64 => float64_needles(query),
     }
 }
 
@@ -82,6 +100,28 @@ fn int64_needles(query: &str) -> Result<Vec<Vec<u8>>, SearchError> {
         .trim()
         .parse::<i64>()
         .map_err(|source| SearchError::InvalidInt64 {
+            value: query.to_string(),
+            source,
+        })?;
+    Ok(endian_needles(value.to_be_bytes(), value.to_le_bytes()))
+}
+
+fn float32_needles(query: &str) -> Result<Vec<Vec<u8>>, SearchError> {
+    let value = query
+        .trim()
+        .parse::<f32>()
+        .map_err(|source| SearchError::InvalidFloat32 {
+            value: query.to_string(),
+            source,
+        })?;
+    Ok(endian_needles(value.to_be_bytes(), value.to_le_bytes()))
+}
+
+fn float64_needles(query: &str) -> Result<Vec<Vec<u8>>, SearchError> {
+    let value = query
+        .trim()
+        .parse::<f64>()
+        .map_err(|source| SearchError::InvalidFloat64 {
             value: query.to_string(),
             source,
         })?;
