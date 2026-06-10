@@ -5,7 +5,7 @@
 //! **Dependencies**: `search::query`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 107 / 200
+//! **Line budget**: 116 / 200
 
 use super::query::{decode_queries, SearchError, SearchType};
 
@@ -42,15 +42,24 @@ pub fn search_payload(
     case_sensitive: bool,
 ) -> Result<Vec<SearchResult>, SearchError> {
     let needles = decode_queries(query, search_type)?;
+    search_payload_with_needles(payload, &needles, search_type, case_sensitive)
+}
+
+pub(super) fn search_payload_with_needles(
+    payload: &[u8],
+    needles: &[Vec<u8>],
+    search_type: SearchType,
+    case_sensitive: bool,
+) -> Result<Vec<SearchResult>, SearchError> {
     if needles.iter().any(Vec::is_empty) {
         return Err(SearchError::EmptyQuery);
     }
     let mut results = Vec::new();
     for needle in needles {
         let matches = if case_sensitive || search_type != SearchType::Utf8 {
-            find_bytes(payload, &needle)
+            find_bytes(payload, needle)
         } else {
-            find_ascii_case_insensitive(payload, &needle)
+            find_ascii_case_insensitive(payload, needle)
         };
         for offset in matches {
             push_unique_result(&mut results, payload, offset, needle.len());

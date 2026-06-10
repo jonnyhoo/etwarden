@@ -5,10 +5,11 @@
 //! **Dependencies**: `search`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 79 / 90
+//! **Line budget**: 80 / 90
 
 use super::*;
 
+mod all;
 mod numeric;
 
 fn offsets(r: &[SearchResult]) -> Vec<usize> {
