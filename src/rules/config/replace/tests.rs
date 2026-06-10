@@ -5,7 +5,7 @@
 //! **Dependencies**: `rules::{config, replace}`, `serde_json`
 //! **Platform**: `windows-only`
 //! **Privilege**: `none`
-//! **Line budget**: 106 / 120
+//! **Line budget**: 119 / 120
 
 use crate::rules::{config::RulesConfig, replace::apply_all};
 
@@ -102,4 +102,14 @@ fn json_config_accepts_roadmap_replace_kind_names() {
     assert_eq!(outcome.payload, b"file");
     assert_eq!(outcome.matched_rules, 2);
     assert!(outcome.file_replaced);
+}
+
+#[test]
+fn unknown_replace_rule_fields_are_rejected() {
+    let error = serde_json::from_str::<RulesConfig>(
+        r#"{"replace_rules":[{"type":"Bytes","source":"old","target":"new","value_typo":"HEX"}]}"#,
+    )
+    .expect_err("unknown replace field");
+
+    assert!(error.to_string().contains("value_typo"));
 }
